@@ -532,6 +532,7 @@ export class SnakeLadderGame implements GameInstance {
     }
 
     this.isRollingDiceAnimation = true;
+    this.updateHUD();
     sounds.playDiceRoll();
 
     const d1El = document.getElementById('dice-face-1');
@@ -583,6 +584,7 @@ export class SnakeLadderGame implements GameInstance {
       }
 
       this.isRollingDiceAnimation = true;
+      this.updateHUD();
       sounds.playDiceRoll();
 
       const d1El = document.getElementById('dice-face-1');
@@ -652,9 +654,9 @@ export class SnakeLadderGame implements GameInstance {
       await this.sleep(400);
     }
 
+    this.isProcessingMove = false;
     this.renderBoard();
     this.updateHUD();
-    this.isProcessingMove = false;
 
     // Check game over
     if (result.won) {
