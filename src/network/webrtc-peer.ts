@@ -5,6 +5,7 @@ export type NetworkMessage =
   | { type: 'TETRIS_GARBAGE'; lines: number }
   | { type: 'OTHELLO_MOVE'; r: number; c: number; player: number }
   | { type: 'GAME_OVER'; didWin: boolean }
+  | { type: 'PLAYER_LEAVE' }
   | { type: 'REMATCH_REQUEST' }
   | { type: 'REMATCH_ACCEPT' }
   | { type: 'CUSTOM'; payload: any };
@@ -64,6 +65,14 @@ export class WebRTCPeer {
       }
     };
 
+    this.peer.onconnectionstatechange = () => {
+      const state = this.peer?.connectionState;
+      if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+        this.isConnected = false;
+        this.events.onStatusChange?.('disconnected', 'Opponent disconnected.');
+      }
+    };
+
     const offer = await this.peer.createOffer();
     await this.peer.setLocalDescription(offer);
 
@@ -86,6 +95,14 @@ export class WebRTCPeer {
 
     this.peer = new RTCPeerConnection(RTC_CONFIG);
     const localIceCandidates: RTCIceCandidateInit[] = [];
+
+    this.peer.onconnectionstatechange = () => {
+      const state = this.peer?.connectionState;
+      if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+        this.isConnected = false;
+        this.events.onStatusChange?.('disconnected', 'Opponent disconnected.');
+      }
+    };
 
     this.peer.ondatachannel = (event) => {
       this.dataChannel = event.channel;

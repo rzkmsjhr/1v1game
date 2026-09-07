@@ -109,6 +109,7 @@ export class TetrisGame implements GameInstance {
     this.isRunning = false;
     if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
     this.inputController?.clearAll();
+    window.removeEventListener('beforeunload', this.handleBeforeUnload);
     this.container.innerHTML = '';
   }
 
@@ -124,23 +125,52 @@ export class TetrisGame implements GameInstance {
     });
   }
 
+  private handleBeforeUnload = () => {
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+    }
+  };
+
   private setupNetwork() {
     if (!this.session.peer) return;
 
     const origOnMessage = (this.session.peer as any).events?.onMessage;
+    const origOnStatusChange = (this.session.peer as any).events?.onStatusChange;
+
     this.session.peer = Object.assign(this.session.peer, {
       events: {
         ...(this.session.peer as any).events,
         onMessage: (msg: any) => {
           origOnMessage?.(msg);
           this.handleNetworkMessage(msg);
+        },
+        onStatusChange: (status: string, message?: string) => {
+          origOnStatusChange?.(status, message);
+          if (status === 'disconnected') {
+            this.handleOpponentDisconnected();
+          }
         }
       }
     });
+
+    window.addEventListener('beforeunload', this.handleBeforeUnload);
+  }
+
+  private handleOpponentDisconnected() {
+    if (this.playerEngine?.isGameOver) return;
+    this.isRunning = false;
+    this.inputController?.setEnabled(false);
+    sounds.playWin();
+    confetti({ particleCount: 120, spread: 80 });
+    this.showGameOverModal(true, 'Opponent left or disconnected. You win by forfeit!');
   }
 
   private handleNetworkMessage(msg: any) {
     switch (msg.type) {
+      case 'PLAYER_LEAVE':
+        this.handleOpponentDisconnected();
+        break;
+
       case 'TETRIS_SYNC_BOARD':
         for (let r = 0; r < 20; r++) {
           for (let c = 0; c < 10; c++) {
@@ -372,6 +402,9 @@ export class TetrisGame implements GameInstance {
 
   private attachEventListeners() {
     document.getElementById('btn-tetris-exit')?.addEventListener('click', () => {
+      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+      }
       this.session.onExit();
     });
 
@@ -389,6 +422,9 @@ export class TetrisGame implements GameInstance {
     });
 
     document.getElementById('btn-modal-exit')?.addEventListener('click', () => {
+      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+      }
       this.session.onExit();
     });
 
@@ -473,7 +509,7 @@ export class TetrisGame implements GameInstance {
     }
   }
 
-  private showGameOverModal(playerWon: boolean) {
+  private showGameOverModal(playerWon: boolean, customSubtitle?: string) {
     const modal = document.getElementById('modal-gameover');
     const title = document.getElementById('gameover-title');
     const subtitle = document.getElementById('gameover-subtitle');
@@ -482,12 +518,28 @@ export class TetrisGame implements GameInstance {
       if (playerWon) {
         title.textContent = 'VICTORY!';
         title.className = 'text-3xl font-extrabold mb-2 text-blue-500';
-        subtitle.textContent = `You defeated ${this.opponentName}!`;
+        subtitle.textContent = customSubtitle || `You defeated ${this.opponentName}!`;
       } else {
         title.textContent = 'DEFEAT';
         title.className = 'text-3xl font-extrabold mb-2 text-rose-500';
-        subtitle.textContent = `${this.opponentName} topped you out.`;
+        subtitle.textContent = customSubtitle || `${this.opponentName} topped you out.`;
       }
+
+      const rematchBtn = document.getElementById('btn-rematch');
+      const exitBtn = document.getElementById('btn-modal-exit');
+      if (customSubtitle) {
+        rematchBtn?.classList.add('hidden');
+        if (exitBtn) {
+          exitBtn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold';
+        }
+      } else {
+        rematchBtn?.classList.remove('hidden');
+        if (rematchBtn) rematchBtn.textContent = 'Play Again';
+        if (exitBtn) {
+          exitBtn.className = 'w-full py-2 text-xs font-semibold text-gray-500 hover:text-gray-400';
+        }
+      }
+
       modal.classList.remove('hidden');
     }
   }

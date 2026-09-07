@@ -12,6 +12,7 @@ export class OthelloGame implements GameInstance {
   private myPlayer: PlayerColor = 1; // 1 = Black, 2 = White
   private isMyTurn: boolean = true;
   private isProcessing: boolean = false;
+  private forfeitMessage: string | null = null;
 
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
@@ -38,26 +39,54 @@ export class OthelloGame implements GameInstance {
   }
 
   public destroy() {
+    window.removeEventListener('beforeunload', this.handleBeforeUnload);
     this.container.innerHTML = '';
   }
+
+  private handleBeforeUnload = () => {
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+    }
+  };
 
   private setupNetworkListeners() {
     if (!this.session.peer) return;
 
     const origOnMessage = (this.session.peer as any).events?.onMessage;
+    const origOnStatusChange = (this.session.peer as any).events?.onStatusChange;
+
     this.session.peer = Object.assign(this.session.peer, {
       events: {
         ...(this.session.peer as any).events,
         onMessage: (msg: any) => {
           origOnMessage?.(msg);
           this.handleNetworkMessage(msg);
+        },
+        onStatusChange: (status: string, message?: string) => {
+          origOnStatusChange?.(status, message);
+          if (status === 'disconnected') {
+            this.handleOpponentDisconnected();
+          }
         }
       }
     });
+
+    window.addEventListener('beforeunload', this.handleBeforeUnload);
+  }
+
+  private handleOpponentDisconnected() {
+    if (this.engine.isGameOver) return;
+    this.engine.isGameOver = true;
+    this.forfeitMessage = 'Opponent left or disconnected. You win by forfeit!';
+    sounds.playWin();
+    confetti({ particleCount: 120, spread: 80 });
+    this.render();
   }
 
   private handleNetworkMessage(msg: any) {
-    if (msg.type === 'OTHELLO_MOVE') {
+    if (msg.type === 'PLAYER_LEAVE') {
+      this.handleOpponentDisconnected();
+    } else if (msg.type === 'OTHELLO_MOVE') {
       const move = this.engine.makeMove(msg.r, msg.c);
       if (move) {
         sounds.playHardDrop();
@@ -80,7 +109,10 @@ export class OthelloGame implements GameInstance {
     let turnText = '';
     let turnClass = '';
 
-    if (this.engine.isGameOver) {
+    if (this.forfeitMessage) {
+      turnText = this.forfeitMessage;
+      turnClass = 'text-emerald-500 font-bold';
+    } else if (this.engine.isGameOver) {
       if (scores.black === scores.white) {
         turnText = 'Game Drawn!';
         turnClass = 'text-gray-400';
@@ -194,9 +226,20 @@ export class OthelloGame implements GameInstance {
         <!-- Rematch Banner when game over -->
         ${this.engine.isGameOver ? `
           <div class="mt-6 flex flex-col items-center space-y-3">
-            <button id="btn-othello-rematch" class="ps-btn-primary px-8 py-3 rounded-2xl text-sm font-bold shadow-lg shadow-emerald-500/25">
-              Play Again
-            </button>
+            ${this.forfeitMessage ? `
+              <div class="px-5 py-2.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-sm font-bold text-center shadow-lg shadow-emerald-500/10">
+                🏆 ${this.forfeitMessage}
+              </div>
+            ` : ''}
+            ${(!this.forfeitMessage || this.session.mode === 'ai') ? `
+              <button id="btn-othello-rematch" class="ps-btn-primary px-8 py-3 rounded-2xl text-sm font-bold shadow-lg shadow-emerald-500/25">
+                Play Again
+              </button>
+            ` : `
+              <button id="btn-othello-back" class="ps-btn-primary px-8 py-3 rounded-2xl text-sm font-bold shadow-lg shadow-emerald-500/25">
+                Back to Dashboard
+              </button>
+            `}
           </div>
         ` : ''}
 
@@ -209,6 +252,14 @@ export class OthelloGame implements GameInstance {
   private attachEventListeners() {
     // Exit button
     document.getElementById('btn-othello-exit')?.addEventListener('click', () => {
+      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+      }
+      this.session.onExit();
+    });
+
+    // Back button
+    document.getElementById('btn-othello-back')?.addEventListener('click', () => {
       this.session.onExit();
     });
 
@@ -318,6 +369,7 @@ export class OthelloGame implements GameInstance {
   }
 
   private resetMatch() {
+    this.forfeitMessage = null;
     this.engine.reset();
     this.isMyTurn = this.myPlayer === 1;
     this.render();
