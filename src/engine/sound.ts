@@ -342,6 +342,98 @@ class SoundManager {
     osc.start(now);
     osc.stop(now + 0.08);
   }
+
+  public playStep() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(360, now);
+    osc.frequency.exponentialRampToValueAtTime(180, now + 0.045);
+
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.045);
+  }
+
+  public playLadderClimb() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const freqs = [330, 392, 523, 659, 784]; // E4, G4, C5, E5, G5
+    freqs.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const noteTime = now + idx * 0.06;
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, noteTime);
+
+      gain.gain.setValueAtTime(0.14, noteTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, noteTime + 0.09);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(noteTime);
+      osc.stop(noteTime + 0.09);
+    });
+  }
+
+  public playSnakeSlide() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(580, now);
+    osc.frequency.exponentialRampToValueAtTime(140, now + 0.35);
+
+    gain.gain.setValueAtTime(0.15, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.35);
+  }
+
+  public playFanfare() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const notes = [
+      { f: 523.25, t: 0.00, d: 0.12 }, // C5
+      { f: 659.25, t: 0.13, d: 0.12 }, // E5
+      { f: 783.99, t: 0.26, d: 0.15 }, // G5
+      { f: 1046.5, t: 0.42, d: 0.40 }, // C6
+    ];
+
+    notes.forEach(n => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const startTime = now + n.t;
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(n.f, startTime);
+
+      gain.gain.setValueAtTime(0.2, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + n.d);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(startTime);
+      osc.stop(startTime + n.d);
+    });
+  }
 }
 
 export const sounds = new SoundManager();

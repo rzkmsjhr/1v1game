@@ -2,6 +2,7 @@ import type { GameDefinition } from './types';
 import { TetrisGame } from './tetris/TetrisGame';
 import { OthelloGame } from './othello/OthelloGame';
 import { PoolGame } from './pool/PoolGame';
+import { SnakeLadderGame } from './snake-ladder/SnakeLadderGame';
 
 export const GAMES_REGISTRY: GameDefinition[] = [
   {
@@ -46,17 +47,16 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     create: (container, session) => new PoolGame(container, session)
   },
   {
-    id: 'sheep-fight',
-    title: 'Sheep Fight',
-    subtitle: 'Lane Battle & Ramming Frenzy',
-    description: 'Spawn your flock into parallel lanes, leverage weight classes, and push opposing rams backward to breach their pasture.',
-    genre: 'Casual Strategy',
-    badge: 'Coming Soon',
-    bannerGradient: 'from-amber-600 via-orange-700 to-stone-900',
-    accentColor: '#f59e0b',
-    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5c-2.5 0-4.5 2-4.5 5v4a4.5 4.5 0 0 0 9 0v-4c0-3-2-5-4.5-5z"/><path d="M7.5 10C5.5 10 3.5 8 3.5 6s2-3 4-2c1 .5 1.5 1.5 2 3"/><path d="M16.5 10c2 0 4-2 4-4s-2-3-4-2c-1 .5-1.5 1.5-2 3"/><circle cx="10" cy="12" r="1" fill="currentColor"/><circle cx="14" cy="12" r="1" fill="currentColor"/></svg>`,
+    id: 'snake-ladder',
+    title: 'Snakes & Ladders',
+    subtitle: 'Procedural Board Dice Duel',
+    description: 'Roll the dice, climb magical ladders, and dodge sneaky snakes on a procedurally generated 100-tile board. Roll for the start, choose your tempo, and race to tile 100.',
+    genre: 'Classic Board Game',
+    badge: 'Dice & Strategy',
+    bannerGradient: 'from-amber-600 via-orange-700 to-emerald-900',
+    accentColor: '#ea580c',
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 3L5 21M9 6h7M8 11h7M7 16h7M15 13c1.5 0 2.5 1 2.5 2s-1 2-2.5 2-2.5-1-2.5-2 1-2 2.5-2z"/></svg>`,
     supportsAI: true,
-    isComingSoon: true,
-    create: () => { throw new Error('Coming soon'); }
+    create: (container, session) => new SnakeLadderGame(container, session)
   }
 ];

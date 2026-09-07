@@ -13,6 +13,11 @@ export type NetworkMessage =
   | { type: 'POOL_SHOT'; angle: number; power: number }
   | { type: 'POOL_MOVE_BALL'; x: number; y: number }
   | { type: 'POOL_PLACE_BALL'; x: number; y: number }
+  | { type: 'SNAKE_INIT_BOARD'; board: any }
+  | { type: 'SNAKE_INITIAL_ROLL'; d1: number; d2: number; total: number }
+  | { type: 'SNAKE_INITIAL_CHOICE'; choice: 'start_first' | 'start_second' }
+  | { type: 'SNAKE_DICE_ROLL'; d1: number; d2: number; total: number; isDouble: boolean }
+  | { type: 'SNAKE_MOVE_COMPLETE'; finalPos: number }
   | { type: 'GAME_OVER'; didWin: boolean }
   | { type: 'PLAYER_LEAVE' }
   | { type: 'REMATCH_REQUEST' }
