@@ -265,6 +265,9 @@ export class SnakeLadderGame implements GameInstance {
         this.playerDuelD2 = null;
         this.oppDuelD1 = null;
         this.oppDuelD2 = null;
+        this.isDuelRolling = false;
+        this.lastDice = { d1: 1, d2: 1, total: 2, isDouble: false };
+        this.updateDiceDisplay(this.lastDice);
         this.renderBoard();
         this.updateHUD();
         this.showDuelModal();
@@ -468,6 +471,7 @@ export class SnakeLadderGame implements GameInstance {
   private handleDuelRoll() {
     if (this.isDuelRolling || this.playerDuelD1 !== null) return;
     this.isDuelRolling = true;
+    this.updateDuelModal();
     sounds.playDiceRoll();
 
     const d1El = document.getElementById('duel-player-d1');
@@ -524,17 +528,25 @@ export class SnakeLadderGame implements GameInstance {
     if (pD1) pD1.innerHTML = renderDiceFace(this.playerDuelD1, isDark);
     if (pD2) pD2.innerHTML = renderDiceFace(this.playerDuelD2, isDark);
     if (pTot) {
-      pTot.textContent = this.playerDuelD1 !== null
-        ? `Total: ${this.playerDuelD1 + this.playerDuelD2!}`
-        : 'Rolling...';
+      if (this.playerDuelD1 !== null) {
+        pTot.textContent = `Total: ${this.playerDuelD1 + this.playerDuelD2!}`;
+      } else if (this.isDuelRolling) {
+        pTot.textContent = 'Rolling...';
+      } else {
+        pTot.textContent = 'Ready';
+      }
     }
 
     if (oD1) oD1.innerHTML = renderDiceFace(this.oppDuelD1, isDark);
     if (oD2) oD2.innerHTML = renderDiceFace(this.oppDuelD2, isDark);
     if (oTot) {
-      oTot.textContent = this.oppDuelD1 !== null
-        ? `Total: ${this.oppDuelD1 + this.oppDuelD2!}`
-        : (this.playerDuelD1 !== null ? 'Rolling...' : 'Waiting...');
+      if (this.oppDuelD1 !== null) {
+        oTot.textContent = `Total: ${this.oppDuelD1 + this.oppDuelD2!}`;
+      } else if (this.playerDuelD1 !== null) {
+        oTot.textContent = 'Rolling...';
+      } else {
+        oTot.textContent = 'Ready';
+      }
     }
 
     const actionArea = document.getElementById('duel-action-area');
@@ -556,6 +568,7 @@ export class SnakeLadderGame implements GameInstance {
           this.playerDuelD2 = null;
           this.oppDuelD1 = null;
           this.oppDuelD2 = null;
+          this.isDuelRolling = false;
           this.updateDuelModal();
         });
       } else if (this.engine.duelWinner === 'player') {
@@ -594,6 +607,26 @@ export class SnakeLadderGame implements GameInstance {
           if (desc) desc.textContent = `${this.opponentName} won the roll. Awaiting their choice...`;
           actionArea.innerHTML = `<span class="text-xs font-bold text-gray-400 animate-pulse">Waiting for opponent choice...</span>`;
         }
+      }
+    } else {
+      // duelWinner is null: either before rolling, or during rolling
+      if (this.isDuelRolling) {
+        if (desc) desc.textContent = 'Rolling both dice...';
+        actionArea.innerHTML = `<span class="text-xs font-bold text-amber-400 animate-pulse">Rolling dice...</span>`;
+      } else if (this.playerDuelD1 !== null) {
+        if (desc) desc.textContent = this.session.mode === 'ai' ? `${this.opponentName} is rolling...` : `Waiting for ${this.opponentName} to roll...`;
+        actionArea.innerHTML = `<span class="text-xs font-bold text-gray-400 animate-pulse">Waiting for opponent...</span>`;
+      } else {
+        // Ready to roll! (Initial match start and on Rematch)
+        if (desc) desc.textContent = 'Roll 2 dice! Highest total chooses who goes first.';
+        actionArea.innerHTML = `
+          <button id="btn-duel-roll" class="w-full py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-orange-500/25 cursor-pointer active:scale-95">
+            ROLL 2 DICE
+          </button>
+        `;
+        document.getElementById('btn-duel-roll')?.addEventListener('click', () => {
+          this.handleDuelRoll();
+        });
       }
     }
   }
@@ -930,6 +963,9 @@ export class SnakeLadderGame implements GameInstance {
       this.playerDuelD2 = null;
       this.oppDuelD1 = null;
       this.oppDuelD2 = null;
+      this.isDuelRolling = false;
+      this.lastDice = { d1: 1, d2: 1, total: 2, isDouble: false };
+      this.updateDiceDisplay(this.lastDice);
       this.renderBoard();
       this.updateHUD();
       this.showDuelModal();
@@ -941,6 +977,9 @@ export class SnakeLadderGame implements GameInstance {
       this.playerDuelD2 = null;
       this.oppDuelD1 = null;
       this.oppDuelD2 = null;
+      this.isDuelRolling = false;
+      this.lastDice = { d1: 1, d2: 1, total: 2, isDouble: false };
+      this.updateDiceDisplay(this.lastDice);
       this.renderBoard();
       this.updateHUD();
       this.showDuelModal();
@@ -960,6 +999,9 @@ export class SnakeLadderGame implements GameInstance {
       this.playerDuelD2 = null;
       this.oppDuelD1 = null;
       this.oppDuelD2 = null;
+      this.isDuelRolling = false;
+      this.lastDice = { d1: 1, d2: 1, total: 2, isDouble: false };
+      this.updateDiceDisplay(this.lastDice);
       this.renderBoard();
       this.updateHUD();
       this.showDuelModal();
