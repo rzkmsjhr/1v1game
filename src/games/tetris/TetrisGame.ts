@@ -38,17 +38,20 @@ export class TetrisGame implements GameInstance {
       this.ai = new TetrisAI(session.aiDifficulty);
     }
 
-    // Initialize player engine
+    // 1. Render DOM structure first so canvases and stats elements exist
+    this.render();
+
+    // 2. Initialize player engine
     this.playerEngine = new TetrisEngine({
       onChange: () => this.handlePlayerChange(),
       onPieceLocked: () => sounds.playHardDrop(),
       onLinesCleared: (_lines, garbageSent, isTetris, combo) => {
         sounds.playLineClear(_lines);
         if (isTetris) {
-          this.playerRenderer.triggerShake(8);
-          this.playerRenderer.addFloatingText('TETRIS!', '#0084f7');
+          this.playerRenderer?.triggerShake(8);
+          this.playerRenderer?.addFloatingText('TETRIS!', '#0084f7');
         } else if (combo > 0) {
-          this.playerRenderer.addFloatingText(`COMBO x${combo + 1}`, '#eab308');
+          this.playerRenderer?.addFloatingText(`COMBO x${combo + 1}`, '#eab308');
         }
 
         if (garbageSent > 0) {
@@ -57,21 +60,21 @@ export class TetrisGame implements GameInstance {
       },
       onGarbageReceived: () => {
         sounds.playGarbageAlert();
-        this.playerRenderer.triggerShake(5);
+        this.playerRenderer?.triggerShake(5);
       },
       onGameOver: () => {
         this.handleGameOver(false);
       }
     });
 
-    // Initialize opponent engine
+    // 3. Initialize opponent engine
     this.opponentEngine = new TetrisEngine({
       onChange: () => {},
       onPieceLocked: () => {},
       onLinesCleared: (_lines, garbageSent, isTetris) => {
         if (isTetris) {
-          this.opponentRenderer.triggerShake(6);
-          this.opponentRenderer.addFloatingText('TETRIS!', '#ef4444');
+          this.opponentRenderer?.triggerShake(6);
+          this.opponentRenderer?.addFloatingText('TETRIS!', '#ef4444');
         }
         if (garbageSent > 0 && this.session.mode === 'ai') {
           this.playerEngine.addIncomingGarbage(garbageSent);
@@ -90,7 +93,9 @@ export class TetrisGame implements GameInstance {
       this.setupNetwork();
     }
 
-    this.render();
+    // 4. Initial UI sync and game loop
+    this.updateStatsUI();
+    this.renderPreviews();
     this.startLoop();
   }
 
@@ -171,6 +176,7 @@ export class TetrisGame implements GameInstance {
   }
 
   private handlePlayerChange() {
+    if (!this.playerEngine) return;
     this.updateStatsUI();
     this.renderPreviews();
 
@@ -437,6 +443,7 @@ export class TetrisGame implements GameInstance {
   }
 
   private updateStatsUI() {
+    if (!this.playerEngine) return;
     const pScore = document.getElementById('stat-player-score');
     const pLines = document.getElementById('stat-player-lines');
     const pGarbage = document.getElementById('stat-player-garbage');
@@ -446,11 +453,12 @@ export class TetrisGame implements GameInstance {
     if (pScore) pScore.textContent = this.playerEngine.score.toString();
     if (pLines) pLines.textContent = this.playerEngine.linesClearedTotal.toString();
     if (pGarbage) pGarbage.textContent = this.playerEngine.pendingGarbage.toString();
-    if (oScore) oScore.textContent = (this.session.mode === 'ai' ? this.opponentEngine.score : this.opponentScore).toString();
-    if (oGarbage) oGarbage.textContent = this.opponentEngine.pendingGarbage.toString();
+    if (oScore) oScore.textContent = (this.session.mode === 'ai' ? (this.opponentEngine?.score || 0) : this.opponentScore).toString();
+    if (oGarbage) oGarbage.textContent = (this.opponentEngine?.pendingGarbage || 0).toString();
   }
 
   private renderPreviews() {
+    if (!this.playerEngine) return;
     const holdCanvas = document.getElementById('canvas-hold') as HTMLCanvasElement;
     if (holdCanvas) {
       PiecePreview.drawMiniPiece(holdCanvas, this.playerEngine.holdPieceType, 16);

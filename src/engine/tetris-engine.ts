@@ -53,16 +53,16 @@ export class TetrisEngine {
   public events: EngineEvents = {};
 
   constructor(events: EngineEvents = {}) {
-    this.events = events;
     this.grid = this.createEmptyGrid();
-    this.reset();
+    this.reset(false);
+    this.events = events;
   }
 
   public createEmptyGrid(): (string | null)[][] {
     return Array.from({ length: TOTAL_ROWS }, () => Array(COLS).fill(null));
   }
 
-  public reset() {
+  public reset(notify: boolean = true) {
     this.grid = this.createEmptyGrid();
     this.bag = [];
     this.nextQueue = [];
@@ -83,8 +83,10 @@ export class TetrisEngine {
     while (this.nextQueue.length < 7) {
       this.fillQueue();
     }
-    this.spawnNextPiece();
-    this.events.onChange?.();
+    this.spawnNextPiece(notify);
+    if (notify) {
+      this.events.onChange?.();
+    }
   }
 
   private fillQueue() {
@@ -100,7 +102,7 @@ export class TetrisEngine {
     this.nextQueue.push(this.bag.pop()!);
   }
 
-  public spawnNextPiece(): boolean {
+  public spawnNextPiece(notify: boolean = true): boolean {
     if (this.nextQueue.length < 5) {
       this.fillQueue();
     }
@@ -128,7 +130,9 @@ export class TetrisEngine {
       return false;
     }
 
-    this.events.onChange?.();
+    if (notify) {
+      this.events.onChange?.();
+    }
     return true;
   }
 
