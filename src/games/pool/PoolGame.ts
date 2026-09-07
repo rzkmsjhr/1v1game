@@ -7,6 +7,65 @@ import { PoolEngine, GameVariant, PlayerId } from './engine/pool-engine';
 import { PoolRenderer } from './renderers/PoolRenderer';
 import { PoolAI } from './ai/pool-ai';
 
+function getPoolBallIconSVG(
+  variant: GameVariant,
+  group: 'solid' | 'stripe' | 'open' | null,
+  roleColor: string,
+  targetBallNum?: number,
+  clipId: string = 'clip-ball'
+): string {
+  if (variant === '9ball' && targetBallNum !== undefined && targetBallNum >= 1 && targetBallNum <= 9) {
+    const isStripe = targetBallNum === 9;
+    const color = BALL_DEFS[targetBallNum]?.color || '#eab308';
+    if (isStripe) {
+      return `<svg viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 drop-shadow" title="Target Ball #${targetBallNum}">
+        <defs><clipPath id="${clipId}"><circle cx="12" cy="12" r="10.5" /></clipPath></defs>
+        <circle cx="12" cy="12" r="10.5" fill="#f8fafc" />
+        <rect x="0" y="7" width="24" height="10" fill="${color}" clip-path="url(#${clipId})" />
+        <circle cx="12" cy="12" r="4.8" fill="#ffffff" />
+        <text x="12" y="12.5" font-size="6.5" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#0f172a">${targetBallNum}</text>
+        <ellipse cx="8.5" cy="7" rx="4" ry="2.2" fill="#ffffff" opacity="0.45" transform="rotate(-25 8.5 7)" />
+      </svg>`;
+    } else {
+      const textColor = targetBallNum === 8 ? '#ffffff' : '#0f172a';
+      return `<svg viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 drop-shadow" title="Target Ball #${targetBallNum}">
+        <circle cx="12" cy="12" r="10.5" fill="${color}" />
+        <circle cx="12" cy="12" r="4.8" fill="#ffffff" />
+        <text x="12" y="12.5" font-size="6.5" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" dominant-baseline="central" fill="${textColor}">${targetBallNum}</text>
+        <ellipse cx="8.5" cy="7" rx="4" ry="2.2" fill="#ffffff" opacity="0.45" transform="rotate(-25 8.5 7)" />
+      </svg>`;
+    }
+  }
+
+  if (group === 'solid') {
+    return `<svg viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 drop-shadow" title="Solid Ball">
+      <circle cx="12" cy="12" r="10.5" fill="${roleColor}" />
+      <circle cx="12" cy="12" r="4.8" fill="#ffffff" />
+      <circle cx="12" cy="12" r="2.6" fill="${roleColor}" />
+      <ellipse cx="8.5" cy="7" rx="4" ry="2.2" fill="#ffffff" opacity="0.45" transform="rotate(-25 8.5 7)" />
+    </svg>`;
+  } else if (group === 'stripe') {
+    return `<svg viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 drop-shadow" title="Striped Ball">
+      <defs><clipPath id="${clipId}"><circle cx="12" cy="12" r="10.5" /></clipPath></defs>
+      <circle cx="12" cy="12" r="10.5" fill="#f8fafc" />
+      <rect x="0" y="7" width="24" height="10" fill="${roleColor}" clip-path="url(#${clipId})" />
+      <circle cx="12" cy="12" r="4.8" fill="#ffffff" />
+      <rect x="9.2" y="10.8" width="5.6" height="2.4" rx="1.2" fill="${roleColor}" />
+      <ellipse cx="8.5" cy="7" rx="4" ry="2.2" fill="#ffffff" opacity="0.45" transform="rotate(-25 8.5 7)" />
+    </svg>`;
+  } else {
+    // Open table / lag: Split solid/stripe ball
+    return `<svg viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 drop-shadow opacity-85" title="Open Table">
+      <defs><clipPath id="${clipId}"><circle cx="12" cy="12" r="10.5" /></clipPath></defs>
+      <circle cx="12" cy="12" r="10.5" fill="#f8fafc" />
+      <path d="M 12,1.5 A 10.5,10.5 0 0,0 12,22.5 Z" fill="${roleColor}" />
+      <rect x="12" y="7" width="12" height="10" fill="${roleColor}" clip-path="url(#${clipId})" />
+      <circle cx="12" cy="12" r="4.2" fill="#ffffff" />
+      <ellipse cx="8.5" cy="7" rx="3.5" ry="1.8" fill="#ffffff" opacity="0.45" transform="rotate(-25 8.5 7)" />
+    </svg>`;
+  }
+}
+
 export class PoolGame implements GameInstance {
   private container: HTMLElement;
   private session: GameSession;
@@ -194,19 +253,18 @@ export class PoolGame implements GameInstance {
             <button id="btn-pool-exit" class="ps-btn-secondary px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center space-x-0.5 cursor-pointer active:scale-95" title="Exit to Game Hub">
               <span>← Exit</span>
             </button>
-            <span class="text-[11px] font-bold text-gray-400 font-mono tracking-wider uppercase">8-BALL POOL</span>
+            <span class="text-[11px] font-bold text-gray-400 font-mono tracking-wider uppercase">${this.engine.variant === '9ball' ? '9-BALL POOL' : '8-BALL POOL'}</span>
           </div>
 
           <!-- Row 2: Match Information & Players Score Strip -->
           <div class="w-full flex items-center justify-between px-2 pt-0.5 text-xs gap-1">
             <!-- Player Profile (YOU) -->
             <div class="flex items-center space-x-1 sm:space-x-1.5 min-w-[70px] sm:min-w-[110px]">
-              <div class="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-blue-500 shrink-0"></div>
+              <div id="icon-player-ball" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 flex items-center justify-center"></div>
               <div class="flex flex-col">
                 <span class="text-[10px] sm:text-xs font-bold text-blue-400 leading-tight">YOU</span>
                 <div class="flex items-center space-x-1">
                   <span id="badge-player-group" class="px-1.5 py-0.2 rounded bg-blue-600/20 text-blue-300 font-mono text-[10px] sm:text-xs font-extrabold">OPEN</span>
-                  <span id="text-player-balls-left" class="text-[9px] sm:text-xs text-gray-400 font-mono"></span>
                 </div>
               </div>
             </div>
@@ -222,11 +280,10 @@ export class PoolGame implements GameInstance {
               <div class="flex flex-col items-end">
                 <span class="text-[10px] sm:text-xs font-bold text-rose-400 leading-tight truncate max-w-[70px] sm:max-w-[130px]">${this.opponentName}</span>
                 <div class="flex items-center space-x-1">
-                  <span id="text-opponent-balls-left" class="text-[9px] sm:text-xs text-gray-400 font-mono"></span>
                   <span id="badge-opponent-group" class="px-1.5 py-0.2 rounded bg-rose-600/20 text-rose-300 font-mono text-[10px] sm:text-xs font-extrabold">OPEN</span>
                 </div>
               </div>
-              <div class="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-rose-500 shrink-0"></div>
+              <div id="icon-opponent-ball" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 flex items-center justify-center"></div>
             </div>
           </div>
         </div>
@@ -1211,8 +1268,72 @@ export class PoolGame implements GameInstance {
     const btnShootLabel = document.getElementById('btn-shoot-label');
     const badgePlayerGroup = document.getElementById('badge-player-group');
     const badgeOpponentGroup = document.getElementById('badge-opponent-group');
-    const textPlayerBallsLeft = document.getElementById('text-player-balls-left');
-    const textOpponentBallsLeft = document.getElementById('text-opponent-balls-left');
+    const iconPlayerBall = document.getElementById('icon-player-ball');
+    const iconOpponentBall = document.getElementById('icon-opponent-ball');
+
+    // Update Player & Opponent Group Badges and Ball Icons
+    if (this.engine.phase === 'LAGGING') {
+      if (badgePlayerGroup && badgePlayerGroup.textContent !== 'LAG') {
+        badgePlayerGroup.textContent = 'LAG';
+      }
+      if (badgeOpponentGroup && badgeOpponentGroup.textContent !== 'LAG') {
+        badgeOpponentGroup.textContent = 'LAG';
+      }
+      if (iconPlayerBall && iconPlayerBall.dataset.iconKey !== 'lag-p') {
+        iconPlayerBall.dataset.iconKey = 'lag-p';
+        iconPlayerBall.innerHTML = getPoolBallIconSVG(this.engine.variant, 'open', '#3b82f6', undefined, 'clip-lag-p');
+      }
+      if (iconOpponentBall && iconOpponentBall.dataset.iconKey !== 'lag-o') {
+        iconOpponentBall.dataset.iconKey = 'lag-o';
+        iconOpponentBall.innerHTML = getPoolBallIconSVG(this.engine.variant, 'open', '#f43f5e', undefined, 'clip-lag-o');
+      }
+    } else if (this.engine.variant === '8ball') {
+      const pGrp = this.engine.playerGroup;
+      const oGrp = this.engine.opponentGroup;
+
+      const pText = pGrp ? pGrp.toUpperCase() : 'OPEN';
+      const oText = oGrp ? oGrp.toUpperCase() : 'OPEN';
+
+      if (badgePlayerGroup && badgePlayerGroup.textContent !== pText) {
+        badgePlayerGroup.textContent = pText;
+      }
+      if (badgeOpponentGroup && badgeOpponentGroup.textContent !== oText) {
+        badgeOpponentGroup.textContent = oText;
+      }
+
+      const pKey = `8ball-${pGrp || 'open'}`;
+      if (iconPlayerBall && iconPlayerBall.dataset.iconKey !== pKey) {
+        iconPlayerBall.dataset.iconKey = pKey;
+        iconPlayerBall.innerHTML = getPoolBallIconSVG('8ball', pGrp || 'open', '#3b82f6', undefined, 'clip-p');
+      }
+
+      const oKey = `8ball-${oGrp || 'open'}`;
+      if (iconOpponentBall && iconOpponentBall.dataset.iconKey !== oKey) {
+        iconOpponentBall.dataset.iconKey = oKey;
+        iconOpponentBall.innerHTML = getPoolBallIconSVG('8ball', oGrp || 'open', '#f43f5e', undefined, 'clip-o');
+      }
+    } else {
+      // 9-Ball: Target is the lowest numbered ball on the table
+      const lowest = this.engine.getLowestBallOnTable();
+      const targetText = `BALL #${lowest}`;
+
+      if (badgePlayerGroup && badgePlayerGroup.textContent !== targetText) {
+        badgePlayerGroup.textContent = targetText;
+      }
+      if (badgeOpponentGroup && badgeOpponentGroup.textContent !== targetText) {
+        badgeOpponentGroup.textContent = targetText;
+      }
+
+      const ballKey = `9ball-${lowest}`;
+      if (iconPlayerBall && iconPlayerBall.dataset.iconKey !== ballKey) {
+        iconPlayerBall.dataset.iconKey = ballKey;
+        iconPlayerBall.innerHTML = getPoolBallIconSVG('9ball', null, '#3b82f6', lowest, 'clip-9-p');
+      }
+      if (iconOpponentBall && iconOpponentBall.dataset.iconKey !== ballKey) {
+        iconOpponentBall.dataset.iconKey = ballKey;
+        iconOpponentBall.innerHTML = getPoolBallIconSVG('9ball', null, '#f43f5e', lowest, 'clip-9-o');
+      }
+    }
 
     if (this.engine.phase === 'LAGGING') {
       const canShootLag = !this.engine.playerLagShotDone;
@@ -1229,10 +1350,6 @@ export class PoolGame implements GameInstance {
           : 'Waiting for balls to settle...';
       }
       if (btnShootLabel) btnShootLabel.textContent = canShootLag ? 'SHOOT LAG' : 'SETTLING...';
-      if (badgePlayerGroup) badgePlayerGroup.textContent = 'LAG';
-      if (badgeOpponentGroup) badgeOpponentGroup.textContent = 'LAG';
-      if (textPlayerBallsLeft) textPlayerBallsLeft.textContent = '';
-      if (textOpponentBallsLeft) textOpponentBallsLeft.textContent = '';
       this.updateActionButtonState(canShootLag);
       return;
     }
@@ -1295,26 +1412,6 @@ export class PoolGame implements GameInstance {
 
       if (this.engine.variant === '8ball') {
         const pGrp = this.engine.playerGroup;
-        const oGrp = this.engine.opponentGroup;
-
-        if (pGrp) {
-          const pRem = this.engine.getRemainingGroupBalls(pGrp).length;
-          if (badgePlayerGroup) badgePlayerGroup.textContent = pGrp.toUpperCase();
-          if (textPlayerBallsLeft) textPlayerBallsLeft.textContent = `(${pRem} left)`;
-        } else {
-          if (badgePlayerGroup) badgePlayerGroup.textContent = 'OPEN';
-          if (textPlayerBallsLeft) textPlayerBallsLeft.textContent = '';
-        }
-
-        if (oGrp) {
-          const oRem = this.engine.getRemainingGroupBalls(oGrp).length;
-          if (badgeOpponentGroup) badgeOpponentGroup.textContent = oGrp.toUpperCase();
-          if (textOpponentBallsLeft) textOpponentBallsLeft.textContent = `(${oRem} left)`;
-        } else {
-          if (badgeOpponentGroup) badgeOpponentGroup.textContent = 'OPEN';
-          if (textOpponentBallsLeft) textOpponentBallsLeft.textContent = '';
-        }
-
         if (hintText) {
           if (this.engine.isBreakShot) {
             hintText.textContent = isMyTurn
@@ -1324,7 +1421,7 @@ export class PoolGame implements GameInstance {
             if (!pGrp) hintText.textContent = 'Open table: Sink any ball to claim group';
             else {
               const rem = this.engine.getRemainingGroupBalls(pGrp).length;
-              hintText.textContent = rem > 0 ? `Sink remaining ${pGrp}s (${rem} left)` : 'Sink the 8-Ball to WIN!';
+              hintText.textContent = rem > 0 ? `Sink your ${pGrp} balls` : 'Sink the 8-Ball to WIN!';
             }
           } else {
             hintText.textContent = `${this.opponentName} is taking shot...`;
@@ -1333,17 +1430,16 @@ export class PoolGame implements GameInstance {
       } else {
         // 9-Ball
         const lowest = this.engine.getLowestBallOnTable();
-        const def = BALL_DEFS[lowest];
-
-        if (badgePlayerGroup) badgePlayerGroup.textContent = 'TARGET';
-        if (textPlayerBallsLeft) textPlayerBallsLeft.textContent = `#${lowest} ${def ? def.name : ''}`;
-        if (badgeOpponentGroup) badgeOpponentGroup.textContent = 'TARGET';
-        if (textOpponentBallsLeft) textOpponentBallsLeft.textContent = `#${lowest}`;
-
         if (hintText) {
-          hintText.textContent = isMyTurn
-            ? `Must strike #${lowest} first!`
-            : `${this.opponentName} is aiming...`;
+          if (this.engine.isBreakShot) {
+            hintText.textContent = isMyTurn
+              ? 'Aim & strike to break rack!'
+              : `${this.opponentName} is breaking!`;
+          } else {
+            hintText.textContent = isMyTurn
+              ? `Must strike #${lowest} first!`
+              : `${this.opponentName} is aiming...`;
+          }
         }
       }
     }
