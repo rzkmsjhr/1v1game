@@ -116,10 +116,8 @@ class ConsoleDashboard {
       <header class="w-full max-w-6xl px-4 sm:px-8 py-5 flex items-center justify-between border-b ${isDark ? 'border-gray-800/80' : 'border-gray-200'}">
         <div class="flex items-center space-x-3">
           <!-- Console Symbol -->
-          <div class="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-500/30">
-            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M7 6h10a5 5 0 015 5v2a5 5 0 01-5 5H7a5 5 0 01-5-5v-2a5 5 0 015-5zm1 6a1 1 0 100-2 1 1 0 000 2zm8 0a1 1 0 100-2 1 1 0 000 2z"/>
-            </svg>
+          <div class="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-lg shadow-md shadow-blue-500/30 select-none">
+            <span>🎮</span>
           </div>
           <div>
             <h1 class="text-base sm:text-lg font-bold tracking-tight">1V1 BATTLE HUB</h1>
