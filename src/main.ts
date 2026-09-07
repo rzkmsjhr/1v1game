@@ -123,7 +123,7 @@ class ConsoleDashboard {
           </div>
           <div>
             <h1 class="text-base sm:text-lg font-bold tracking-tight">1V1 BATTLE HUB</h1>
-            <p class="text-[11px] text-gray-500 font-medium">Cloudflare Free Tier • P2P Console</p>
+            <p class="text-[11px] text-gray-500 font-medium">Instant 1v1 Multiplayer Games</p>
           </div>
         </div>
 
@@ -243,8 +243,8 @@ class ConsoleDashboard {
 
       <!-- Bottom Platform Footer -->
       <footer class="w-full max-w-6xl px-4 sm:px-8 py-4 border-t ${isDark ? 'border-gray-800/80' : 'border-gray-200'} flex items-center justify-between text-xs text-gray-500">
-        <div>1v1 Battle Platform • Standard WebRTC P2P</div>
-        <div>No Server Costs • Cloudflare Free Tier</div>
+        <div>1v1 Battle Platform • Instant Multiplayer</div>
+        <div>Play Online with Friends or Challenge AI</div>
       </footer>
 
       <!-- Launch Game Modal (Hidden by default) -->
@@ -277,7 +277,7 @@ class ConsoleDashboard {
 
             <!-- 1v1 Online Multiplayer -->
             <div class="p-4 rounded-2xl ${isDark ? 'bg-[#0f121d]' : 'bg-gray-50'} border ${isDark ? 'border-gray-800' : 'border-gray-200'}">
-              <div class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">1v1 Online (P2P WebRTC)</div>
+              <div class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">1v1 Online Multiplayer</div>
               
               <button id="btn-host-online" class="ps-btn-secondary w-full py-2.5 rounded-xl text-xs font-semibold mb-3">
                 Host New Match (Get Code)
