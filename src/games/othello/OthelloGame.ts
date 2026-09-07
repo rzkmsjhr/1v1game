@@ -418,50 +418,63 @@ export class OthelloGame implements GameInstance {
         ${this.gamePhase === 'ai_setup' ? `
           <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
             <div class="ps-card rounded-3xl p-6 sm:p-8 max-w-sm w-full text-center shadow-2xl border ${isDark ? 'border-gray-800' : 'border-gray-200'}">
-              <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold uppercase tracking-wider mb-4">
-                <span>VS AI Match Setup</span>
-              </div>
-              <h3 class="text-2xl font-extrabold mb-1">Choose Your Piece</h3>
-              <p class="text-xs text-gray-400 mb-6">Black always moves first • White moves second</p>
-
-              <!-- Animated Disc Preview -->
-              <div class="flex justify-center mb-6">
-                <div id="ai-disc-preview" class="w-20 h-20 sm:w-24 sm:h-24 rounded-full shadow-2xl transition-all duration-200 flex items-center justify-center border-2 border-emerald-500/30 bg-gradient-to-br from-gray-800 to-black">
-                  <div class="w-8 h-8 rounded-full bg-gray-700/50"></div>
+              ${this.session.aiDifficulty === 'extreme' ? `
+                <!-- Boss Match: Keep Random -->
+                <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-400 text-xs font-bold uppercase tracking-wider mb-4">
+                  <span>Boss Match 🔥</span>
                 </div>
-              </div>
+                <h3 class="text-2xl font-extrabold mb-1">Random Piece</h3>
+                <p class="text-xs text-gray-400 mb-6">Against the Boss, pieces are assigned at random!</p>
 
-              <div class="space-y-3">
-                <!-- Randomize Button -->
-                <button id="btn-othello-randomize" class="ps-btn-primary w-full py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center space-x-2 shadow-lg shadow-emerald-500/25 hover:scale-[1.02] transition-transform">
-                  <span>🎲</span>
-                  <span id="btn-randomize-label">Randomize Piece</span>
-                </button>
+                <!-- Animated Disc Preview -->
+                <div class="flex justify-center mb-6">
+                  <div id="ai-disc-preview" class="w-20 h-20 sm:w-24 sm:h-24 rounded-full shadow-2xl transition-all duration-200 flex items-center justify-center border-2 border-rose-500/40 bg-gradient-to-br from-gray-800 to-black">
+                    <div class="w-8 h-8 rounded-full bg-gray-700/50"></div>
+                  </div>
+                </div>
 
-                <div class="grid grid-cols-2 gap-3 pt-1">
+                <div class="space-y-3">
+                  <button id="btn-othello-randomize" class="ps-btn-primary w-full py-3.5 rounded-2xl text-sm font-bold flex items-center justify-center space-x-2 shadow-lg shadow-rose-500/25 hover:scale-[1.02] transition-transform bg-gradient-to-r from-rose-600 to-red-600">
+                    <span>🎲</span>
+                    <span id="btn-randomize-label">Spin for Piece</span>
+                  </button>
+
+                  <button id="btn-othello-cancel-setup" class="w-full py-2 text-xs font-semibold text-gray-500 hover:text-gray-400 pt-1">
+                    ← Exit to Hub
+                  </button>
+                </div>
+              ` : `
+                <!-- Easy, Medium, Hard: Choose Freely -->
+                <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold uppercase tracking-wider mb-4">
+                  <span>Match Setup (${this.session.aiDifficulty?.toUpperCase()})</span>
+                </div>
+                <h3 class="text-2xl font-extrabold mb-1">Choose Your Piece</h3>
+                <p class="text-xs text-gray-400 mb-6">Select whether you want to play as Black or White</p>
+
+                <div class="grid grid-cols-2 gap-3 mb-5">
                   <!-- Choose Black -->
-                  <button id="btn-choose-black" class="ps-btn-secondary p-3 rounded-2xl flex flex-col items-center justify-center border hover:border-emerald-500/60 transition-all">
-                    <div class="w-7 h-7 rounded-full bg-black border border-gray-600 shadow mb-1.5 flex items-center justify-center">
-                      <div class="w-2.5 h-2.5 rounded-full bg-gray-700/60"></div>
+                  <button id="btn-choose-black" class="ps-btn-secondary p-4 rounded-2xl flex flex-col items-center justify-center border-2 border-transparent hover:border-emerald-500/60 shadow-lg hover:scale-[1.02] transition-all group">
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-gray-800 to-black border-2 border-gray-600 shadow-md mb-2 flex items-center justify-center group-hover:ring-2 group-hover:ring-emerald-400 transition-all">
+                      <div class="w-3.5 h-3.5 rounded-full bg-gray-700/60"></div>
                     </div>
-                    <span class="text-xs font-bold">Play as Black</span>
-                    <span class="text-[10px] text-emerald-400 font-semibold">1st Move</span>
+                    <span class="text-xs font-bold mb-0.5">Black Piece</span>
+                    <span class="text-[10px] text-emerald-400 font-semibold uppercase tracking-wider">Moves 1st</span>
                   </button>
 
                   <!-- Choose White -->
-                  <button id="btn-choose-white" class="ps-btn-secondary p-3 rounded-2xl flex flex-col items-center justify-center border hover:border-emerald-500/60 transition-all">
-                    <div class="w-7 h-7 rounded-full bg-white border border-gray-300 shadow mb-1.5 flex items-center justify-center">
-                      <div class="w-2.5 h-2.5 rounded-full bg-gray-300/60"></div>
+                  <button id="btn-choose-white" class="ps-btn-secondary p-4 rounded-2xl flex flex-col items-center justify-center border-2 border-transparent hover:border-emerald-500/60 shadow-lg hover:scale-[1.02] transition-all group">
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-white to-gray-200 border-2 border-gray-300 shadow-md mb-2 flex items-center justify-center group-hover:ring-2 group-hover:ring-emerald-400 transition-all">
+                      <div class="w-3.5 h-3.5 rounded-full bg-gray-300/60"></div>
                     </div>
-                    <span class="text-xs font-bold">Play as White</span>
-                    <span class="text-[10px] text-gray-400 font-semibold">2nd Move</span>
+                    <span class="text-xs font-bold mb-0.5">White Piece</span>
+                    <span class="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Moves 2nd</span>
                   </button>
                 </div>
 
                 <button id="btn-othello-cancel-setup" class="w-full py-2 text-xs font-semibold text-gray-500 hover:text-gray-400 pt-1">
                   ← Exit to Hub
                 </button>
-              </div>
+              `}
             </div>
           </div>
         ` : ''}
