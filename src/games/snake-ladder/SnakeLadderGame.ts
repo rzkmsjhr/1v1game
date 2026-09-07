@@ -7,36 +7,131 @@ import { SnakeLadderRenderer } from './renderers/SnakeLadderRenderer';
 import { SnakeLadderAI } from './ai/snake-ladder-ai';
 import { DiceRoll, PlayerId } from './snake-ladder-types';
 
+interface PipDef {
+  x: number;
+  y: number;
+  r: number;
+  color: 'red' | 'blue';
+}
+
+function getPips(value: number): PipDef[] {
+  switch (value) {
+    case 1:
+      return [{ x: 30, y: 30, r: 8.8, color: 'red' }];
+    case 2:
+      return [
+        { x: 43, y: 17, r: 4.8, color: 'blue' },
+        { x: 17, y: 43, r: 4.8, color: 'blue' }
+      ];
+    case 3:
+      return [
+        { x: 43, y: 17, r: 4.8, color: 'blue' },
+        { x: 30, y: 30, r: 4.8, color: 'blue' },
+        { x: 17, y: 43, r: 4.8, color: 'blue' }
+      ];
+    case 4:
+      return [
+        { x: 17, y: 17, r: 4.8, color: 'red' },
+        { x: 43, y: 17, r: 4.8, color: 'red' },
+        { x: 17, y: 43, r: 4.8, color: 'red' },
+        { x: 43, y: 43, r: 4.8, color: 'red' }
+      ];
+    case 5:
+      return [
+        { x: 17, y: 17, r: 4.8, color: 'blue' },
+        { x: 43, y: 17, r: 4.8, color: 'blue' },
+        { x: 30, y: 30, r: 4.8, color: 'blue' },
+        { x: 17, y: 43, r: 4.8, color: 'blue' },
+        { x: 43, y: 43, r: 4.8, color: 'blue' }
+      ];
+    case 6:
+      return [
+        { x: 17, y: 16, r: 4.6, color: 'blue' },
+        { x: 17, y: 30, r: 4.6, color: 'blue' },
+        { x: 17, y: 44, r: 4.6, color: 'blue' },
+        { x: 43, y: 16, r: 4.6, color: 'blue' },
+        { x: 43, y: 30, r: 4.6, color: 'blue' },
+        { x: 43, y: 44, r: 4.6, color: 'blue' }
+      ];
+    default:
+      return [];
+  }
+}
+
 function renderDiceFace(value: number | null, isDark: boolean): string {
+  // Authentic Chinese / Asian Traditional Dice Style
+  // White ivory body, Big Red 1, Red 4, Blue 2, 3, 5, 6 with recessed depth and bevel
   if (value === null) {
     return `
-      <div class="w-12 h-12 sm:w-14 sm:h-14 rounded-xl ${isDark ? 'bg-gray-800/90 border-gray-700' : 'bg-white border-gray-300'} border-2 flex items-center justify-center shadow-inner">
-        <span class="text-xl font-extrabold text-gray-400 animate-pulse">?</span>
-      </div>
+      <svg viewBox="0 0 60 60" class="w-12 h-12 sm:w-14 sm:h-14 drop-shadow-md transition-transform duration-200" style="display:block;">
+        <defs>
+          <linearGradient id="die-base-null" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ffffff" />
+            <stop offset="50%" stop-color="#f8fafc" />
+            <stop offset="100%" stop-color="#cbd5e1" />
+          </linearGradient>
+        </defs>
+        <rect x="2.5" y="2.5" width="55" height="55" rx="13" fill="url(#die-base-null)" stroke="${isDark ? '#475569' : '#cbd5e1'}" stroke-width="2" />
+        <path d="M 6 15 Q 30 8 54 15 Q 48 23 30 21 Q 12 23 6 15 Z" fill="#ffffff" opacity="0.65" />
+        <text x="30" y="38" font-size="24" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" fill="${isDark ? '#64748b' : '#94a3b8'}">?</text>
+      </svg>
     `;
   }
 
-  const pips: Record<number, number[]> = {
-    1: [4],
-    2: [2, 6],
-    3: [2, 4, 6],
-    4: [0, 2, 6, 8],
-    5: [0, 2, 4, 6, 8],
-    6: [0, 2, 3, 5, 6, 8]
-  };
-
-  const activePips = pips[value] || [];
+  const pips = getPips(value);
+  const gradId = `die-base-${value}-${isDark ? 'dark' : 'light'}`;
 
   return `
-    <div class="w-12 h-12 sm:w-14 sm:h-14 rounded-xl ${isDark ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-amber-500/40' : 'bg-gradient-to-br from-white to-gray-100 border-amber-600/40'} border-2 p-1.5 sm:p-2 shadow-lg grid grid-cols-3 grid-rows-3 gap-0.5 transform transition-transform duration-200">
-      ${Array.from({ length: 9 }).map((_, i) => `
-        <div class="flex items-center justify-center">
-          ${activePips.includes(i) ? `
-            <div class="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full ${isDark ? 'bg-amber-400 shadow-amber-400/50' : 'bg-amber-600 shadow-amber-600/30'} shadow"></div>
-          ` : ''}
-        </div>
+    <svg viewBox="0 0 60 60" class="w-12 h-12 sm:w-14 sm:h-14 drop-shadow-md transition-transform duration-200" style="display:block;">
+      <defs>
+        <!-- Die Body Ivory Gradient -->
+        <linearGradient id="${gradId}" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#ffffff" />
+          <stop offset="45%" stop-color="#f8fafc" />
+          <stop offset="85%" stop-color="#e2e8f0" />
+          <stop offset="100%" stop-color="#cbd5e1" />
+        </linearGradient>
+
+        <!-- Red Pip Radial Depth (Recessed concave carved indentation) -->
+        <radialGradient id="pip-red" cx="35%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#f87171" />
+          <stop offset="45%" stop-color="#dc2626" />
+          <stop offset="85%" stop-color="#991b1b" />
+          <stop offset="100%" stop-color="#7f1d1d" />
+        </radialGradient>
+
+        <!-- Blue Pip Radial Depth (Recessed concave carved indentation) -->
+        <radialGradient id="pip-blue" cx="35%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#60a5fa" />
+          <stop offset="45%" stop-color="#2563eb" />
+          <stop offset="85%" stop-color="#1e40af" />
+          <stop offset="100%" stop-color="#1e3a8a" />
+        </radialGradient>
+      </defs>
+
+      <!-- Die Base Rect -->
+      <rect x="2.5" y="2.5" width="55" height="55" rx="13" 
+            fill="url(#${gradId})" 
+            stroke="${isDark ? '#64748b' : '#cbd5e1'}" 
+            stroke-width="1.8" />
+
+      <!-- Specular Bevel Highlight (Curved light reflection on top) -->
+      <path d="M 6 15 Q 30 8 54 15 Q 48 23 30 21 Q 12 23 6 15 Z" fill="#ffffff" opacity="0.65" />
+
+      <!-- Pips (Dots) -->
+      ${pips.map(p => `
+        <g>
+          <!-- Subtle concave depth shadow -->
+          <circle cx="${p.x}" cy="${p.y + 0.6}" r="${p.r}" fill="rgba(0,0,0,0.22)" />
+          <!-- Carved colored pip -->
+          <circle cx="${p.x}" cy="${p.y}" r="${p.r}" 
+                  fill="${p.color === 'red' ? 'url(#pip-red)' : 'url(#pip-blue)'}" 
+                  stroke="rgba(0,0,0,0.15)" stroke-width="0.75" />
+          <!-- Inner specular reflection dot -->
+          <circle cx="${p.x - p.r * 0.3}" cy="${p.y - p.r * 0.3}" r="${p.r * 0.28}" fill="#ffffff" opacity="0.45" />
+        </g>
       `).join('')}
-    </div>
+    </svg>
   `;
 }
 
@@ -60,6 +155,7 @@ export class SnakeLadderGame implements GameInstance {
   private oppDuelD1: number | null = null;
   private oppDuelD2: number | null = null;
   private isDuelRolling: boolean = false;
+  private lastDice: DiceRoll = { d1: 1, d2: 1, total: 2, isDouble: false };
 
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
@@ -110,6 +206,8 @@ export class SnakeLadderGame implements GameInstance {
       }
     }
     this.renderBoard();
+    this.updateDiceDisplay(this.lastDice);
+    this.updateHUD();
   }
 
   // -------------------------------------------------------------
@@ -181,16 +279,17 @@ export class SnakeLadderGame implements GameInstance {
     const isDark = this.currentTheme === 'dark';
 
     this.container.innerHTML = `
-      <div id="sl-outer-wrapper" class="w-full min-h-screen flex flex-col items-center justify-between p-2 sm:p-4 select-none ${isDark ? 'bg-gray-950 text-white' : 'bg-gray-50 text-gray-900'}">
+      <div id="sl-outer-wrapper" class="w-full h-screen max-h-screen overflow-hidden flex flex-col items-center justify-between p-1.5 sm:p-2.5 lg:p-3 select-none ${isDark ? 'bg-gray-950 text-white' : 'bg-gray-50 text-gray-900'}">
         
         <!-- Top Information & Score Strip -->
-        <div class="w-full max-w-xl flex flex-col shrink-0 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'} pb-2 gap-1.5">
+        <div class="w-full max-w-5xl flex flex-col shrink-0 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'} pb-1.5 gap-1">
           <!-- Row 1: Exit & Title -->
           <div class="w-full flex items-center justify-between px-1 text-xs">
             <button id="btn-sl-exit" class="ps-btn-secondary px-3 py-1 rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer active:scale-95" title="Exit to Game Hub">
               <span>← Exit</span>
             </button>
             <span class="text-[11px] font-bold text-gray-400 font-mono tracking-wider uppercase">SNAKES & LADDERS • 100 TILES</span>
+            <span class="text-[10px] font-mono text-gray-400 hidden sm:inline">${this.session.mode === 'ai' ? 'VS AI' : '1V1 ONLINE'}</span>
           </div>
 
           <!-- Row 2: Players Status & Turn Center Banner -->
@@ -225,33 +324,45 @@ export class SnakeLadderGame implements GameInstance {
           </div>
         </div>
 
-        <!-- 10x10 Board Area -->
-        <div class="w-full flex-1 flex items-center justify-center p-1 sm:p-2 my-auto">
-          <div id="sl-board-viewport" class="relative w-full max-w-[min(92vw,560px)] aspect-square rounded-2xl shadow-2xl overflow-hidden">
-            <!-- SVG Board mounts here -->
-          </div>
-        </div>
-
-        <!-- Bottom Controls & 2-Dice Area -->
-        <div class="w-full max-w-md flex flex-col items-center justify-center pb-2 pt-1 gap-2">
-          <!-- Two Dice Faces Display -->
-          <div class="flex items-center space-x-3">
-            <div id="dice-face-1" class="transform transition-transform duration-200">
-              ${renderDiceFace(1, isDark)}
-            </div>
-            <div id="dice-face-2" class="transform transition-transform duration-200">
-              ${renderDiceFace(1, isDark)}
-            </div>
-            <div class="flex flex-col items-start pl-1">
-              <span id="dice-total-text" class="text-lg sm:text-xl font-black font-mono text-amber-500 leading-none">TOTAL: 2</span>
-              <span id="dice-doubles-tag" class="text-[10px] sm:text-xs font-bold text-amber-400 opacity-0 transition-opacity">★ DOUBLES!</span>
+        <!-- Main Playing Area: Board + Controls -->
+        <div class="w-full flex-1 min-h-0 flex flex-col lg:flex-row items-center justify-center gap-2 sm:gap-3 lg:gap-8 px-1 sm:px-2 my-auto overflow-hidden">
+          
+          <!-- 10x10 Board Viewport -->
+          <div class="flex items-center justify-center h-full max-h-[min(560px,calc(100vh-175px))] lg:max-h-[min(560px,calc(100vh-90px))] aspect-square shrink-0">
+            <div id="sl-board-viewport" class="relative w-full h-full rounded-2xl shadow-2xl overflow-hidden">
+              <!-- SVG Board mounts here -->
             </div>
           </div>
 
-          <!-- Roll Dice Button -->
-          <button id="btn-roll-dice" class="w-full max-w-xs py-2.5 px-6 rounded-xl font-black tracking-wider uppercase text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 shadow-lg shadow-orange-500/30 active:scale-95 transition-all cursor-pointer">
-            🎲 ROLL DICE
-          </button>
+          <!-- Controls & 2-Dice Area (Side station on desktop, bottom bar on mobile) -->
+          <div class="w-full max-w-xs lg:w-72 flex flex-col items-center justify-center shrink-0 lg:p-5 lg:rounded-3xl ${isDark ? 'lg:bg-gray-900/90 lg:border lg:border-gray-800' : 'lg:bg-white/95 lg:border lg:border-gray-200'} lg:shadow-2xl gap-2 lg:gap-4 pb-1">
+            
+            <!-- Desktop Header in Dice Card -->
+            <div class="hidden lg:flex items-center justify-between w-full border-b ${isDark ? 'border-gray-800' : 'border-gray-200'} pb-2">
+              <span class="text-xs font-black tracking-wider uppercase text-amber-500">DICE CONTROLS</span>
+              <span class="text-[11px] font-bold text-gray-400 font-mono">GOAL: 100</span>
+            </div>
+
+            <!-- Two Dice Faces Display -->
+            <div class="flex items-center space-x-3">
+              <div id="dice-face-1" class="transform transition-transform duration-200">
+                ${renderDiceFace(1, isDark)}
+              </div>
+              <div id="dice-face-2" class="transform transition-transform duration-200">
+                ${renderDiceFace(1, isDark)}
+              </div>
+              <div class="flex flex-col items-start pl-1">
+                <span id="dice-total-text" class="text-lg sm:text-xl font-black font-mono text-amber-500 leading-none">TOTAL: 2</span>
+                <span id="dice-doubles-tag" class="text-[10px] sm:text-xs font-bold text-amber-400 opacity-0 transition-opacity">★ DOUBLES!</span>
+              </div>
+            </div>
+
+            <!-- Roll Dice Button -->
+            <button id="btn-roll-dice" class="w-full max-w-xs lg:max-w-none py-2.5 px-6 rounded-xl font-black tracking-wider uppercase text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 shadow-lg shadow-orange-500/30 active:scale-95 transition-all cursor-pointer">
+              🎲 ROLL DICE
+            </button>
+          </div>
+
         </div>
 
         <!-- Initial Roll Duel Modal Overlay -->
@@ -607,6 +718,7 @@ export class SnakeLadderGame implements GameInstance {
 
   private async animateAndExecuteMove(playerId: PlayerId, dice: DiceRoll) {
     this.isProcessingMove = true;
+    this.lastDice = dice;
     this.updateDiceDisplay(dice);
 
     const result = this.engine.executeMove(playerId, dice);

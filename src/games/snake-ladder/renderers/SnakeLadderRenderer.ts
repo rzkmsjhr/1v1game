@@ -20,11 +20,17 @@ export class SnakeLadderRenderer {
         <filter id="sl-drop-shadow" x="-10%" y="-10%" width="130%" height="130%">
           <feDropShadow dx="2" dy="4" stdDeviation="4" flood-opacity="0.35" />
         </filter>
-        <filter id="token-glow-player" x="-30%" y="-30%" width="160%" height="160%">
-          <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#3b82f6" flood-opacity="0.8" />
+        <filter id="token-glow-player" x="-60%" y="-60%" width="220%" height="220%">
+          <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#3b82f6" flood-opacity="0.85">
+            <animate attributeName="stdDeviation" values="6;13;6" dur="2.4s" repeatCount="indefinite" />
+            <animate attributeName="flood-opacity" values="0.75;1;0.75" dur="2.4s" repeatCount="indefinite" />
+          </feDropShadow>
         </filter>
-        <filter id="token-glow-opp" x="-30%" y="-30%" width="160%" height="160%">
-          <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#f43f5e" flood-opacity="0.8" />
+        <filter id="token-glow-opp" x="-60%" y="-60%" width="220%" height="220%">
+          <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#f43f5e" flood-opacity="0.85">
+            <animate attributeName="stdDeviation" values="6;13;6" dur="2.4s" begin="0.4s" repeatCount="indefinite" />
+            <animate attributeName="flood-opacity" values="0.75;1;0.75" dur="2.4s" begin="0.4s" repeatCount="indefinite" />
+          </feDropShadow>
         </filter>
 
         <!-- Player Token Sphere Gradient -->
@@ -326,30 +332,64 @@ export class SnakeLadderRenderer {
     const oGlow = currentTurn === 'opponent' ? 'filter="url(#token-glow-opp)"' : '';
 
     return `
-      <!-- Player Token (Blue) -->
-      <g id="token-player" class="transition-all duration-300 ease-out" ${pGlow}>
-        <!-- Drop Shadow -->
-        <ellipse cx="${px + 2}" cy="${py + 4}" rx="20" ry="12" fill="rgba(0,0,0,0.4)" />
-        <!-- Base 3D Sphere -->
-        <circle cx="${px}" cy="${py}" r="21" fill="url(#grad-token-player)" stroke="#ffffff" stroke-width="2.5" />
-        <!-- White Ring Badge -->
-        <circle cx="${px}" cy="${py}" r="12" fill="#ffffff" opacity="0.9" />
-        <text x="${px}" y="${py + 4.5}" font-size="12" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" fill="#1e3a8a">YOU</text>
-        <!-- Specular Highlight -->
-        <ellipse cx="${px - 6}" cy="${py - 7}" rx="6.5" ry="3.5" fill="#ffffff" opacity="0.5" transform="rotate(-30 ${px - 6} ${py - 7})" />
+      <!-- Player Marker (Blue) Breathing Aura Waves -->
+      <g id="token-player-aura" pointer-events="none">
+        <circle cx="${px}" cy="${py}" r="21" fill="none" stroke="#60a5fa" stroke-width="3" opacity="0.8">
+          <animate attributeName="r" values="21;35;21" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+          <animate attributeName="opacity" values="0.85;0.05;0.85" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+          <animate attributeName="stroke-width" values="3.5;0.5;3.5" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+        </circle>
+        <circle cx="${px}" cy="${py}" r="21" fill="rgba(59, 130, 246, 0.22)">
+          <animate attributeName="r" values="21;29;21" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+          <animate attributeName="opacity" values="0.75;0.15;0.75" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+        </circle>
       </g>
 
-      <!-- Opponent Token (Rose/Red) -->
+      <!-- Player Token (Blue) Body -->
+      <g id="token-player" class="transition-all duration-300 ease-out" ${pGlow}>
+        <!-- Breathing Scale Container -->
+        <g transform="translate(${px}, ${py})">
+          <animateTransform attributeName="transform" type="scale" values="1;1.08;1" dur="2.4s" repeatCount="indefinite" additive="sum" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+          <!-- Drop Shadow -->
+          <ellipse cx="2" cy="4" rx="20" ry="12" fill="rgba(0,0,0,0.4)" />
+          <!-- Base 3D Sphere -->
+          <circle cx="0" cy="0" r="21" fill="url(#grad-token-player)" stroke="#ffffff" stroke-width="2.5" />
+          <!-- White Ring Badge -->
+          <circle cx="0" cy="0" r="12" fill="#ffffff" opacity="0.9" />
+          <text x="0" y="4.5" font-size="12" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" fill="#1e3a8a">YOU</text>
+          <!-- Specular Highlight -->
+          <ellipse cx="-6" cy="-7" rx="6.5" ry="3.5" fill="#ffffff" opacity="0.55" transform="rotate(-30 -6 -7)" />
+        </g>
+      </g>
+
+      <!-- Opponent Marker (Rose/Red) Breathing Aura Waves -->
+      <g id="token-opp-aura" pointer-events="none">
+        <circle cx="${ox}" cy="${oy}" r="21" fill="none" stroke="#fb7185" stroke-width="3" opacity="0.8">
+          <animate attributeName="r" values="21;35;21" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+          <animate attributeName="opacity" values="0.85;0.05;0.85" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+          <animate attributeName="stroke-width" values="3.5;0.5;3.5" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+        </circle>
+        <circle cx="${ox}" cy="${oy}" r="21" fill="rgba(244, 63, 94, 0.22)">
+          <animate attributeName="r" values="21;29;21" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+          <animate attributeName="opacity" values="0.75;0.15;0.75" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+        </circle>
+      </g>
+
+      <!-- Opponent Token (Rose/Red) Body -->
       <g id="token-opponent" class="transition-all duration-300 ease-out" ${oGlow}>
-        <!-- Drop Shadow -->
-        <ellipse cx="${ox + 2}" cy="${oy + 4}" rx="20" ry="12" fill="rgba(0,0,0,0.4)" />
-        <!-- Base 3D Sphere -->
-        <circle cx="${ox}" cy="${oy}" r="21" fill="url(#grad-token-opp)" stroke="#ffffff" stroke-width="2.5" />
-        <!-- White Ring Badge -->
-        <circle cx="${ox}" cy="${oy}" r="12" fill="#ffffff" opacity="0.9" />
-        <text x="${ox}" y="${oy + 4.5}" font-size="12" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" fill="#881337">OPP</text>
-        <!-- Specular Highlight -->
-        <ellipse cx="${ox - 6}" cy="${oy - 7}" rx="6.5" ry="3.5" fill="#ffffff" opacity="0.5" transform="rotate(-30 ${ox - 6} ${oy - 7})" />
+        <!-- Breathing Scale Container -->
+        <g transform="translate(${ox}, ${oy})">
+          <animateTransform attributeName="transform" type="scale" values="1;1.08;1" dur="2.4s" begin="0.4s" repeatCount="indefinite" additive="sum" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+          <!-- Drop Shadow -->
+          <ellipse cx="2" cy="4" rx="20" ry="12" fill="rgba(0,0,0,0.4)" />
+          <!-- Base 3D Sphere -->
+          <circle cx="0" cy="0" r="21" fill="url(#grad-token-opp)" stroke="#ffffff" stroke-width="2.5" />
+          <!-- White Ring Badge -->
+          <circle cx="0" cy="0" r="12" fill="#ffffff" opacity="0.9" />
+          <text x="0" y="4.5" font-size="12" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" fill="#881337">OPP</text>
+          <!-- Specular Highlight -->
+          <ellipse cx="-6" cy="-7" rx="6.5" ry="3.5" fill="#ffffff" opacity="0.55" transform="rotate(-30 -6 -7)" />
+        </g>
       </g>
     `;
   }
