@@ -1,6 +1,6 @@
 import type { GameDefinition } from './types';
 import { TetrisGame } from './tetris/TetrisGame';
-import { Connect4Game } from './connect4/Connect4Game';
+import { OthelloGame } from './othello/OthelloGame';
 
 export const GAMES_REGISTRY: GameDefinition[] = [
   {
@@ -17,17 +17,17 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     create: (container, session) => new TetrisGame(container, session)
   },
   {
-    id: 'connect4',
-    title: 'Connect 4 Duel',
-    subtitle: 'Tactical Gravity Grid',
-    description: 'Drop tokens into the vertical grid. Outmaneuver your rival and align 4 tokens horizontally, vertically, or diagonally to win.',
-    genre: 'Turn-Based Strategy',
-    badge: 'Classic 1v1',
-    bannerGradient: 'from-rose-600 via-rose-700 to-orange-900',
-    accentColor: '#f43f5e',
-    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><circle cx="17" cy="17" r="3"/></svg>`,
+    id: 'othello',
+    title: 'Othello (Reversi)',
+    subtitle: 'Strategic Flank & Flip Duel',
+    description: 'Outflank and flip your opponent\'s discs across the 8x8 grid. Control the corners and dominate the board with positional strategy.',
+    genre: 'Classic Board Game',
+    badge: 'Tactical 1v1',
+    bannerGradient: 'from-emerald-700 via-teal-800 to-slate-950',
+    accentColor: '#10b981',
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg>`,
     supportsAI: true,
-    create: (container, session) => new Connect4Game(container, session)
+    create: (container, session) => new OthelloGame(container, session)
   },
   {
     id: 'pong',

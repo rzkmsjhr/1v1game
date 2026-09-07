@@ -3,7 +3,7 @@ import { SignalingClient } from './signaling';
 export type NetworkMessage =
   | { type: 'TETRIS_SYNC_BOARD'; grid: (string | null)[][]; score: number; pendingGarbage: number }
   | { type: 'TETRIS_GARBAGE'; lines: number }
-  | { type: 'C4_MOVE'; col: number; row: number; player: number }
+  | { type: 'OTHELLO_MOVE'; r: number; c: number; player: number }
   | { type: 'GAME_OVER'; didWin: boolean }
   | { type: 'REMATCH_REQUEST' }
   | { type: 'REMATCH_ACCEPT' }
