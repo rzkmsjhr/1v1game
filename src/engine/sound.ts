@@ -234,6 +234,30 @@ class SoundManager {
     osc.start();
     osc.stop(ctx.currentTime + (isFinal ? 0.3 : 0.15));
   }
+
+  public playDiceRoll() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    for (let i = 0; i < 6; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const clickTime = now + i * 0.05 + (Math.random() * 0.02);
+      const freq = 400 + Math.random() * 300;
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, clickTime);
+      osc.frequency.exponentialRampToValueAtTime(150, clickTime + 0.03);
+
+      gain.gain.setValueAtTime(0.12, clickTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, clickTime + 0.03);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(clickTime);
+      osc.stop(clickTime + 0.03);
+    }
+  }
 }
 
 export const sounds = new SoundManager();

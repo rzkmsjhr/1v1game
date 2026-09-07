@@ -4,6 +4,9 @@ export type NetworkMessage =
   | { type: 'TETRIS_SYNC_BOARD'; grid: (string | null)[][]; score: number; pendingGarbage: number }
   | { type: 'TETRIS_GARBAGE'; lines: number }
   | { type: 'OTHELLO_MOVE'; r: number; c: number; player: number }
+  | { type: 'OTHELLO_DICE_ROLL'; value: number }
+  | { type: 'OTHELLO_DICE_REROLL' }
+  | { type: 'OTHELLO_COLOR_CHOICE'; chosenColor: 1 | 2; chooserRole: 'host' | 'guest' }
   | { type: 'GAME_OVER'; didWin: boolean }
   | { type: 'PLAYER_LEAVE' }
   | { type: 'REMATCH_REQUEST' }
