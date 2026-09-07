@@ -19,18 +19,25 @@ function getPoolBallIconSVG(
     const color = BALL_DEFS[targetBallNum]?.color || '#eab308';
     if (isStripe) {
       return `<svg viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 drop-shadow" title="Target Ball #${targetBallNum}">
-        <defs><clipPath id="${clipId}"><circle cx="12" cy="12" r="10.5" /></clipPath></defs>
-        <circle cx="12" cy="12" r="10.5" fill="#f8fafc" />
+        <defs>
+          <clipPath id="${clipId}"><circle cx="12" cy="12" r="10.5" /></clipPath>
+          <radialGradient id="${clipId}-base" cx="35%" cy="35%" r="65%">
+            <stop offset="0%" stop-color="#ffffff" />
+            <stop offset="65%" stop-color="#f1f5f9" />
+            <stop offset="100%" stop-color="#cbd5e1" />
+          </radialGradient>
+        </defs>
+        <circle cx="12" cy="12" r="10.5" fill="url(#${clipId}-base)" stroke="rgba(0,0,0,0.28)" stroke-width="0.85" />
         <rect x="0" y="7" width="24" height="10" fill="${color}" clip-path="url(#${clipId})" />
-        <circle cx="12" cy="12" r="4.8" fill="#ffffff" />
+        <circle cx="12" cy="12" r="4.8" fill="#ffffff" stroke="rgba(0,0,0,0.15)" stroke-width="0.5" />
         <text x="12" y="12.5" font-size="6.5" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#0f172a">${targetBallNum}</text>
         <ellipse cx="8.5" cy="7" rx="4" ry="2.2" fill="#ffffff" opacity="0.45" transform="rotate(-25 8.5 7)" />
       </svg>`;
     } else {
       const textColor = targetBallNum === 8 ? '#ffffff' : '#0f172a';
       return `<svg viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 drop-shadow" title="Target Ball #${targetBallNum}">
-        <circle cx="12" cy="12" r="10.5" fill="${color}" />
-        <circle cx="12" cy="12" r="4.8" fill="#ffffff" />
+        <circle cx="12" cy="12" r="10.5" fill="${color}" stroke="rgba(0,0,0,0.22)" stroke-width="0.85" />
+        <circle cx="12" cy="12" r="4.8" fill="#ffffff" stroke="rgba(0,0,0,0.12)" stroke-width="0.5" />
         <text x="12" y="12.5" font-size="6.5" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" dominant-baseline="central" fill="${textColor}">${targetBallNum}</text>
         <ellipse cx="8.5" cy="7" rx="4" ry="2.2" fill="#ffffff" opacity="0.45" transform="rotate(-25 8.5 7)" />
       </svg>`;
@@ -39,28 +46,42 @@ function getPoolBallIconSVG(
 
   if (group === 'solid') {
     return `<svg viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 drop-shadow" title="Solid Ball">
-      <circle cx="12" cy="12" r="10.5" fill="${roleColor}" />
-      <circle cx="12" cy="12" r="4.8" fill="#ffffff" />
+      <circle cx="12" cy="12" r="10.5" fill="${roleColor}" stroke="rgba(0,0,0,0.22)" stroke-width="0.85" />
+      <circle cx="12" cy="12" r="4.8" fill="#ffffff" stroke="rgba(0,0,0,0.12)" stroke-width="0.5" />
       <circle cx="12" cy="12" r="2.6" fill="${roleColor}" />
       <ellipse cx="8.5" cy="7" rx="4" ry="2.2" fill="#ffffff" opacity="0.45" transform="rotate(-25 8.5 7)" />
     </svg>`;
   } else if (group === 'stripe') {
     return `<svg viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 drop-shadow" title="Striped Ball">
-      <defs><clipPath id="${clipId}"><circle cx="12" cy="12" r="10.5" /></clipPath></defs>
-      <circle cx="12" cy="12" r="10.5" fill="#f8fafc" />
+      <defs>
+        <clipPath id="${clipId}"><circle cx="12" cy="12" r="10.5" /></clipPath>
+        <radialGradient id="${clipId}-base" cx="35%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#ffffff" />
+          <stop offset="65%" stop-color="#f1f5f9" />
+          <stop offset="100%" stop-color="#cbd5e1" />
+        </radialGradient>
+      </defs>
+      <circle cx="12" cy="12" r="10.5" fill="url(#${clipId}-base)" stroke="rgba(0,0,0,0.28)" stroke-width="0.85" />
       <rect x="0" y="7" width="24" height="10" fill="${roleColor}" clip-path="url(#${clipId})" />
-      <circle cx="12" cy="12" r="4.8" fill="#ffffff" />
+      <circle cx="12" cy="12" r="4.8" fill="#ffffff" stroke="rgba(0,0,0,0.15)" stroke-width="0.5" />
       <rect x="9.2" y="10.8" width="5.6" height="2.4" rx="1.2" fill="${roleColor}" />
       <ellipse cx="8.5" cy="7" rx="4" ry="2.2" fill="#ffffff" opacity="0.45" transform="rotate(-25 8.5 7)" />
     </svg>`;
   } else {
     // Open table / lag: Split solid/stripe ball
-    return `<svg viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 drop-shadow opacity-85" title="Open Table">
-      <defs><clipPath id="${clipId}"><circle cx="12" cy="12" r="10.5" /></clipPath></defs>
-      <circle cx="12" cy="12" r="10.5" fill="#f8fafc" />
+    return `<svg viewBox="0 0 24 24" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 drop-shadow opacity-90" title="Open Table">
+      <defs>
+        <clipPath id="${clipId}"><circle cx="12" cy="12" r="10.5" /></clipPath>
+        <radialGradient id="${clipId}-base" cx="35%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#ffffff" />
+          <stop offset="65%" stop-color="#f1f5f9" />
+          <stop offset="100%" stop-color="#cbd5e1" />
+        </radialGradient>
+      </defs>
+      <circle cx="12" cy="12" r="10.5" fill="url(#${clipId}-base)" stroke="rgba(0,0,0,0.28)" stroke-width="0.85" />
       <path d="M 12,1.5 A 10.5,10.5 0 0,0 12,22.5 Z" fill="${roleColor}" />
       <rect x="12" y="7" width="12" height="10" fill="${roleColor}" clip-path="url(#${clipId})" />
-      <circle cx="12" cy="12" r="4.2" fill="#ffffff" />
+      <circle cx="12" cy="12" r="4.2" fill="#ffffff" stroke="rgba(0,0,0,0.12)" stroke-width="0.5" />
       <ellipse cx="8.5" cy="7" rx="3.5" ry="1.8" fill="#ffffff" opacity="0.45" transform="rotate(-25 8.5 7)" />
     </svg>`;
   }
@@ -150,6 +171,16 @@ export class PoolGame implements GameInstance {
 
   public setTheme(theme: AppTheme) {
     this.currentTheme = theme;
+    const wrapper = document.getElementById('pool-outer-wrapper');
+    if (wrapper) {
+      if (theme === 'dark') {
+        wrapper.classList.remove('bg-gray-50', 'text-gray-900');
+        wrapper.classList.add('bg-gray-950', 'text-white');
+      } else {
+        wrapper.classList.remove('bg-gray-950', 'text-white');
+        wrapper.classList.add('bg-gray-50', 'text-gray-900');
+      }
+    }
   }
 
   private checkMobileAndOrientation() {
@@ -259,31 +290,31 @@ export class PoolGame implements GameInstance {
           <!-- Row 2: Match Information & Players Score Strip -->
           <div class="w-full flex items-center justify-between px-2 pt-0.5 text-xs gap-1">
             <!-- Player Profile (YOU) -->
-            <div class="flex items-center space-x-1 sm:space-x-1.5 min-w-[70px] sm:min-w-[110px]">
-              <div id="icon-player-ball" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 flex items-center justify-center"></div>
+            <div class="flex items-center space-x-1.5 sm:space-x-2 min-w-[75px] sm:min-w-[110px]">
+              <div id="icon-player-ball" class="w-6 h-6 sm:w-7 sm:h-7 shrink-0 rounded-full bg-slate-200/90 dark:bg-slate-800/90 border border-slate-300/80 dark:border-slate-700/80 flex items-center justify-center shadow-xs"></div>
               <div class="flex flex-col">
-                <span class="text-[10px] sm:text-xs font-bold text-blue-400 leading-tight">YOU</span>
+                <span class="text-[10px] sm:text-xs font-bold text-blue-600 dark:text-blue-400 leading-tight">YOU</span>
                 <div class="flex items-center space-x-1">
-                  <span id="badge-player-group" class="px-1.5 py-0.2 rounded bg-blue-600/20 text-blue-300 font-mono text-[10px] sm:text-xs font-extrabold">OPEN</span>
+                  <span id="badge-player-group" class="px-1.5 py-0.2 rounded bg-blue-600/15 dark:bg-blue-600/20 text-blue-700 dark:text-blue-300 font-mono text-[10px] sm:text-xs font-extrabold">OPEN</span>
                 </div>
               </div>
             </div>
 
             <!-- Turn Banner (Center) -->
             <div id="pool-status-banner" class="flex-1 max-w-[170px] sm:max-w-[280px] md:max-w-[380px] flex flex-col items-center px-2 sm:px-4 py-0.5 rounded-xl bg-emerald-600/15 border border-emerald-500/30 text-center mx-auto transition-all">
-              <div id="pool-status-text" class="text-[11px] sm:text-xs md:text-sm font-black tracking-wide text-emerald-400 uppercase truncate w-full">YOUR TURN</div>
-              <div id="pool-hint-text" class="text-[9px] sm:text-[11px] md:text-xs font-medium text-gray-400 truncate w-full">Open table: Sink any ball</div>
+              <div id="pool-status-text" class="text-[11px] sm:text-xs md:text-sm font-black tracking-wide text-emerald-600 dark:text-emerald-400 uppercase truncate w-full">YOUR TURN</div>
+              <div id="pool-hint-text" class="text-[9px] sm:text-[11px] md:text-xs font-medium text-gray-500 dark:text-gray-400 truncate w-full">Open table: Sink any ball</div>
             </div>
 
             <!-- Opponent Profile -->
-            <div class="flex items-center justify-end space-x-1 sm:space-x-1.5 min-w-[70px] sm:min-w-[110px] text-right">
+            <div class="flex items-center justify-end space-x-1.5 sm:space-x-2 min-w-[75px] sm:min-w-[110px] text-right">
               <div class="flex flex-col items-end">
-                <span class="text-[10px] sm:text-xs font-bold text-rose-400 leading-tight truncate max-w-[70px] sm:max-w-[130px]">${this.opponentName}</span>
+                <span class="text-[10px] sm:text-xs font-bold text-rose-600 dark:text-rose-400 leading-tight truncate max-w-[70px] sm:max-w-[130px]">${this.opponentName}</span>
                 <div class="flex items-center space-x-1">
-                  <span id="badge-opponent-group" class="px-1.5 py-0.2 rounded bg-rose-600/20 text-rose-300 font-mono text-[10px] sm:text-xs font-extrabold">OPEN</span>
+                  <span id="badge-opponent-group" class="px-1.5 py-0.2 rounded bg-rose-600/15 dark:bg-rose-600/20 text-rose-700 dark:text-rose-300 font-mono text-[10px] sm:text-xs font-extrabold">OPEN</span>
                 </div>
               </div>
-              <div id="icon-opponent-ball" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 flex items-center justify-center"></div>
+              <div id="icon-opponent-ball" class="w-6 h-6 sm:w-7 sm:h-7 shrink-0 rounded-full bg-slate-200/90 dark:bg-slate-800/90 border border-slate-300/80 dark:border-slate-700/80 flex items-center justify-center shadow-xs"></div>
             </div>
           </div>
         </div>
@@ -1342,12 +1373,13 @@ export class PoolGame implements GameInstance {
       }
       if (statusText) {
         statusText.textContent = 'LAG FOR BREAK';
-        statusText.className = 'text-[11px] sm:text-xs font-black tracking-wide text-cyan-400 uppercase truncate w-full';
+        statusText.className = 'text-[11px] sm:text-xs font-black tracking-wide text-cyan-600 dark:text-cyan-400 uppercase truncate w-full';
       }
       if (hintText) {
         hintText.textContent = canShootLag
           ? 'Bounce ball off far cushion to head rail'
           : 'Waiting for balls to settle...';
+        hintText.className = 'text-[9px] sm:text-[11px] md:text-xs font-medium text-gray-500 dark:text-gray-400 truncate w-full';
       }
       if (btnShootLabel) btnShootLabel.textContent = canShootLag ? 'SHOOT LAG' : 'SETTLING...';
       this.updateActionButtonState(canShootLag);
@@ -1361,7 +1393,7 @@ export class PoolGame implements GameInstance {
       if (statusBanner) {
         statusBanner.className = isMyTurn
           ? 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-amber-600/15 border border-amber-500/30 text-center mx-auto'
-          : 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-gray-800/40 border border-gray-700/40 text-center mx-auto';
+          : 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-gray-200/60 dark:bg-gray-800/40 border border-gray-300/60 dark:border-gray-700/40 text-center mx-auto';
       }
       if (statusText) {
         if (isBreak) {
@@ -1370,8 +1402,8 @@ export class PoolGame implements GameInstance {
           statusText.textContent = isMyTurn ? 'BALL IN HAND (YOU)' : `BALL IN HAND (${this.opponentName.toUpperCase()})`;
         }
         statusText.className = isMyTurn
-          ? 'text-[11px] sm:text-xs font-black tracking-wide text-amber-400 uppercase truncate w-full'
-          : 'text-[11px] sm:text-xs font-black tracking-wide text-gray-400 uppercase truncate w-full';
+          ? 'text-[11px] sm:text-xs font-black tracking-wide text-amber-600 dark:text-amber-400 uppercase truncate w-full'
+          : 'text-[11px] sm:text-xs font-black tracking-wide text-gray-600 dark:text-gray-400 uppercase truncate w-full';
       }
       if (hintText) {
         if (isBreak) {
@@ -1383,6 +1415,7 @@ export class PoolGame implements GameInstance {
             ? 'Drag ball or tap table to place'
             : `${this.opponentName} is placing cue ball...`;
         }
+        hintText.className = 'text-[9px] sm:text-[11px] md:text-xs font-medium text-gray-500 dark:text-gray-400 truncate w-full';
       }
       if (btnShootLabel) {
         btnShootLabel.textContent = isMyTurn
@@ -1402,8 +1435,8 @@ export class PoolGame implements GameInstance {
       if (statusText) {
         statusText.textContent = isMyTurn ? 'YOUR TURN' : `${this.opponentName.toUpperCase()}'S TURN`;
         statusText.className = isMyTurn
-          ? 'text-[11px] sm:text-xs font-black tracking-wide text-emerald-400 uppercase truncate w-full'
-          : 'text-[11px] sm:text-xs font-black tracking-wide text-rose-400 uppercase truncate w-full';
+          ? 'text-[11px] sm:text-xs font-black tracking-wide text-emerald-600 dark:text-emerald-400 uppercase truncate w-full'
+          : 'text-[11px] sm:text-xs font-black tracking-wide text-rose-600 dark:text-rose-400 uppercase truncate w-full';
       }
       if (btnShootLabel) {
         btnShootLabel.textContent = isMyTurn ? 'STRIKE' : (this.session.mode === 'ai' ? 'AI AIMING...' : 'OPPONENT TURN');
