@@ -3,6 +3,32 @@ import type { GameDefinition, GameInstance, AIDifficulty, AppTheme } from './gam
 import { WebRTCPeer } from './network/webrtc-peer';
 import { sounds } from './engine/sound';
 
+// Fallback in-memory storage for Incognito / Private browsing modes
+const memoryStorage = new Map<string, string>();
+
+const safeStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem(key);
+      }
+    } catch {
+      // Ignored in Incognito / Restricted mode
+    }
+    return memoryStorage.get(key) || null;
+  },
+  setItem: (key: string, val: string): void => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(key, val);
+      }
+    } catch {
+      // Ignored in Incognito / Restricted mode
+    }
+    memoryStorage.set(key, val);
+  }
+};
+
 class ConsoleDashboard {
   private appContainer: HTMLElement;
   private currentTheme: AppTheme = 'dark';
@@ -15,18 +41,26 @@ class ConsoleDashboard {
   private currentAIDifficulty: AIDifficulty = 'medium';
 
   constructor() {
-    this.appContainer = document.getElementById('app')!;
+    const el = document.getElementById('app');
+    if (!el) throw new Error('Missing #app container in DOM');
+    this.appContainer = el;
+
     this.initTheme();
     this.checkUrlRoomParam();
     this.renderDashboard();
   }
 
   private initTheme() {
-    const saved = localStorage.getItem('hub_theme') as AppTheme | null;
+    const saved = safeStorage.getItem('hub_theme') as AppTheme | null;
     if (saved) {
       this.currentTheme = saved;
     } else {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      let prefersDark = true;
+      try {
+        prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      } catch {
+        prefersDark = true;
+      }
       this.currentTheme = prefersDark ? 'dark' : 'light';
     }
     this.applyTheme(this.currentTheme);
@@ -34,7 +68,7 @@ class ConsoleDashboard {
 
   private applyTheme(theme: AppTheme) {
     this.currentTheme = theme;
-    localStorage.setItem('hub_theme', theme);
+    safeStorage.setItem('hub_theme', theme);
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
       document.documentElement.classList.remove('light');
@@ -54,10 +88,14 @@ class ConsoleDashboard {
   }
 
   private checkUrlRoomParam() {
-    const params = new URLSearchParams(window.location.search);
-    const room = params.get('room');
-    if (room) {
-      this.roomCode = room.toUpperCase();
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const room = params.get('room');
+      if (room) {
+        this.roomCode = room.trim().toUpperCase();
+      }
+    } catch (e) {
+      console.warn('Could not parse room URL param:', e);
     }
   }
 
@@ -104,8 +142,31 @@ class ConsoleDashboard {
       </header>
 
       <!-- Main Showcase & Carousel Area -->
-      <main class="w-full max-w-6xl px-4 sm:px-8 flex-1 flex flex-col justify-center py-6 sm:py-10">
+      <main class="w-full max-w-6xl px-4 sm:px-8 flex-1 flex flex-col justify-center py-6 sm:py-8">
         
+        <!-- Match Invitation Banner if room code present in URL -->
+        ${this.roomCode ? `
+          <div class="mb-6 p-4 rounded-2xl ${isDark ? 'bg-blue-950/40 border-blue-500/40' : 'bg-blue-50 border-blue-200'} border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+            <div class="flex items-center space-x-3">
+              <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold">
+                🎮
+              </div>
+              <div>
+                <div class="text-xs font-bold text-blue-500 uppercase tracking-wider">Match Invitation Detected</div>
+                <div class="text-sm font-semibold">You were invited to 1v1 Room: <span class="font-mono text-blue-500 font-bold">${this.roomCode}</span></div>
+              </div>
+            </div>
+            <div class="flex items-center space-x-2">
+              <button id="btn-banner-join" class="ps-btn-primary px-5 py-2 rounded-xl text-xs font-semibold">
+                Join Match Now
+              </button>
+              <button id="btn-banner-dismiss" class="ps-btn-secondary px-3 py-2 rounded-xl text-xs font-semibold text-gray-500">
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ` : ''}
+
         <!-- Hero Showcase Card -->
         <div class="relative overflow-hidden rounded-3xl p-6 sm:p-10 mb-8 ps-card shadow-2xl bg-gradient-to-br ${currentGame.bannerGradient} text-white">
           <div class="relative z-10 max-w-xl">
@@ -263,6 +324,20 @@ class ConsoleDashboard {
       this.openLaunchModal();
     });
 
+    // Banner Join button (if roomCode present)
+    document.getElementById('btn-banner-join')?.addEventListener('click', () => {
+      if (this.roomCode) {
+        this.joinOnlineMatch(this.roomCode);
+      }
+    });
+
+    // Banner Dismiss
+    document.getElementById('btn-banner-dismiss')?.addEventListener('click', () => {
+      this.roomCode = null;
+      window.history.replaceState({}, '', window.location.pathname);
+      this.renderDashboard();
+    });
+
     // Modal Close
     document.getElementById('btn-modal-close')?.addEventListener('click', () => {
       document.getElementById('modal-launch')?.classList.add('hidden');
@@ -304,11 +379,6 @@ class ConsoleDashboard {
         alert('Please enter a valid room code');
       }
     });
-
-    // If URL contained room code, auto open modal
-    if (this.roomCode) {
-      this.openLaunchModal();
-    }
   }
 
   private openLaunchModal() {
@@ -453,7 +523,26 @@ class ConsoleDashboard {
   }
 }
 
-// Boot application on DOM ready
-window.addEventListener('DOMContentLoaded', () => {
-  new ConsoleDashboard();
-});
+// Bulletproof bootstrap function that works across regular & incognito browsers
+function bootstrap() {
+  try {
+    new ConsoleDashboard();
+  } catch (err) {
+    console.error('Fatal initialization error:', err);
+    const app = document.getElementById('app');
+    if (app) {
+      app.innerHTML = `
+        <div style="padding: 24px; color: #ef4444; font-family: monospace; text-align: center;">
+          <h2 style="font-size: 20px; font-weight: bold; margin-bottom: 8px;">Failed to initialize game hub</h2>
+          <pre style="background: rgba(0,0,0,0.1); padding: 12px; border-radius: 8px; display: inline-block;">${err}</pre>
+        </div>
+      `;
+    }
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootstrap);
+} else {
+  bootstrap();
+}

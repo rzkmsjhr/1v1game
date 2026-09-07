@@ -179,11 +179,17 @@ export class WebRTCPeer {
   }
 
   private setupDataChannel(dc: RTCDataChannel) {
-    dc.onopen = () => {
+    const handleOpen = () => {
       this.isConnected = true;
       this.stopPolling();
       this.events.onStatusChange?.('connected', 'Opponent connected! Match starting.');
     };
+
+    if (dc.readyState === 'open') {
+      handleOpen();
+    } else {
+      dc.onopen = handleOpen;
+    }
 
     dc.onclose = () => {
       this.isConnected = false;
