@@ -19,12 +19,34 @@ import { PoolBall, PoolPhysics, TrajectoryPreview } from '../engine/pool-physics
 export class PoolRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
+  private renderScale: number = 1;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
-    this.canvas.width = TABLE_WIDTH;
-    this.canvas.height = TABLE_HEIGHT;
+    this.updateScale(1);
+  }
+
+  public updateScale(displayScale: number = 1) {
+    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+    // On desktop, displayScale is often > 1.0 (e.g. 1.4 - 2.0x).
+    // On high-DPI screens, dpr is 1.25 - 2.0+.
+    // To ensure crystal clear HD rendering without blurry upscaling on desktop,
+    // the backing resolution should match the effective physical scale (displayScale * dpr),
+    // with a high-definition minimum of 2.0 and capped at 3.5 for optimal performance.
+    const targetScale = Math.max(2.0, Math.min(3.5, displayScale * dpr));
+
+    if (Math.abs(this.renderScale - targetScale) > 0.05) {
+      this.renderScale = targetScale;
+      const targetWidth = Math.round(TABLE_WIDTH * this.renderScale);
+      const targetHeight = Math.round(TABLE_HEIGHT * this.renderScale);
+      if (this.canvas.width !== targetWidth || this.canvas.height !== targetHeight) {
+        this.canvas.width = targetWidth;
+        this.canvas.height = targetHeight;
+      }
+      this.canvas.style.width = `${TABLE_WIDTH}px`;
+      this.canvas.style.height = `${TABLE_HEIGHT}px`;
+    }
   }
 
   public render(
@@ -35,7 +57,13 @@ export class PoolRenderer {
     isHumanTurn: boolean = true
   ) {
     const ctx = this.ctx;
-    ctx.clearRect(0, 0, TABLE_WIDTH, TABLE_HEIGHT);
+    // Clear full high-DPI canvas buffer
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+    ctx.save();
+    ctx.scale(this.renderScale, this.renderScale);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     // 1. Render Table Frame, Rails, Cloth, and Pockets
     this.renderTableFrame(ctx);
@@ -69,8 +97,10 @@ export class PoolRenderer {
 
     // 5. Render Ball-in-hand indicator
     if (engine.phase === 'BALL_IN_HAND' && cue) {
-      this.renderBallInHandGuide(ctx, cue, isHumanTurn);
+      this.renderBallInHandGuide(ctx, cue, isHumanTurn, engine.ballInHandKitchenOnly);
     }
+
+    ctx.restore();
   }
 
   // -------------------------------------------------------------
@@ -179,15 +209,20 @@ export class PoolRenderer {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.font = 'bold 10px monospace';
+      ctx.save();
+      ctx.font = '700 11px "Plus Jakarta Sans", system-ui, -apple-system, sans-serif';
       ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Opponent & Player zone text
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
       ctx.fillText('OPPONENT ZONE', HEAD_STRING_X + 90, CENTER_Y - 40);
       ctx.fillText('PLAYER ZONE', HEAD_STRING_X + 90, CENTER_Y + 45);
 
       // Foot rail arrow
-      ctx.fillStyle = 'rgba(250, 204, 21, 0.7)';
+      ctx.fillStyle = 'rgba(250, 204, 21, 0.95)';
       ctx.fillText('⚡ BOUNCE OFF FOOT CUSHION ⚡', PLAY_X_MAX - 110, CENTER_Y - 6);
+      ctx.restore();
     }
   }
 
@@ -328,11 +363,12 @@ export class PoolRenderer {
       if (def.number > 0 && scale > 0.6) {
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.arc(x, y, radius * 0.42, 0, Math.PI * 2);
+        ctx.arc(x, y, radius * 0.44, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.fillStyle = '#0f172a';
-        ctx.font = `bold ${Math.round(radius * 0.52)}px sans-serif`;
+        const fontSize = Math.max(7, Math.round(radius * 0.6));
+        ctx.font = `800 ${fontSize}px "Plus Jakarta Sans", system-ui, -apple-system, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(def.number.toString(), x, y + 0.5);
@@ -504,8 +540,28 @@ export class PoolRenderer {
     ctx.restore();
   }
 
-  private renderBallInHandGuide(ctx: CanvasRenderingContext2D, cue: PoolBall, isPlayer: boolean) {
+  private renderBallInHandGuide(ctx: CanvasRenderingContext2D, cue: PoolBall, isPlayer: boolean, isKitchenOnly: boolean = false) {
     ctx.save();
+
+    if (isKitchenOnly) {
+      // Highlight the legal kitchen zone (behind head string)
+      const kitchenGrad = ctx.createLinearGradient(PLAY_X_MIN, 0, HEAD_STRING_X, 0);
+      kitchenGrad.addColorStop(0, isPlayer ? 'rgba(56, 189, 248, 0.04)' : 'rgba(251, 191, 36, 0.03)');
+      kitchenGrad.addColorStop(1, isPlayer ? 'rgba(56, 189, 248, 0.15)' : 'rgba(251, 191, 36, 0.12)');
+      ctx.fillStyle = kitchenGrad;
+      ctx.fillRect(PLAY_X_MIN, PLAY_Y_MIN, HEAD_STRING_X - PLAY_X_MIN, PLAY_Y_MAX - PLAY_Y_MIN);
+
+      // Glowing dashed kitchen border (head string)
+      ctx.strokeStyle = isPlayer ? 'rgba(56, 189, 248, 0.9)' : 'rgba(251, 191, 36, 0.9)';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(HEAD_STRING_X, PLAY_Y_MIN);
+      ctx.lineTo(HEAD_STRING_X, PLAY_Y_MAX);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     const time = Date.now() * 0.005;
     const pulseRadius = cue.radius + 6 + Math.sin(time) * 3;
 
@@ -517,10 +573,18 @@ export class PoolRenderer {
     ctx.stroke();
 
     ctx.fillStyle = isPlayer ? 'rgba(56, 189, 248, 0.95)' : 'rgba(251, 191, 36, 0.95)';
-    ctx.font = 'bold 11px sans-serif';
+    ctx.font = '700 11px "Plus Jakarta Sans", system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
+
+    let guideText = '';
+    if (isKitchenOnly) {
+      guideText = isPlayer ? 'BREAK IN HAND (Place behind line)' : 'OPPONENT BREAK PLACEMENT';
+    } else {
+      guideText = isPlayer ? 'BALL IN HAND (Drag or tap to place)' : 'OPPONENT BALL IN HAND';
+    }
+
     ctx.fillText(
-      isPlayer ? 'BALL IN HAND (Drag or tap to place)' : 'OPPONENT BALL IN HAND',
+      guideText,
       cue.x,
       cue.y - 22
     );

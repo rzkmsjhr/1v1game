@@ -2,7 +2,7 @@ import confetti from 'canvas-confetti';
 import { GameInstance, GameSession, AppTheme } from '../types';
 import type { NetworkMessage } from '../../network/webrtc-peer';
 import { sounds } from '../../engine/sound';
-import { TABLE_WIDTH, TABLE_HEIGHT, BALL_DEFS } from './engine/pool-constants';
+import { TABLE_WIDTH, TABLE_HEIGHT, BALL_DEFS, HEAD_STRING_X } from './engine/pool-constants';
 import { PoolEngine, GameVariant, PlayerId } from './engine/pool-engine';
 import { PoolRenderer } from './renderers/PoolRenderer';
 import { PoolAI } from './ai/pool-ai';
@@ -31,11 +31,11 @@ export class PoolGame implements GameInstance {
   private wasSimulating: boolean = false;
   private handleWindowPointerMove: ((e: PointerEvent) => void) | null = null;
   private handleWindowPointerUp: ((e: PointerEvent) => void) | null = null;
+  private lastMoveBroadcastTime: number = 0;
 
   // Mobile & Auto-Rotation State
   private isMobileView: boolean = false;
   private isVirtualLandscape: boolean = false;
-  private hasUserManuallyToggledRotation: boolean = false;
   private resizeObserver: ResizeObserver | null = null;
   private opponentName: string = 'Opponent';
 
@@ -100,8 +100,7 @@ export class PoolGame implements GameInstance {
     if (window.innerWidth >= window.innerHeight) {
       // Physical landscape: show unrotated horizontal table
       this.isVirtualLandscape = false;
-      this.hasUserManuallyToggledRotation = false;
-    } else if (this.isMobileView && !this.hasUserManuallyToggledRotation) {
+    } else if (this.isMobileView) {
       // Portrait on mobile: default to vertical table filling screen height
       this.isVirtualLandscape = true;
     }
@@ -149,6 +148,9 @@ export class PoolGame implements GameInstance {
         this.engine.shoot(msg.angle, msg.power);
         sounds.playCueHit(msg.power);
         break;
+      case 'POOL_MOVE_BALL':
+        this.engine.placeCueBall(msg.x, msg.y);
+        break;
       case 'POOL_PLACE_BALL':
         this.engine.placeCueBall(msg.x, msg.y);
         this.engine.confirmBallInHand();
@@ -187,58 +189,44 @@ export class PoolGame implements GameInstance {
         
         <!-- Top Information & Controls (2 rows, 68px) -->
         <div class="w-full max-w-2xl flex flex-col shrink-0 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'} pb-1 gap-1">
-          <!-- Row 1: Quick Controls (Exit, Mode Selector, Rotate) -->
+          <!-- Row 1: Top Navigation Bar -->
           <div class="w-full flex items-center justify-between px-2 py-0.5 text-xs">
-            <div class="flex items-center space-x-1.5">
-              <button id="btn-pool-exit" class="ps-btn-secondary px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center space-x-0.5 cursor-pointer active:scale-95" title="Exit to Game Hub">
-                <span>← Exit</span>
-              </button>
-              <div class="flex items-center bg-gray-800/60 rounded-lg p-0.5 border border-gray-700/60">
-                <button id="btn-variant-8ball" class="px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${this.engine.variant === '8ball' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-white'}">
-                  8-BALL
-                </button>
-                <button id="btn-variant-9ball" class="px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${this.engine.variant === '9ball' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-white'}">
-                  9-BALL
-                </button>
-              </div>
-            </div>
-
-            <!-- Rotate View Button -->
-            <button id="btn-toggle-rotate" class="ps-btn-secondary px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer active:scale-95" title="Toggle table orientation">
-              <span>🔄 Rotate</span>
+            <button id="btn-pool-exit" class="ps-btn-secondary px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center space-x-0.5 cursor-pointer active:scale-95" title="Exit to Game Hub">
+              <span>← Exit</span>
             </button>
+            <span class="text-[11px] font-bold text-gray-400 font-mono tracking-wider uppercase">8-BALL POOL</span>
           </div>
 
           <!-- Row 2: Match Information & Players Score Strip -->
           <div class="w-full flex items-center justify-between px-2 pt-0.5 text-xs gap-1">
             <!-- Player Profile (YOU) -->
-            <div class="flex items-center space-x-1 min-w-[70px]">
-              <div class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></div>
+            <div class="flex items-center space-x-1 sm:space-x-1.5 min-w-[70px] sm:min-w-[110px]">
+              <div class="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-blue-500 shrink-0"></div>
               <div class="flex flex-col">
-                <span class="text-[10px] font-bold text-blue-400 leading-tight">YOU</span>
+                <span class="text-[10px] sm:text-xs font-bold text-blue-400 leading-tight">YOU</span>
                 <div class="flex items-center space-x-1">
-                  <span id="badge-player-group" class="px-1.5 py-0.2 rounded bg-blue-600/20 text-blue-300 font-mono text-[10px] font-extrabold">OPEN</span>
-                  <span id="text-player-balls-left" class="text-[9px] text-gray-400 font-mono"></span>
+                  <span id="badge-player-group" class="px-1.5 py-0.2 rounded bg-blue-600/20 text-blue-300 font-mono text-[10px] sm:text-xs font-extrabold">OPEN</span>
+                  <span id="text-player-balls-left" class="text-[9px] sm:text-xs text-gray-400 font-mono"></span>
                 </div>
               </div>
             </div>
 
             <!-- Turn Banner (Center) -->
-            <div id="pool-status-banner" class="flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-emerald-600/15 border border-emerald-500/30 text-center mx-auto">
-              <div id="pool-status-text" class="text-[11px] sm:text-xs font-black tracking-wide text-emerald-400 uppercase truncate w-full">YOUR TURN</div>
-              <div id="pool-hint-text" class="text-[9px] sm:text-[10px] font-medium text-gray-400 truncate w-full">Open table: Sink any ball</div>
+            <div id="pool-status-banner" class="flex-1 max-w-[170px] sm:max-w-[280px] md:max-w-[380px] flex flex-col items-center px-2 sm:px-4 py-0.5 rounded-xl bg-emerald-600/15 border border-emerald-500/30 text-center mx-auto transition-all">
+              <div id="pool-status-text" class="text-[11px] sm:text-xs md:text-sm font-black tracking-wide text-emerald-400 uppercase truncate w-full">YOUR TURN</div>
+              <div id="pool-hint-text" class="text-[9px] sm:text-[11px] md:text-xs font-medium text-gray-400 truncate w-full">Open table: Sink any ball</div>
             </div>
 
             <!-- Opponent Profile -->
-            <div class="flex items-center justify-end space-x-1 min-w-[70px] text-right">
+            <div class="flex items-center justify-end space-x-1 sm:space-x-1.5 min-w-[70px] sm:min-w-[110px] text-right">
               <div class="flex flex-col items-end">
-                <span class="text-[10px] font-bold text-rose-400 leading-tight truncate max-w-[70px]">${this.opponentName}</span>
+                <span class="text-[10px] sm:text-xs font-bold text-rose-400 leading-tight truncate max-w-[70px] sm:max-w-[130px]">${this.opponentName}</span>
                 <div class="flex items-center space-x-1">
-                  <span id="text-opponent-balls-left" class="text-[9px] text-gray-400 font-mono"></span>
-                  <span id="badge-opponent-group" class="px-1.5 py-0.2 rounded bg-rose-600/20 text-rose-300 font-mono text-[10px] font-extrabold">OPEN</span>
+                  <span id="text-opponent-balls-left" class="text-[9px] sm:text-xs text-gray-400 font-mono"></span>
+                  <span id="badge-opponent-group" class="px-1.5 py-0.2 rounded bg-rose-600/20 text-rose-300 font-mono text-[10px] sm:text-xs font-extrabold">OPEN</span>
                 </div>
               </div>
-              <div class="w-2 h-2 rounded-full bg-rose-500 shrink-0"></div>
+              <div class="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-rose-500 shrink-0"></div>
             </div>
           </div>
         </div>
@@ -285,32 +273,22 @@ export class PoolGame implements GameInstance {
           </div>
         </div>
 
-        <!-- Shot Controls Bar (Bottom) - Sized carefully to never cut off buttons on any mobile phone -->
-        <div class="w-full max-w-xl px-1.5 py-1 select-none shrink-0 pb-[calc(env(safe-area-inset-bottom,0px)+4px)]">
-          <div class="flex items-center justify-between gap-1 w-full">
-            <!-- Fine-Tune Aim Angle Buttons -->
-            <div class="flex items-center space-x-0.5 shrink-0">
-              <button id="btn-aim-left" class="ps-btn-secondary px-2 py-2 rounded-xl font-bold text-xs active:scale-90 select-none cursor-pointer" title="Aim Left 1°">
-                <span>◀ -1°</span>
-              </button>
-              <button id="btn-aim-right" class="ps-btn-secondary px-2 py-2 rounded-xl font-bold text-xs active:scale-90 select-none cursor-pointer" title="Aim Right 1°">
-                <span>+1° ▶</span>
-              </button>
-            </div>
-
+        <!-- Shot Controls Bar (Bottom) -->
+        <div class="w-full max-w-md px-2 py-1 select-none shrink-0 pb-[calc(env(safe-area-inset-bottom,0px)+4px)]">
+          <div class="flex items-center justify-between gap-3 w-full">
             <!-- Power Stepper & Dialog Trigger -->
-            <div class="flex items-center space-x-0.5 ps-card p-0.5 rounded-xl shrink-0">
-              <button id="btn-power-minus" class="w-6 sm:w-7 h-7 sm:h-8 rounded-lg bg-gray-800 hover:bg-gray-700 text-white font-black text-sm flex items-center justify-center active:scale-90 select-none touch-manipulation cursor-pointer" title="Decrease power">−</button>
-              <button id="btn-power-open-modal" class="px-1.5 sm:px-2 h-7 sm:h-8 rounded-lg bg-gray-800/80 hover:bg-gray-700 flex items-center space-x-1 active:scale-95 select-none touch-manipulation cursor-pointer" title="Open power options">
-                <span class="text-[9px] text-gray-400 font-bold">PWR</span>
-                <span id="text-power-bottom" class="text-xs font-mono font-black text-emerald-400">${Math.round(this.cuePower * 100)}%</span>
-                <span class="text-[8px] text-emerald-400">▲</span>
+            <div class="flex items-center space-x-1 ps-card p-1 rounded-xl shrink-0">
+              <button id="btn-power-minus" class="w-7 sm:w-8 h-7 sm:h-8 rounded-lg bg-gray-800 hover:bg-gray-700 text-white font-black text-sm flex items-center justify-center active:scale-90 select-none touch-manipulation cursor-pointer" title="Decrease power">−</button>
+              <button id="btn-power-open-modal" class="px-2 sm:px-3 h-7 sm:h-8 rounded-lg bg-gray-800/80 hover:bg-gray-700 flex items-center space-x-1 active:scale-95 select-none touch-manipulation cursor-pointer" title="Open power options">
+                <span class="text-[10px] text-gray-400 font-bold">PWR</span>
+                <span id="text-power-bottom" class="text-xs sm:text-sm font-mono font-black text-emerald-400">${Math.round(this.cuePower * 100)}%</span>
+                <span class="text-[9px] text-emerald-400">▲</span>
               </button>
-              <button id="btn-power-plus" class="w-6 sm:w-7 h-7 sm:h-8 rounded-lg bg-gray-800 hover:bg-gray-700 text-white font-black text-sm flex items-center justify-center active:scale-90 select-none touch-manipulation cursor-pointer" title="Increase power">+</button>
+              <button id="btn-power-plus" class="w-7 sm:w-8 h-7 sm:h-8 rounded-lg bg-gray-800 hover:bg-gray-700 text-white font-black text-sm flex items-center justify-center active:scale-90 select-none touch-manipulation cursor-pointer" title="Increase power">+</button>
             </div>
 
-            <!-- Action Button (STRIKE) - Guaranteed to fit on mobile -->
-            <button id="btn-action-shoot" class="shrink-0 min-w-[85px] max-w-[115px] py-2 px-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black text-xs active:scale-95 transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center space-x-1 select-none cursor-pointer">
+            <!-- Action Button (STRIKE) -->
+            <button id="btn-action-shoot" class="flex-1 max-w-[150px] sm:max-w-[180px] py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black text-xs sm:text-sm active:scale-95 transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center space-x-1.5 select-none cursor-pointer">
               <span>⚡</span>
               <span id="btn-shoot-label" class="truncate">STRIKE</span>
             </button>
@@ -444,23 +422,22 @@ export class PoolGame implements GameInstance {
       return;
     }
 
+    let scale = 1;
     if (this.isVirtualLandscape) {
       // Rotated 90 degrees:
       // Width on screen is TABLE_HEIGHT (472), height on screen is TABLE_WIDTH (872)
-      const scale = Math.min(availW / TABLE_HEIGHT, availH / TABLE_WIDTH);
+      scale = Math.min(availW / TABLE_HEIGHT, availH / TABLE_WIDTH);
       container.style.transform = `rotate(90deg) scale(${scale})`;
     } else {
       // Unrotated:
       // Width on screen is TABLE_WIDTH (872), height on screen is TABLE_HEIGHT (472)
-      const scale = Math.min(availW / TABLE_WIDTH, availH / TABLE_HEIGHT);
+      scale = Math.min(availW / TABLE_WIDTH, availH / TABLE_HEIGHT);
       container.style.transform = `scale(${scale})`;
     }
-  }
 
-  private toggleVirtualLandscape() {
-    this.hasUserManuallyToggledRotation = true;
-    this.isVirtualLandscape = !this.isVirtualLandscape;
-    this.updateContainerOrientation();
+    if (this.renderer) {
+      this.renderer.updateScale(scale);
+    }
   }
 
   // Convert client touch/mouse coordinates to virtual table coordinates (872 x 472)
@@ -522,47 +499,8 @@ export class PoolGame implements GameInstance {
       }
     });
 
-    // 8-Ball / 9-Ball selector
-    document.getElementById('btn-variant-8ball')?.addEventListener('click', () => {
-      if (this.engine.variant !== '8ball') {
-        this.engine.variant = '8ball';
-        this.isLagModalShown = false;
-        this.isGameOverModalShown = false;
-        this.isAITurnProcessing = false;
-        this.engine.setupLagging();
-        this.updateVariantButtons();
-        this.updateHUD();
-      }
-    });
-
-    document.getElementById('btn-variant-9ball')?.addEventListener('click', () => {
-      if (this.engine.variant !== '9ball') {
-        this.engine.variant = '9ball';
-        this.isLagModalShown = false;
-        this.isGameOverModalShown = false;
-        this.isAITurnProcessing = false;
-        this.engine.setupLagging();
-        this.updateVariantButtons();
-        this.updateHUD();
-      }
-    });
-
-    // Rotate View button
-    document.getElementById('btn-toggle-rotate')?.addEventListener('click', () => {
-      this.toggleVirtualLandscape();
-    });
-
     // Shot Power Controls
     this.setupPowerControls();
-
-    // Aim Fine-Tuning
-    document.getElementById('btn-aim-left')?.addEventListener('click', () => {
-      this.cueAngle -= (Math.PI / 180);
-    });
-
-    document.getElementById('btn-aim-right')?.addEventListener('click', () => {
-      this.cueAngle += (Math.PI / 180);
-    });
 
     // Strike / Action Button
     document.getElementById('btn-action-shoot')?.addEventListener('click', () => {
@@ -593,10 +531,40 @@ export class PoolGame implements GameInstance {
           this.isDraggingCueBall = true;
           return;
         }
-        // Allow tapping anywhere on felt to jump cue ball to valid position
+        // If kitchen only, don't allow tapping outside the kitchen line
+        if (this.engine.ballInHandKitchenOnly && coords.x > HEAD_STRING_X) {
+          return;
+        }
+        // Allow tapping anywhere on felt inside legal zone to place cue ball
         const placed = this.engine.placeCueBall(coords.x, coords.y);
         if (placed) {
           this.isDraggingCueBall = true;
+          const updatedCue = this.engine.getCueBall();
+          if (updatedCue && this.session.mode === 'online' && this.session.peer?.isConnected) {
+            this.session.peer.sendMessage({
+              type: 'POOL_MOVE_BALL',
+              x: updatedCue.x,
+              y: updatedCue.y
+            });
+          }
+          return;
+        }
+      }
+
+      // If it's the break shot in PLAYING phase and the player hasn't shot yet,
+      // tapping the cue ball allows readjusting its position in the kitchen
+      if (
+        this.engine.isBreakShot &&
+        this.engine.phase === 'PLAYING' &&
+        cue &&
+        this.isHumanTurn() &&
+        !this.engine.isSimulating
+      ) {
+        const dist = Math.hypot(coords.x - cue.x, coords.y - cue.y);
+        if (dist < cue.radius + 18) {
+          this.engine.phase = 'BALL_IN_HAND';
+          this.isDraggingCueBall = true;
+          this.updateHUD();
           return;
         }
       }
@@ -620,6 +588,18 @@ export class PoolGame implements GameInstance {
 
       if (this.isDraggingCueBall && this.engine.phase === 'BALL_IN_HAND' && this.isHumanTurn()) {
         this.engine.placeCueBall(coords.x, coords.y);
+        const cue = this.engine.getCueBall();
+        if (cue && this.session.mode === 'online' && this.session.peer?.isConnected) {
+          const now = Date.now();
+          if (now - this.lastMoveBroadcastTime > 40) {
+            this.lastMoveBroadcastTime = now;
+            this.session.peer.sendMessage({
+              type: 'POOL_MOVE_BALL',
+              x: cue.x,
+              y: cue.y
+            });
+          }
+        }
         return;
       }
 
@@ -648,6 +628,18 @@ export class PoolGame implements GameInstance {
           this.canvas.releasePointerCapture(e.pointerId);
         }
       } catch {}
+
+      if (this.isDraggingCueBall && this.session.mode === 'online' && this.session.peer?.isConnected) {
+        const cue = this.engine.getCueBall();
+        if (cue) {
+          this.session.peer.sendMessage({
+            type: 'POOL_MOVE_BALL',
+            x: cue.x,
+            y: cue.y
+          });
+        }
+      }
+
       this.isAiming = false;
       this.isDraggingCueStick = false;
       this.isDraggingCueBall = false;
@@ -1197,15 +1189,6 @@ export class PoolGame implements GameInstance {
     }
   }
 
-  private updateVariantButtons() {
-    const btn8 = document.getElementById('btn-variant-8ball');
-    const btn9 = document.getElementById('btn-variant-9ball');
-    if (btn8 && btn9) {
-      btn8.className = `px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${this.engine.variant === '8ball' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-white'}`;
-      btn9.className = `px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${this.engine.variant === '9ball' ? 'bg-emerald-600 text-white shadow' : 'text-gray-400 hover:text-white'}`;
-    }
-  }
-
   private updateActionButtonState(isMyTurn: boolean) {
     const btn = document.getElementById('btn-action-shoot');
     const canInteract = isMyTurn && !this.engine.isSimulating && this.engine.phase !== 'GAME_OVER';
@@ -1257,24 +1240,37 @@ export class PoolGame implements GameInstance {
     const isMyTurn = this.isHumanTurn();
 
     if (this.engine.phase === 'BALL_IN_HAND') {
+      const isBreak = this.engine.isBreakShot;
       if (statusBanner) {
         statusBanner.className = isMyTurn
           ? 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-amber-600/15 border border-amber-500/30 text-center mx-auto'
           : 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-gray-800/40 border border-gray-700/40 text-center mx-auto';
       }
       if (statusText) {
-        statusText.textContent = isMyTurn ? 'BALL IN HAND (YOU)' : `BALL IN HAND (${this.opponentName.toUpperCase()})`;
+        if (isBreak) {
+          statusText.textContent = isMyTurn ? 'BREAK IN HAND (YOU)' : `BREAK IN HAND (${this.opponentName.toUpperCase()})`;
+        } else {
+          statusText.textContent = isMyTurn ? 'BALL IN HAND (YOU)' : `BALL IN HAND (${this.opponentName.toUpperCase()})`;
+        }
         statusText.className = isMyTurn
           ? 'text-[11px] sm:text-xs font-black tracking-wide text-amber-400 uppercase truncate w-full'
           : 'text-[11px] sm:text-xs font-black tracking-wide text-gray-400 uppercase truncate w-full';
       }
       if (hintText) {
-        hintText.textContent = isMyTurn
-          ? 'Drag ball or tap table to place'
-          : `${this.opponentName} is placing cue ball...`;
+        if (isBreak) {
+          hintText.textContent = isMyTurn
+            ? 'Place cue ball behind striped line to break'
+            : `${this.opponentName} is placing cue ball...`;
+        } else {
+          hintText.textContent = isMyTurn
+            ? 'Drag ball or tap table to place'
+            : `${this.opponentName} is placing cue ball...`;
+        }
       }
       if (btnShootLabel) {
-        btnShootLabel.textContent = isMyTurn ? 'CONFIRM POS' : 'OPPONENT PLACING...';
+        btnShootLabel.textContent = isMyTurn
+          ? (isBreak ? 'CONFIRM BREAK' : 'CONFIRM POS')
+          : 'OPPONENT PLACING...';
       }
       this.updateActionButtonState(isMyTurn);
       return;
@@ -1320,7 +1316,11 @@ export class PoolGame implements GameInstance {
         }
 
         if (hintText) {
-          if (isMyTurn) {
+          if (this.engine.isBreakShot) {
+            hintText.textContent = isMyTurn
+              ? 'Tap cue ball to adjust, or aim & strike to break!'
+              : `${this.opponentName} is breaking!`;
+          } else if (isMyTurn) {
             if (!pGrp) hintText.textContent = 'Open table: Sink any ball to claim group';
             else {
               const rem = this.engine.getRemainingGroupBalls(pGrp).length;

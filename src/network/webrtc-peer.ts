@@ -1,8 +1,9 @@
 import { SignalingClient } from './signaling';
 
 export type NetworkMessage =
-  | { type: 'TETRIS_SYNC_BOARD'; grid: (string | null)[][]; score: number; pendingGarbage: number }
+  | { type: 'TETRIS_SYNC_BOARD'; grid: (string | null)[][]; score: number; pendingGarbage: number; currentPiece?: any }
   | { type: 'TETRIS_GARBAGE'; lines: number }
+  | { type: 'TETRIS_START_SEED'; seed: number }
   | { type: 'OTHELLO_MOVE'; r: number; c: number; player: number }
   | { type: 'OTHELLO_DICE_ROLL'; value: number }
   | { type: 'OTHELLO_DICE_REROLL' }
@@ -10,11 +11,12 @@ export type NetworkMessage =
   | { type: 'POOL_LAG_SHOT'; power: number }
   | { type: 'POOL_DECIDE_BREAK'; breaker: 'player' | 'opponent' }
   | { type: 'POOL_SHOT'; angle: number; power: number }
+  | { type: 'POOL_MOVE_BALL'; x: number; y: number }
   | { type: 'POOL_PLACE_BALL'; x: number; y: number }
   | { type: 'GAME_OVER'; didWin: boolean }
   | { type: 'PLAYER_LEAVE' }
   | { type: 'REMATCH_REQUEST' }
-  | { type: 'REMATCH_ACCEPT' }
+  | { type: 'REMATCH_ACCEPT'; seed?: number }
   | { type: 'CUSTOM'; payload: any };
 
 export interface WebRTCEvents {

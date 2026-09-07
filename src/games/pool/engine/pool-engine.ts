@@ -50,6 +50,8 @@ export class PoolEngine {
 
   // Shot tracking
   public isSimulating: boolean = false;
+  public isBreakShot: boolean = false;
+  public ballInHandKitchenOnly: boolean = false;
   public firstBallHitId: number | null = null;
   public cushionHitAfterContact: boolean = false;
   public pottedBallsThisShot: number[] = [];
@@ -77,6 +79,8 @@ export class PoolEngine {
 
   public setupLagging() {
     this.phase = 'LAGGING';
+    this.isBreakShot = false;
+    this.ballInHandKitchenOnly = false;
     this.balls = [];
     this.lagResult = null;
     this.playerLagShotDone = false;
@@ -123,7 +127,9 @@ export class PoolEngine {
 
   // Initialize match table after lagging decision
   public setupMatchTable(breaker: PlayerId) {
-    this.phase = 'PLAYING';
+    this.phase = 'BALL_IN_HAND';
+    this.isBreakShot = true;
+    this.ballInHandKitchenOnly = true;
     this.currentTurn = breaker;
     this.playerGroup = null;
     this.opponentGroup = null;
@@ -133,10 +139,10 @@ export class PoolEngine {
     this.gameOverReason = '';
     this.balls = [];
 
-    // 1. Place Cue Ball in kitchen (head string)
+    // 1. Place Cue Ball in kitchen (behind head string)
     this.balls.push({
       id: 0,
-      x: HEAD_STRING_X,
+      x: HEAD_STRING_X - BALL_RADIUS - 1,
       y: CENTER_Y,
       vx: 0,
       vy: 0,
@@ -351,14 +357,24 @@ export class PoolEngine {
       this.currentTurn = this.currentTurn === 'player' ? 'opponent' : 'player';
       this.respawnCueBall();
       this.phase = 'BALL_IN_HAND';
+      // In 8-ball, scratch on break gives ball in hand behind head string
+      if (this.isBreakShot && this.didScratch) {
+        this.ballInHandKitchenOnly = true;
+      } else {
+        this.ballInHandKitchenOnly = false;
+      }
     } else if (turnContinues) {
       // Active player stays on table
       this.phase = 'PLAYING';
+      this.ballInHandKitchenOnly = false;
     } else {
       // Turn passes normally to other player
       this.currentTurn = this.currentTurn === 'player' ? 'opponent' : 'player';
       this.phase = 'PLAYING';
+      this.ballInHandKitchenOnly = false;
     }
+
+    this.isBreakShot = false;
   }
 
   private evaluate8BallShot(initialFoul: boolean, initialReason: string) {
@@ -568,7 +584,8 @@ export class PoolEngine {
 
     // Bounds checking
     const r = BALL_RADIUS;
-    const clampedX = Math.max(PLAY_X_MIN + r, Math.min(x, PLAY_X_MAX - r));
+    const maxX = this.ballInHandKitchenOnly ? (HEAD_STRING_X - r) : (PLAY_X_MAX - r);
+    const clampedX = Math.max(PLAY_X_MIN + r, Math.min(x, maxX));
     const clampedY = Math.max(PLAY_Y_MIN + r, Math.min(y, PLAY_Y_MAX - r));
 
     // Ensure no overlap with other object balls

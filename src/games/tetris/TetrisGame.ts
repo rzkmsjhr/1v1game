@@ -7,6 +7,15 @@ import { TetrisAI } from '../../ai/tetris-ai';
 import { sounds } from '../../engine/sound';
 import type { GameInstance, GameSession, AppTheme } from '../types';
 
+function hashRoomCode(code?: string | null): number {
+  if (!code) return 0;
+  let hash = 5381;
+  for (let i = 0; i < code.length; i++) {
+    hash = ((hash << 5) + hash + code.charCodeAt(i)) >>> 0;
+  }
+  return hash || 1;
+}
+
 export class TetrisGame implements GameInstance {
   private container: HTMLElement;
   private session: GameSession;
@@ -15,6 +24,7 @@ export class TetrisGame implements GameInstance {
   private playerEngine: TetrisEngine;
   private opponentEngine: TetrisEngine;
   private ai: TetrisAI | null = null;
+  private matchSeed: number = 0;
 
   private playerRenderer!: BoardRenderer;
   private opponentRenderer!: BoardRenderer;
@@ -32,6 +42,13 @@ export class TetrisGame implements GameInstance {
     this.currentTheme = session.theme;
     this.isMobileView = typeof window !== 'undefined' ? window.innerWidth < 768 : false;
 
+    if (session.mode === 'online') {
+      const roomSeed = hashRoomCode(session.peer?.roomCode);
+      this.matchSeed = roomSeed || (Math.floor(Math.random() * 2147483647) + 1);
+    } else {
+      this.matchSeed = Math.floor(Math.random() * 2147483647) + 1;
+    }
+
     window.addEventListener('resize', this.handleResize);
 
     this.opponentName = session.mode === 'ai' 
@@ -45,7 +62,7 @@ export class TetrisGame implements GameInstance {
     // 1. Render DOM structure first so canvases and stats elements exist
     this.render();
 
-    // 2. Initialize player engine
+    // 2. Initialize player engine with synchronized matchSeed
     this.playerEngine = new TetrisEngine({
       onChange: () => this.handlePlayerChange(),
       onPieceLocked: () => sounds.playHardDrop(),
@@ -69,9 +86,9 @@ export class TetrisGame implements GameInstance {
       onGameOver: () => {
         this.handleGameOver(false);
       }
-    });
+    }, this.matchSeed);
 
-    // 3. Initialize opponent engine
+    // 3. Initialize opponent engine with the EXACT SAME matchSeed
     this.opponentEngine = new TetrisEngine({
       onChange: () => {},
       onPieceLocked: () => {},
@@ -90,7 +107,7 @@ export class TetrisGame implements GameInstance {
           this.handleGameOver(true);
         }
       }
-    });
+    }, this.matchSeed);
 
     this.setupInputController();
     if (session.mode === 'online') {
@@ -212,12 +229,19 @@ export class TetrisGame implements GameInstance {
         },
         onStatusChange: (status: string, message?: string) => {
           origOnStatusChange?.(status, message);
+          if (status === 'connected' && this.session.peer?.role === 'host') {
+            this.session.peer.sendMessage({ type: 'TETRIS_START_SEED', seed: this.matchSeed });
+          }
           if (status === 'disconnected') {
             this.handleOpponentDisconnected();
           }
         }
       }
     });
+
+    if (this.session.peer.isConnected && this.session.peer.role === 'host') {
+      this.session.peer.sendMessage({ type: 'TETRIS_START_SEED', seed: this.matchSeed });
+    }
 
     window.addEventListener('beforeunload', this.handleBeforeUnload);
   }
@@ -237,6 +261,16 @@ export class TetrisGame implements GameInstance {
         this.handleOpponentDisconnected();
         break;
 
+      case 'TETRIS_START_SEED':
+        if (msg.seed && msg.seed !== this.matchSeed) {
+          this.matchSeed = msg.seed;
+          this.playerEngine.reset(true, msg.seed);
+          this.opponentEngine.reset(false, msg.seed);
+          this.updateStatsUI();
+          this.renderPreviews();
+        }
+        break;
+
       case 'TETRIS_SYNC_BOARD':
         for (let r = 0; r < 20; r++) {
           for (let c = 0; c < 10; c++) {
@@ -245,6 +279,9 @@ export class TetrisGame implements GameInstance {
         }
         this.opponentScore = msg.score;
         this.opponentEngine.pendingGarbage = msg.pendingGarbage;
+        if (msg.currentPiece !== undefined) {
+          this.opponentEngine.currentPiece = msg.currentPiece;
+        }
         this.updateStatsUI();
         break;
 
@@ -264,8 +301,12 @@ export class TetrisGame implements GameInstance {
 
       case 'REMATCH_ACCEPT':
         this.hideGameOverModal();
-        this.playerEngine.reset();
-        this.opponentEngine.reset();
+        const rematchSeed = msg.seed || Math.floor(Math.random() * 2147483647) + 1;
+        this.matchSeed = rematchSeed;
+        this.playerEngine.reset(true, rematchSeed);
+        this.opponentEngine.reset(false, rematchSeed);
+        this.updateStatsUI();
+        this.renderPreviews();
         this.startLoop();
         break;
     }
@@ -281,7 +322,8 @@ export class TetrisGame implements GameInstance {
         type: 'TETRIS_SYNC_BOARD',
         grid: this.playerEngine.getVisibleGrid(),
         score: this.playerEngine.score,
-        pendingGarbage: this.playerEngine.pendingGarbage
+        pendingGarbage: this.playerEngine.pendingGarbage,
+        currentPiece: this.playerEngine.currentPiece
       });
     }
   }
@@ -626,8 +668,12 @@ export class TetrisGame implements GameInstance {
     document.getElementById('btn-rematch')?.addEventListener('click', () => {
       if (this.session.mode === 'ai') {
         this.hideGameOverModal();
-        this.playerEngine.reset();
-        this.opponentEngine.reset();
+        const newSeed = Math.floor(Math.random() * 2147483647) + 1;
+        this.matchSeed = newSeed;
+        this.playerEngine.reset(true, newSeed);
+        this.opponentEngine.reset(false, newSeed);
+        this.updateStatsUI();
+        this.renderPreviews();
         this.startLoop();
       } else if (this.session.peer?.isConnected) {
         this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
@@ -780,10 +826,14 @@ export class TetrisGame implements GameInstance {
     if (btn) {
       btn.textContent = 'Accept Rematch';
       btn.onclick = () => {
-        this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT' });
+        const newSeed = Math.floor(Math.random() * 2147483647) + 1;
+        this.matchSeed = newSeed;
+        this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT', seed: newSeed });
         this.hideGameOverModal();
-        this.playerEngine.reset();
-        this.opponentEngine.reset();
+        this.playerEngine.reset(true, newSeed);
+        this.opponentEngine.reset(false, newSeed);
+        this.updateStatsUI();
+        this.renderPreviews();
         this.startLoop();
       };
     }

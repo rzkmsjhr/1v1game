@@ -24,6 +24,23 @@ export interface EngineEvents {
   onGameOver?: (isWinner: boolean) => void;
 }
 
+export function createPRNG(seed: number): () => number {
+  let s = (seed >>> 0) || 1;
+  return function () {
+    s |= 0;
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function getCurrentTimestamp(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
+
 export class TetrisEngine {
   public grid: (string | null)[][]; // [TOTAL_ROWS][COLS]
   public currentPiece: ActivePiece | null = null;
@@ -37,6 +54,9 @@ export class TetrisEngine {
   public combo: number = -1;
   public isBackToBack: boolean = false;
   public isGameOver: boolean = false;
+
+  public seed: number = 0;
+  private bagPRNG: () => number = Math.random;
 
   // Incoming garbage buffer (counter / queue)
   public pendingGarbage: number = 0;
@@ -52,17 +72,30 @@ export class TetrisEngine {
 
   public events: EngineEvents = {};
 
-  constructor(events: EngineEvents = {}) {
+  constructor(events: EngineEvents = {}, seed?: number) {
     this.grid = this.createEmptyGrid();
-    this.reset(false);
     this.events = events;
+    this.reset(false, seed);
+  }
+
+  public setSeed(seed: number) {
+    this.seed = seed;
+    this.bagPRNG = createPRNG(seed);
   }
 
   public createEmptyGrid(): (string | null)[][] {
     return Array.from({ length: TOTAL_ROWS }, () => Array(COLS).fill(null));
   }
 
-  public reset(notify: boolean = true) {
+  public reset(notify: boolean = true, seed?: number) {
+    if (seed !== undefined) {
+      this.setSeed(seed);
+    } else if (!this.seed) {
+      this.setSeed(Math.floor(Math.random() * 2147483647) + 1);
+    } else {
+      this.setSeed(this.seed);
+    }
+
     this.grid = this.createEmptyGrid();
     this.bag = [];
     this.nextQueue = [];
@@ -77,6 +110,7 @@ export class TetrisEngine {
     this.garbageHoleCol = Math.floor(Math.random() * COLS);
     this.lockTimer = null;
     this.lockResets = 0;
+    this.lastDropTime = 0;
     this.currentPiece = null;
 
     // Pre-fill queue with at least 5 pieces
@@ -92,9 +126,9 @@ export class TetrisEngine {
   private fillQueue() {
     if (this.bag.length === 0) {
       const pieces: TetrominoType[] = ['I', 'J', 'L', 'O', 'S', 'T', 'Z'];
-      // Fisher-Yates shuffle
+      // Fisher-Yates shuffle using deterministic piece PRNG
       for (let i = pieces.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = Math.floor(this.bagPRNG() * (i + 1));
         [pieces[i], pieces[j]] = [pieces[j], pieces[i]];
       }
       this.bag = pieces;
@@ -123,6 +157,7 @@ export class TetrisEngine {
     this.canHold = true;
     this.lockTimer = null;
     this.lockResets = 0;
+    this.lastDropTime = getCurrentTimestamp();
 
     // Check if spawn location is blocked (Lockout / Block out game over)
     if (this.checkCollision(this.currentPiece.x, this.currentPiece.y, this.currentPiece.rotation, this.currentPiece.type)) {
@@ -157,6 +192,7 @@ export class TetrisEngine {
       };
       this.lockTimer = null;
       this.lockResets = 0;
+      this.lastDropTime = getCurrentTimestamp();
     }
 
     this.canHold = false;
@@ -213,6 +249,8 @@ export class TetrisEngine {
     if (!this.checkCollision(this.currentPiece.x, this.currentPiece.y + 1, this.currentPiece.rotation, this.currentPiece.type)) {
       this.currentPiece.y += 1;
       this.score += 1;
+      this.lockTimer = null;
+      this.lockResets = 0;
       this.events.onChange?.();
       return true;
     } else {
@@ -261,9 +299,15 @@ export class TetrisEngine {
   }
 
   private handlePieceMoved() {
-    if (this.isOnGround() && this.lockResets < this.maxLockResets) {
-      this.lockResets++;
-      this.lockTimer = Date.now();
+    if (this.isOnGround()) {
+      if (this.lockResets < this.maxLockResets) {
+        this.lockResets++;
+        this.lockTimer = getCurrentTimestamp();
+      } else if (this.lockTimer === null) {
+        this.lockTimer = getCurrentTimestamp();
+      }
+    } else {
+      this.lockTimer = null;
     }
   }
 
@@ -272,9 +316,9 @@ export class TetrisEngine {
     return this.checkCollision(this.currentPiece.x, this.currentPiece.y + 1, this.currentPiece.rotation, this.currentPiece.type);
   }
 
-  private startLockTimer() {
+  private startLockTimer(time?: number) {
     if (this.lockTimer === null) {
-      this.lockTimer = Date.now();
+      this.lockTimer = time ?? getCurrentTimestamp();
     }
   }
 
@@ -287,25 +331,33 @@ export class TetrisEngine {
     return ghostY;
   }
 
-  public update(timestamp: number) {
+  public update(timestamp?: number) {
     if (this.isGameOver || !this.currentPiece) return;
 
+    const now = timestamp ?? getCurrentTimestamp();
+
+    if (this.lastDropTime === 0) {
+      this.lastDropTime = now;
+    }
+
     // Gravity drop
-    if (timestamp - this.lastDropTime >= this.gravityInterval) {
-      this.lastDropTime = timestamp;
+    if (now - this.lastDropTime >= this.gravityInterval) {
+      this.lastDropTime = now;
       if (!this.checkCollision(this.currentPiece.x, this.currentPiece.y + 1, this.currentPiece.rotation, this.currentPiece.type)) {
         this.currentPiece.y += 1;
+        this.lockTimer = null;
+        this.lockResets = 0;
         this.events.onChange?.();
       } else {
-        this.startLockTimer();
+        this.startLockTimer(now);
       }
     }
 
     // Lock delay check
     if (this.isOnGround()) {
       if (this.lockTimer === null) {
-        this.lockTimer = timestamp;
-      } else if (timestamp - this.lockTimer >= this.lockDelay) {
+        this.lockTimer = now;
+      } else if (now - this.lockTimer >= this.lockDelay) {
         this.lockPiece();
       }
     } else {

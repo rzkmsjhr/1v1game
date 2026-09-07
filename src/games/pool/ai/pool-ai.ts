@@ -55,8 +55,17 @@ export class PoolAI {
 
   // Find strategic cue ball placement when AI has ball in hand
   public planBallInHandPlacement(engine: PoolEngine): { x: number; y: number } {
-    const legalBalls = this.getLegalTargetBalls(engine);
     const r = BALL_RADIUS;
+
+    if (engine.ballInHandKitchenOnly) {
+      const kitchenMaxX = HEAD_STRING_X - r - 6;
+      // Tactical variation for break position: center or slight offset
+      const breakYOptions = [CENTER_Y, CENTER_Y - 30, CENTER_Y + 30, CENTER_Y - 55, CENTER_Y + 55];
+      const selectedY = breakYOptions[Math.floor(Math.random() * breakYOptions.length)];
+      return { x: kitchenMaxX - 8, y: selectedY };
+    }
+
+    const legalBalls = this.getLegalTargetBalls(engine);
     const minX = PLAY_X_MIN + r * 2.5;
     const maxX = PLAY_X_MAX - r * 2.5;
     const minY = PLAY_Y_MIN + r * 2.5;
@@ -157,6 +166,18 @@ export class PoolAI {
   public planShot(engine: PoolEngine): AIShotPlan {
     const cue = engine.getCueBall();
     if (!cue) return { angle: 0, power: 0.5 };
+
+    if (engine.isBreakShot) {
+      // Find the apex ball (ball 1 in both 8-ball and 9-ball)
+      const apex = engine.balls.find(b => b.id === 1 && !b.isPotted);
+      if (apex) {
+        const breakAngle = Math.atan2(apex.y - cue.y, apex.x - cue.x);
+        return {
+          angle: this.applyAimNoise(breakAngle),
+          power: Math.min(1.0, 0.90 + Math.random() * 0.10)
+        };
+      }
+    }
 
     const legalBalls = this.getLegalTargetBalls(engine);
     if (legalBalls.length === 0) {
