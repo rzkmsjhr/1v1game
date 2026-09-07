@@ -1,0 +1,6 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tetris-1v1-battle",
+  "compatibility_date": "2024-09-23",
+  "pages_build_output_dir": "dist"
+}

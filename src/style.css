@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background: radial-gradient(circle at 50% 10%, #151928 0%, #08090f 80%);
+}
+
+.font-display {
+  font-family: 'Orbitron', 'Chakra Petch', sans-serif;
+}
+
+.font-body {
+  font-family: 'Chakra Petch', sans-serif;
+}
+
+/* Cyberpunk Neon Glows */
+.neon-border-cyan {
+  border-color: #00f0ff;
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.3), inset 0 0 10px rgba(0, 240, 255, 0.15);
+}
+
+.neon-border-pink {
+  border-color: #ff007f;
+  box-shadow: 0 0 15px rgba(255, 0, 127, 0.3), inset 0 0 10px rgba(255, 0, 127, 0.15);
+}
+
+.neon-border-yellow {
+  border-color: #ffe600;
+  box-shadow: 0 0 15px rgba(255, 230, 0, 0.3), inset 0 0 10px rgba(255, 230, 0, 0.15);
+}
+
+.neon-text-cyan {
+  color: #00f0ff;
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.6);
+}
+
+.neon-text-pink {
+  color: #ff007f;
+  text-shadow: 0 0 8px rgba(255, 0, 127, 0.6);
+}
+
+.neon-text-yellow {
+  color: #ffe600;
+  text-shadow: 0 0 8px rgba(255, 230, 0, 0.6);
+}
+
+/* Glassmorphism panel */
+.cyber-panel {
+  background: rgba(18, 20, 32, 0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cyber-button {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.cyber-button:hover {
+  transform: translateY(-2px);
+}
+
+.cyber-button:active {
+  transform: translateY(1px);
+}
+
+/* Touch Control Buttons */
+.touch-btn {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
