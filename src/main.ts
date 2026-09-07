@@ -38,7 +38,9 @@ class ConsoleDashboard {
   private activeGameInstance: GameInstance | null = null;
   private peer: WebRTCPeer | null = null;
   private roomCode: string | null = null;
+  private invitedRoomCode: string | null = null;
   private currentAIDifficulty: AIDifficulty = 'medium';
+  private currentPoolVariant: '8ball' | '9ball' = '8ball';
 
   constructor() {
     const el = document.getElementById('app');
@@ -47,10 +49,31 @@ class ConsoleDashboard {
 
     this.initTheme();
     this.checkUrlRoomParam();
+
+    const gameParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('game') : null;
+    if (gameParam) {
+      const idx = GAMES_REGISTRY.findIndex(g => g.id === gameParam);
+      if (idx !== -1) {
+        this.selectedGameIndex = idx;
+      }
+    }
+
     this.renderDashboard();
+
+    const modalParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('modal') : null;
+    if (modalParam) {
+      this.openLaunchModal();
+    }
   }
 
   private initTheme() {
+    const themeParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('theme') as AppTheme | null : null;
+    if (themeParam === 'light' || themeParam === 'dark') {
+      this.currentTheme = themeParam;
+      this.applyTheme(this.currentTheme);
+      return;
+    }
+
     const saved = safeStorage.getItem('hub_theme') as AppTheme | null;
     if (saved) {
       this.currentTheme = saved;
@@ -92,7 +115,11 @@ class ConsoleDashboard {
       const params = new URLSearchParams(window.location.search);
       const room = params.get('room');
       if (room) {
-        this.roomCode = room.trim().toUpperCase();
+        const clean = room.trim().toUpperCase();
+        if (/^[A-Z0-9]{6}$/.test(clean)) {
+          this.invitedRoomCode = clean;
+          this.roomCode = clean;
+        }
       }
     } catch (e) {
       console.warn('Could not parse room URL param:', e);
@@ -107,6 +134,7 @@ class ConsoleDashboard {
     this.activeGameInstance?.destroy();
     this.activeGameInstance = null;
     this.peer?.cleanup();
+    this.roomCode = null;
 
     const isDark = this.currentTheme === 'dark';
     const currentGame = GAMES_REGISTRY[this.selectedGameIndex] || GAMES_REGISTRY[0];
@@ -140,8 +168,8 @@ class ConsoleDashboard {
       <!-- Main Showcase & Carousel Area -->
       <main class="w-full max-w-6xl px-4 sm:px-8 flex-1 flex flex-col justify-center py-6 sm:py-8">
         
-        <!-- Match Invitation Banner if room code present in URL -->
-        ${this.roomCode ? `
+        <!-- Match Invitation Banner if invited via URL -->
+        ${this.invitedRoomCode ? `
           <div class="mb-6 p-4 rounded-2xl ${isDark ? 'bg-blue-950/40 border-blue-500/40' : 'bg-blue-50 border-blue-200'} border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
             <div class="flex items-center space-x-3">
               <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold">
@@ -149,7 +177,7 @@ class ConsoleDashboard {
               </div>
               <div>
                 <div class="text-xs font-bold text-blue-500 uppercase tracking-wider">Match Invitation Detected</div>
-                <div class="text-sm font-semibold">You were invited to 1v1 Room: <span class="font-mono text-blue-500 font-bold">${this.roomCode}</span></div>
+                <div class="text-sm font-semibold">You were invited to 1v1 Room: <span class="font-mono text-blue-500 font-bold">${this.invitedRoomCode}</span></div>
               </div>
             </div>
             <div class="flex items-center space-x-2">
@@ -164,7 +192,7 @@ class ConsoleDashboard {
         ` : ''}
 
         <!-- Hero Showcase Card -->
-        <div class="relative overflow-hidden rounded-3xl p-6 sm:p-10 mb-8 ps-card shadow-2xl bg-gradient-to-br ${currentGame.bannerGradient} text-white">
+        <div class="relative overflow-hidden rounded-3xl p-6 sm:p-10 mb-8 ps-card shadow-2xl bg-gradient-to-br ${currentGame.bannerGradient} text-white group">
           <div class="relative z-10 max-w-xl">
             <div class="flex items-center space-x-2 mb-3">
               <span class="ps-badge bg-white/20 backdrop-blur-md text-white">
@@ -199,10 +227,21 @@ class ConsoleDashboard {
             </div>
           </div>
 
-          <!-- Ambient background motif -->
-          <div class="absolute right-6 -bottom-8 opacity-15 pointer-events-none transform scale-150 sm:scale-175 text-white">
-            ${currentGame.iconSvg}
-          </div>
+          <!-- Screenshot / Ambient background overlay -->
+          ${currentGame.screenshotUrl ? `
+            <div class="absolute -right-8 sm:-right-4 md:right-2 lg:right-6 -bottom-8 sm:-bottom-6 md:-bottom-4 w-[280px] sm:w-[380px] md:w-[460px] lg:w-[520px] pointer-events-none select-none z-0 transform -rotate-6 sm:-rotate-8 group-hover:-rotate-3 group-hover:scale-105 transition-all duration-700 ease-out origin-bottom-right">
+              <div class="relative rounded-2xl sm:rounded-3xl overflow-hidden border-2 border-white/20 shadow-2xl shadow-black/80 bg-black/40 backdrop-blur-sm">
+                <img src="${currentGame.screenshotUrl}" alt="${currentGame.title} Preview" class="w-full h-auto object-cover block" />
+                <div class="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-black/20 pointer-events-none"></div>
+                <div class="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none"></div>
+              </div>
+            </div>
+            <div class="absolute inset-0 bg-gradient-to-r from-black/65 via-black/20 to-transparent pointer-events-none z-[1]"></div>
+          ` : `
+            <div class="absolute right-8 sm:right-16 -bottom-4 sm:-bottom-8 opacity-15 pointer-events-none transform scale-[5] sm:scale-[7] origin-bottom-right text-white">
+              ${currentGame.iconSvg}
+            </div>
+          `}
         </div>
 
         <!-- Games Selection Carousel -->
@@ -257,6 +296,21 @@ class ConsoleDashboard {
           </div>
 
           <div class="space-y-4">
+            ${currentGame.id === 'pool' ? `
+              <!-- Billiards Variant Selector -->
+              <div class="p-3.5 rounded-2xl ${isDark ? 'bg-[#0f121d]' : 'bg-gray-50'} border ${isDark ? 'border-gray-800' : 'border-gray-200'}">
+                <div class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Select Game Variant</div>
+                <div class="grid grid-cols-2 gap-2">
+                  <button id="modal-opt-8ball" class="px-3 py-2 rounded-xl text-xs font-bold transition-all ${this.currentPoolVariant === '8ball' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'ps-btn-secondary'}">
+                    🎱 8-Ball (Solids & Stripes)
+                  </button>
+                  <button id="modal-opt-9ball" class="px-3 py-2 rounded-xl text-xs font-bold transition-all ${this.currentPoolVariant === '9ball' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'ps-btn-secondary'}">
+                    🟡 9-Ball (Rotation)
+                  </button>
+                </div>
+              </div>
+            ` : ''}
+
             <!-- Solo vs AI -->
             <div class="p-4 rounded-2xl ${isDark ? 'bg-[#0f121d]' : 'bg-gray-50'} border ${isDark ? 'border-gray-800' : 'border-gray-200'}">
               <div class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Solo vs AI</div>
@@ -280,8 +334,8 @@ class ConsoleDashboard {
               </button>
 
               <div class="flex items-center space-x-2">
-                <input id="input-room-code" type="text" maxlength="6" placeholder="ENTER 6-CHAR CODE" value="${this.roomCode || ''}" class="w-full text-center font-mono text-xs uppercase px-3 py-2 rounded-xl border ${isDark ? 'bg-black/30 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'} outline-none focus:border-blue-500" />
-                <button id="btn-join-online" class="ps-btn-primary px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap">
+                <input id="input-room-code" type="text" maxlength="6" placeholder="ENTER 6-CHAR CODE" value="${this.invitedRoomCode || ''}" class="w-full text-center font-mono text-xs uppercase px-3 py-2 rounded-xl border ${isDark ? 'bg-black/30 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'} outline-none focus:border-blue-500 transition-colors" />
+                <button id="btn-join-online" ${!this.isValidRoomCode(this.invitedRoomCode) ? 'disabled' : ''} class="ps-btn-primary px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap disabled:opacity-35 disabled:cursor-not-allowed disabled:pointer-events-none transition-all">
                   Join
                 </button>
               </div>
@@ -292,6 +346,11 @@ class ConsoleDashboard {
     `;
 
     this.attachDashboardListeners();
+  }
+
+  private isValidRoomCode(code: string | null | undefined): boolean {
+    if (!code) return false;
+    return /^[A-Z0-9]{6}$/.test(code.trim().toUpperCase());
   }
 
   private attachDashboardListeners() {
@@ -320,15 +379,20 @@ class ConsoleDashboard {
       this.openLaunchModal();
     });
 
-    // Banner Join button (if roomCode present)
+    // Banner Join button (if invitedRoomCode present)
     document.getElementById('btn-banner-join')?.addEventListener('click', () => {
-      if (this.roomCode) {
-        this.joinOnlineMatch(this.roomCode);
+      if (this.invitedRoomCode) {
+        const code = this.invitedRoomCode;
+        this.invitedRoomCode = null;
+        this.roomCode = null;
+        window.history.replaceState({}, '', window.location.pathname);
+        this.joinOnlineMatch(code);
       }
     });
 
     // Banner Dismiss
     document.getElementById('btn-banner-dismiss')?.addEventListener('click', () => {
+      this.invitedRoomCode = null;
       this.roomCode = null;
       window.history.replaceState({}, '', window.location.pathname);
       this.renderDashboard();
@@ -353,6 +417,27 @@ class ConsoleDashboard {
       });
     });
 
+    // Pool variant selector
+    document.getElementById('modal-opt-8ball')?.addEventListener('click', () => {
+      this.currentPoolVariant = '8ball';
+      const btn8 = document.getElementById('modal-opt-8ball');
+      const btn9 = document.getElementById('modal-opt-9ball');
+      if (btn8 && btn9) {
+        btn8.className = 'px-3 py-2 rounded-xl text-xs font-bold transition-all bg-emerald-600 text-white shadow-lg shadow-emerald-600/30';
+        btn9.className = 'px-3 py-2 rounded-xl text-xs font-bold transition-all ps-btn-secondary';
+      }
+    });
+
+    document.getElementById('modal-opt-9ball')?.addEventListener('click', () => {
+      this.currentPoolVariant = '9ball';
+      const btn8 = document.getElementById('modal-opt-8ball');
+      const btn9 = document.getElementById('modal-opt-9ball');
+      if (btn8 && btn9) {
+        btn9.className = 'px-3 py-2 rounded-xl text-xs font-bold transition-all bg-emerald-600 text-white shadow-lg shadow-emerald-600/30';
+        btn8.className = 'px-3 py-2 rounded-xl text-xs font-bold transition-all ps-btn-secondary';
+      }
+    });
+
     // Start AI
     document.getElementById('btn-start-ai')?.addEventListener('click', () => {
       const currentGame = GAMES_REGISTRY[this.selectedGameIndex];
@@ -365,14 +450,37 @@ class ConsoleDashboard {
       this.hostOnlineMatch(currentGame);
     });
 
-    // Join Online
-    document.getElementById('btn-join-online')?.addEventListener('click', () => {
-      const input = document.getElementById('input-room-code') as HTMLInputElement;
-      const code = input?.value.trim().toUpperCase();
-      if (code && code.length >= 4) {
+    // Room Code Input & Join Online Validation
+    const roomInput = document.getElementById('input-room-code') as HTMLInputElement | null;
+    const joinBtn = document.getElementById('btn-join-online') as HTMLButtonElement | null;
+
+    const updateJoinButtonState = () => {
+      if (!roomInput || !joinBtn) return;
+      const sanitized = roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+      if (roomInput.value !== sanitized) {
+        roomInput.value = sanitized;
+      }
+      const isValid = this.isValidRoomCode(sanitized);
+      joinBtn.disabled = !isValid;
+    };
+
+    if (roomInput && joinBtn) {
+      roomInput.addEventListener('input', updateJoinButtonState);
+      roomInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          updateJoinButtonState();
+          if (!joinBtn.disabled) {
+            joinBtn.click();
+          }
+        }
+      });
+      updateJoinButtonState();
+    }
+
+    joinBtn?.addEventListener('click', () => {
+      const code = roomInput?.value.trim().toUpperCase() || '';
+      if (this.isValidRoomCode(code)) {
         this.joinOnlineMatch(code);
-      } else {
-        alert('Please enter a valid room code');
       }
     });
   }
@@ -380,6 +488,12 @@ class ConsoleDashboard {
   private openLaunchModal() {
     const modal = document.getElementById('modal-launch');
     modal?.classList.remove('hidden');
+
+    const roomInput = document.getElementById('input-room-code') as HTMLInputElement | null;
+    const joinBtn = document.getElementById('btn-join-online') as HTMLButtonElement | null;
+    if (roomInput && joinBtn) {
+      joinBtn.disabled = !this.isValidRoomCode(roomInput.value);
+    }
   }
 
   // -------------------------------------------------------------
@@ -388,7 +502,7 @@ class ConsoleDashboard {
 
   private launchGame(gameDef: GameDefinition, mode: 'ai' | 'online', peer?: WebRTCPeer) {
     this.appContainer.innerHTML = `
-      <div id="arena-container" class="w-full min-h-screen flex flex-col items-center justify-start">
+      <div id="arena-container" class="w-full min-h-screen flex flex-col items-center justify-between md:justify-start px-1 sm:px-4 py-1 sm:py-2 select-none">
         <!-- Game mounts here -->
       </div>
     `;
@@ -400,14 +514,18 @@ class ConsoleDashboard {
       aiDifficulty: this.currentAIDifficulty,
       peer,
       theme: this.currentTheme,
+      gameVariant: this.currentPoolVariant,
       onExit: () => {
         this.peer?.cleanup();
+        this.roomCode = null;
+        this.invitedRoomCode = null;
         this.renderDashboard();
       }
     });
   }
 
   private async hostOnlineMatch(gameDef: GameDefinition) {
+    this.invitedRoomCode = null;
     this.renderWaitingRoom('host', gameDef);
 
     this.peer = new WebRTCPeer({
@@ -429,11 +547,14 @@ class ConsoleDashboard {
       await this.peer.hostRoom(gameDef.id);
     } catch (e: any) {
       alert(`Error hosting match: ${e.message}`);
+      this.roomCode = null;
+      this.invitedRoomCode = null;
       this.renderDashboard();
     }
   }
 
   private async joinOnlineMatch(code: string) {
+    this.invitedRoomCode = null;
     this.roomCode = code;
     this.renderWaitingRoom('guest');
 
@@ -453,6 +574,8 @@ class ConsoleDashboard {
       await this.peer.joinRoom(code);
     } catch (e: any) {
       alert(`Error joining match: ${e.message}`);
+      this.roomCode = null;
+      this.invitedRoomCode = null;
       this.renderDashboard();
     }
   }
@@ -501,6 +624,8 @@ class ConsoleDashboard {
 
     document.getElementById('btn-cancel-waiting')?.addEventListener('click', () => {
       this.peer?.cleanup();
+      this.roomCode = null;
+      this.invitedRoomCode = null;
       this.renderDashboard();
     });
 

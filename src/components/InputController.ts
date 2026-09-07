@@ -35,6 +35,51 @@ export class InputController {
     }
   }
 
+  public pressLeft() {
+    if (!this.isEnabled) return;
+    this.actions.moveLeft();
+    this.startLeftShift();
+  }
+
+  public releaseLeft() {
+    this.stopLeftShift();
+  }
+
+  public pressRight() {
+    if (!this.isEnabled) return;
+    this.actions.moveRight();
+    this.startRightShift();
+  }
+
+  public releaseRight() {
+    this.stopRightShift();
+  }
+
+  public pressDown() {
+    if (!this.isEnabled) return;
+    this.actions.softDrop();
+    this.startSoftDrop();
+  }
+
+  public releaseDown() {
+    this.stopSoftDrop();
+  }
+
+  public pressRotate() {
+    if (!this.isEnabled) return;
+    this.actions.rotateCW();
+  }
+
+  public pressHardDrop() {
+    if (!this.isEnabled) return;
+    this.actions.hardDrop();
+  }
+
+  public pressHold() {
+    if (!this.isEnabled) return;
+    this.actions.hold();
+  }
+
   private setupListeners() {
     window.addEventListener('keydown', (e) => {
       if (!this.isEnabled) return;

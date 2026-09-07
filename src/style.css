@@ -84,6 +84,16 @@ html.dark body {
   transform: translateY(1px);
 }
 
+.ps-btn-primary:disabled,
+.ps-btn-primary[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+  filter: none;
+  transform: none;
+  box-shadow: none;
+}
+
 /* Secondary Button */
 .ps-btn-secondary {
   background-color: var(--bg-surface);

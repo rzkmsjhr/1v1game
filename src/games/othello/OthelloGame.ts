@@ -68,6 +68,20 @@ export class OthelloGame implements GameInstance {
       this.gamePhase = 'ai_setup';
     }
 
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('snap') === 'othello') {
+      this.gamePhase = 'playing';
+      this.myPlayer = 1;
+      this.isMyTurn = true;
+      this.engine.makeMove(2, 3);
+      this.engine.makeMove(2, 2);
+      this.engine.makeMove(3, 2);
+      this.engine.makeMove(4, 2);
+      this.engine.makeMove(2, 4);
+      this.engine.makeMove(5, 2);
+      this.engine.makeMove(5, 3);
+      this.engine.makeMove(1, 2);
+    }
+
     this.render();
   }
 

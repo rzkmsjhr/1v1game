@@ -9,6 +9,7 @@ export interface GameSession {
   aiDifficulty?: AIDifficulty;
   peer?: WebRTCPeer;
   theme: AppTheme;
+  gameVariant?: '8ball' | '9ball';
   onExit: () => void;
 }
 
@@ -27,6 +28,7 @@ export interface GameDefinition {
   bannerGradient: string;
   accentColor: string;
   iconSvg: string;
+  screenshotUrl?: string;
   supportsAI: boolean;
   isComingSoon?: boolean;
   create(container: HTMLElement, session: GameSession): GameInstance;

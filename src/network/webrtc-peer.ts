@@ -7,6 +7,10 @@ export type NetworkMessage =
   | { type: 'OTHELLO_DICE_ROLL'; value: number }
   | { type: 'OTHELLO_DICE_REROLL' }
   | { type: 'OTHELLO_COLOR_CHOICE'; chosenColor: 1 | 2; chooserRole: 'host' | 'guest' }
+  | { type: 'POOL_LAG_SHOT'; power: number }
+  | { type: 'POOL_DECIDE_BREAK'; breaker: 'player' | 'opponent' }
+  | { type: 'POOL_SHOT'; angle: number; power: number }
+  | { type: 'POOL_PLACE_BALL'; x: number; y: number }
   | { type: 'GAME_OVER'; didWin: boolean }
   | { type: 'PLAYER_LEAVE' }
   | { type: 'REMATCH_REQUEST' }
@@ -36,7 +40,7 @@ export class WebRTCPeer {
   public gameId: string | null = null;
   public isConnected: boolean = false;
   private pollingInterval: number | null = null;
-  private events: WebRTCEvents;
+  public events: WebRTCEvents;
 
   constructor(events: WebRTCEvents = {}) {
     this.events = events;

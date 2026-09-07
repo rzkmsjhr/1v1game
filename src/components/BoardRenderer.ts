@@ -51,8 +51,7 @@ export class BoardRenderer {
 
   public resize(blockSize: number) {
     this.blockSize = blockSize;
-    // Extra 14px on left for incoming garbage meter
-    const width = COLS * blockSize + 16;
+    const width = COLS * blockSize;
     const height = ROWS * blockSize;
     this.canvas.width = width;
     this.canvas.height = height;
@@ -69,7 +68,7 @@ export class BoardRenderer {
   public addLineClearParticles(row: number, color: string) {
     const screenY = (row - BUFFER_ROWS) * this.blockSize + this.blockSize / 2;
     for (let c = 0; c < COLS; c++) {
-      const screenX = 16 + c * this.blockSize + this.blockSize / 2;
+      const screenX = c * this.blockSize + this.blockSize / 2;
       for (let i = 0; i < 4; i++) {
         const angle = Math.random() * Math.PI * 2;
         const speed = Math.random() * 4 + 2;
@@ -101,8 +100,7 @@ export class BoardRenderer {
   public render(engine: TetrisEngine, isOpponent: boolean = false) {
     const ctx = this.ctx;
     const bs = this.blockSize;
-    const meterWidth = 12;
-    const boardOffsetX = 16;
+    const boardOffsetX = 0;
 
     // Handle screen shake
     if (this.shakeTimer > 0) {
@@ -125,9 +123,6 @@ export class BoardRenderer {
       ctx.fillStyle = isOpponent ? '#f1f5f9' : '#ffffff';
     }
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-    // Render Incoming Garbage Warning Meter on the left
-    this.renderGarbageMeter(engine.pendingGarbage, meterWidth, isDark);
 
     // Render Grid Lines
     ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)';
@@ -200,20 +195,21 @@ export class BoardRenderer {
     // Render Floating Text announcements ("TETRIS!", "COMBO x3", etc.)
     this.updateAndRenderFloatingTexts(ctx);
 
+    // Render Incoming Garbage Warning along the left border only if pending
+    if (engine.pendingGarbage > 0) {
+      this.renderGarbageMeter(engine.pendingGarbage);
+    }
+
     ctx.restore();
   }
 
-  // Draw incoming garbage bar
-  private renderGarbageMeter(pendingLines: number, meterWidth: number, isDark: boolean = true) {
+  // Draw incoming garbage bar as a sleek edge alert
+  private renderGarbageMeter(pendingLines: number) {
+    if (pendingLines <= 0) return;
     const ctx = this.ctx;
     const bs = this.blockSize;
     const totalH = ROWS * bs;
-
-    // Background track
-    ctx.fillStyle = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)';
-    ctx.fillRect(1, 0, meterWidth, totalH);
-
-    if (pendingLines <= 0) return;
+    const meterWidth = 3;
 
     // Meter height based on pending lines (each line is bs pixels)
     const meterHeight = Math.min(pendingLines * bs, totalH);
@@ -222,16 +218,10 @@ export class BoardRenderer {
     // Color: Yellow if <= 3, Red if > 3
     const isCritical = pendingLines > 3;
     ctx.fillStyle = isCritical ? '#ef4444' : '#eab308';
-    ctx.shadowColor = isCritical ? 'rgba(239, 68, 68, 0.4)' : 'rgba(234, 179, 8, 0.4)';
+    ctx.shadowColor = isCritical ? 'rgba(239, 68, 68, 0.6)' : 'rgba(234, 179, 8, 0.6)';
     ctx.shadowBlur = 6;
-    ctx.fillRect(1, startY, meterWidth, meterHeight);
+    ctx.fillRect(0, startY, meterWidth, meterHeight);
     ctx.shadowBlur = 0;
-
-    // Segment divider notches
-    ctx.fillStyle = isDark ? '#111420' : '#ffffff';
-    for (let i = 1; i < pendingLines && i < ROWS; i++) {
-      ctx.fillRect(1, totalH - i * bs - 1, meterWidth, 2);
-    }
   }
 
   // Draw arcade block with bevel and neon highlight
