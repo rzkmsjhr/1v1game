@@ -116,9 +116,7 @@ class ConsoleDashboard {
       <header class="w-full max-w-6xl px-4 sm:px-8 py-5 flex items-center justify-between border-b ${isDark ? 'border-gray-800/80' : 'border-gray-200'}">
         <div class="flex items-center space-x-3">
           <!-- Console Symbol -->
-          <div class="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-lg shadow-md shadow-blue-500/30 select-none">
-            <span>🎮</span>
-          </div>
+          <span class="text-3xl sm:text-4xl select-none leading-none">🎮</span>
           <div>
             <h1 class="text-base sm:text-lg font-bold tracking-tight">1V1 BATTLE HUB</h1>
             <p class="text-[11px] text-gray-500 font-medium">Instant 1v1 Multiplayer Games</p>
