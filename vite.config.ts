@@ -1,4 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
+import http from 'http';
 
 // In-memory room store for local development preview
 interface RoomData {
@@ -142,13 +143,42 @@ function localSignalingPlugin(): Plugin {
   };
 }
 
+// Redirects any incoming request on port 3001 directly to port 3000
+function port3001RedirectPlugin(): Plugin {
+  let redirectServer: http.Server | null = null;
+  return {
+    name: 'port-3001-redirect',
+    configureServer() {
+      if (!redirectServer) {
+        redirectServer = http.createServer((req, res) => {
+          const targetUrl = `http://localhost:3000${req.url || '/'}`;
+          res.writeHead(302, {
+            'Location': targetUrl,
+            'Access-Control-Allow-Origin': '*'
+          });
+          res.end(`Redirecting to ${targetUrl}`);
+        });
+        redirectServer.on('error', () => {
+          // 3001 might already be used or closing, ignore safely
+        });
+        try {
+          redirectServer.listen(3001);
+        } catch {
+          // Ignore if 3001 unavailable
+        }
+      }
+    }
+  };
+}
+
 export default defineConfig({
-  plugins: [localSignalingPlugin()],
+  plugins: [localSignalingPlugin(), port3001RedirectPlugin()],
   build: {
     target: 'esnext'
   },
   server: {
     port: 3000,
+    strictPort: true,
     host: true
   }
 });
