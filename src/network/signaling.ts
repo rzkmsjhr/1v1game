@@ -1,6 +1,7 @@
 // Signaling client for Cloudflare Pages / Workers API
 
 export interface RoomPollResponse {
+  gameId?: string;
   hostOffer?: RTCSessionDescriptionInit | null;
   hostIce?: RTCIceCandidateInit[];
   guestAnswer?: RTCSessionDescriptionInit | null;
@@ -14,11 +15,11 @@ export class SignalingClient {
     this.baseUrl = window.location.origin;
   }
 
-  public async createRoom(offer: RTCSessionDescriptionInit, ice: RTCIceCandidateInit[]): Promise<string> {
+  public async createRoom(gameId: string, offer: RTCSessionDescriptionInit, ice: RTCIceCandidateInit[]): Promise<string> {
     const res = await fetch(`${this.baseUrl}/api/room/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ offer, ice })
+      body: JSON.stringify({ gameId, offer, ice })
     });
 
     if (!res.ok) {
@@ -30,6 +31,7 @@ export class SignalingClient {
   }
 
   public async joinRoom(code: string, answer: RTCSessionDescriptionInit, ice: RTCIceCandidateInit[]): Promise<{
+    gameId: string;
     hostOffer: RTCSessionDescriptionInit;
     hostIce: RTCIceCandidateInit[];
   }> {
@@ -46,6 +48,7 @@ export class SignalingClient {
 
     const data = await res.json();
     return {
+      gameId: data.gameId || 'tetris',
       hostOffer: data.hostOffer,
       hostIce: data.hostIce || []
     };
@@ -67,12 +70,14 @@ export class SignalingClient {
     return await res.json();
   }
 
-  public async checkRoom(code: string): Promise<boolean> {
+  public async getRoomInfo(code: string): Promise<{ exists: boolean; gameId?: string }> {
     try {
       const res = await fetch(`${this.baseUrl}/api/room/${code}`);
-      return res.ok;
+      if (!res.ok) return { exists: false };
+      const data = await res.json();
+      return { exists: true, gameId: data.gameId };
     } catch {
-      return false;
+      return { exists: false };
     }
   }
 }

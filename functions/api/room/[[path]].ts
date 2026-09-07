@@ -48,6 +48,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       const body = await request.json() as any;
       const code = Math.random().toString(36).substring(2, 8).toUpperCase();
       const roomData = {
+        gameId: body.gameId || 'tetris',
         hostOffer: body.offer,
         hostIce: body.ice || [],
         guestAnswer: null,
@@ -55,7 +56,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         createdAt: Date.now(),
       };
       await setRoom(code, roomData);
-      return new Response(JSON.stringify({ success: true, code }), { headers });
+      return new Response(JSON.stringify({ success: true, code, gameId: roomData.gameId }), { headers });
     } catch (e: any) {
       return new Response(JSON.stringify({ error: e.message }), { status: 400, headers });
     }
@@ -82,6 +83,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       await setRoom(roomCode, room);
       return new Response(JSON.stringify({
         success: true,
+        gameId: room.gameId,
         hostOffer: room.hostOffer,
         hostIce: room.hostIce
       }), { headers });
@@ -112,11 +114,13 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const role = url.searchParams.get('role');
     if (role === 'host') {
       return new Response(JSON.stringify({
+        gameId: room.gameId,
         guestAnswer: room.guestAnswer || null,
         guestIce: room.guestIce || []
       }), { headers });
     } else {
       return new Response(JSON.stringify({
+        gameId: room.gameId,
         hostOffer: room.hostOffer || null,
         hostIce: room.hostIce || []
       }), { headers });
@@ -127,6 +131,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   if (request.method === 'GET') {
     return new Response(JSON.stringify({
       exists: true,
+      gameId: room.gameId,
       hasOffer: !!room.hostOffer,
       hasAnswer: !!room.guestAnswer
     }), { headers });

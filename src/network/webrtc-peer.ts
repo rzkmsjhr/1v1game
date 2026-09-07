@@ -1,13 +1,13 @@
 import { SignalingClient } from './signaling';
 
 export type NetworkMessage =
-  | { type: 'SYNC_BOARD'; grid: (string | null)[][]; score: number; pendingGarbage: number }
-  | { type: 'GARBAGE_ATTACK'; lines: number }
+  | { type: 'TETRIS_SYNC_BOARD'; grid: (string | null)[][]; score: number; pendingGarbage: number }
+  | { type: 'TETRIS_GARBAGE'; lines: number }
+  | { type: 'C4_MOVE'; col: number; row: number; player: number }
   | { type: 'GAME_OVER'; didWin: boolean }
   | { type: 'REMATCH_REQUEST' }
   | { type: 'REMATCH_ACCEPT' }
-  | { type: 'PING'; time: number }
-  | { type: 'PONG'; time: number };
+  | { type: 'CUSTOM'; payload: any };
 
 export interface WebRTCEvents {
   onStatusChange?: (status: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error', message?: string) => void;
@@ -24,11 +24,12 @@ const RTC_CONFIG: RTCConfiguration = {
 };
 
 export class WebRTCPeer {
-  private signaling: SignalingClient;
+  public signaling: SignalingClient;
   private peer: RTCPeerConnection | null = null;
   private dataChannel: RTCDataChannel | null = null;
   public role: 'host' | 'guest' | null = null;
   public roomCode: string | null = null;
+  public gameId: string | null = null;
   public isConnected: boolean = false;
   private pollingInterval: number | null = null;
   private events: WebRTCEvents;
@@ -38,16 +39,17 @@ export class WebRTCPeer {
     this.signaling = new SignalingClient();
   }
 
-  public async hostRoom(): Promise<string> {
+  public async hostRoom(gameId: string): Promise<string> {
     this.cleanup();
     this.role = 'host';
-    this.events.onStatusChange?.('connecting', 'Generating room offer...');
+    this.gameId = gameId;
+    this.events.onStatusChange?.('connecting', 'Creating game room...');
 
     this.peer = new RTCPeerConnection(RTC_CONFIG);
     const localIceCandidates: RTCIceCandidateInit[] = [];
 
     // Create reliable DataChannel
-    this.dataChannel = this.peer.createDataChannel('tetris-1v1', {
+    this.dataChannel = this.peer.createDataChannel('game-1v1', {
       ordered: true
     });
     this.setupDataChannel(this.dataChannel);
@@ -65,19 +67,18 @@ export class WebRTCPeer {
     const offer = await this.peer.createOffer();
     await this.peer.setLocalDescription(offer);
 
-    // Wait a brief 400ms to gather local host ICE candidates before posting offer
+    // Wait brief 400ms for initial candidates
     await new Promise(r => setTimeout(r, 400));
 
-    this.roomCode = await this.signaling.createRoom(this.peer.localDescription!, localIceCandidates);
+    this.roomCode = await this.signaling.createRoom(gameId, this.peer.localDescription!, localIceCandidates);
     this.events.onRoomCreated?.(this.roomCode);
-    this.events.onStatusChange?.('connecting', `Waiting for opponent to join room: ${this.roomCode}`);
+    this.events.onStatusChange?.('connecting', `Room code: ${this.roomCode}`);
 
-    // Poll for guest response
     this.startHostPolling();
     return this.roomCode;
   }
 
-  public async joinRoom(code: string): Promise<void> {
+  public async joinRoom(code: string): Promise<string> {
     this.cleanup();
     this.role = 'guest';
     this.roomCode = code.toUpperCase();
@@ -101,33 +102,30 @@ export class WebRTCPeer {
       }
     };
 
-    // First fetch host's offer from poll
     const initialPoll = await this.signaling.pollRoom(this.roomCode, 'guest');
     if (!initialPoll.hostOffer) {
       throw new Error('Host offer not ready');
     }
 
+    this.gameId = initialPoll.gameId || 'tetris';
+
     await this.peer.setRemoteDescription(new RTCSessionDescription(initialPoll.hostOffer));
 
-    // Add any existing host ICE candidates
     if (initialPoll.hostIce) {
       for (const ice of initialPoll.hostIce) {
         await this.peer.addIceCandidate(new RTCIceCandidate(ice)).catch(() => {});
       }
     }
 
-    // Create answer
     const answer = await this.peer.createAnswer();
     await this.peer.setLocalDescription(answer);
 
-    // Wait a brief 300ms to gather candidates
     await new Promise(r => setTimeout(r, 300));
 
-    // Send answer to host
     await this.signaling.joinRoom(this.roomCode, this.peer.localDescription!, localIceCandidates);
 
-    // Guest polls for any additional host ICE candidates until connected
     this.startGuestPolling();
+    return this.gameId;
   }
 
   private startHostPolling() {

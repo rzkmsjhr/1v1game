@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from 'vite';
 
 // In-memory room store for local development preview
 interface RoomData {
+  gameId: string;
   hostOffer?: any;
   guestAnswer?: any;
   hostIce: any[];
@@ -61,13 +62,14 @@ function localSignalingPlugin(): Plugin {
           const body = await readBody();
           const code = Math.random().toString(36).substring(2, 8).toUpperCase();
           localRooms.set(code, {
+            gameId: body.gameId || 'tetris',
             hostOffer: body.offer,
             hostIce: body.ice || [],
             guestIce: [],
             createdAt: Date.now()
           });
           res.statusCode = 200;
-          return res.end(JSON.stringify({ success: true, code }));
+          return res.end(JSON.stringify({ success: true, code, gameId: body.gameId || 'tetris' }));
         }
 
         const roomCode = pathParts[0]?.toUpperCase();
@@ -84,7 +86,12 @@ function localSignalingPlugin(): Plugin {
           room.guestAnswer = body.answer;
           if (body.ice) room.guestIce.push(...body.ice);
           res.statusCode = 200;
-          return res.end(JSON.stringify({ success: true, hostOffer: room.hostOffer, hostIce: room.hostIce }));
+          return res.end(JSON.stringify({
+            success: true,
+            gameId: room.gameId,
+            hostOffer: room.hostOffer,
+            hostIce: room.hostIce
+          }));
         }
 
         // POST /api/room/:code/ice
@@ -105,11 +112,13 @@ function localSignalingPlugin(): Plugin {
           const role = url.searchParams.get('role');
           if (role === 'host') {
             return res.end(JSON.stringify({
+              gameId: room.gameId,
               guestAnswer: room.guestAnswer || null,
               guestIce: room.guestIce
             }));
           } else {
             return res.end(JSON.stringify({
+              gameId: room.gameId,
               hostOffer: room.hostOffer || null,
               hostIce: room.hostIce
             }));
@@ -120,6 +129,7 @@ function localSignalingPlugin(): Plugin {
         if (req.method === 'GET') {
           return res.end(JSON.stringify({
             exists: true,
+            gameId: room.gameId,
             hasOffer: !!room.hostOffer,
             hasAnswer: !!room.guestAnswer
           }));

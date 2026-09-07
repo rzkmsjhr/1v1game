@@ -3,77 +3,130 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  --bg-base: #f4f6fa;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #f8fafc;
+  --border-subtle: #e2e8f0;
+  --border-focus: #0070d1;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --accent-color: #0070d1;
+  --shadow-ambient: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+}
+
+html.dark {
+  --bg-base: #0a0c13;
+  --bg-surface: #121520;
+  --bg-surface-hover: #181c2b;
+  --border-subtle: #1e2436;
+  --border-focus: #0084f7;
+  --text-main: #f8fafc;
+  --text-muted: #8e9bb2;
+  --accent-color: #0084f7;
+  --shadow-ambient: 0 12px 30px -5px rgba(0, 0, 0, 0.45);
 }
 
 body {
-  background: radial-gradient(circle at 50% 10%, #151928 0%, #08090f 80%);
+  background-color: var(--bg-base);
+  color: var(--text-main);
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(0, 112, 209, 0.08) 0%, transparent 60%),
+    radial-gradient(circle at 100% 50%, rgba(157, 0, 255, 0.03) 0%, transparent 40%);
+  min-height: 100vh;
 }
 
-.font-display {
-  font-family: 'Orbitron', 'Chakra Petch', sans-serif;
+html.dark body {
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(0, 112, 209, 0.15) 0%, transparent 60%),
+    radial-gradient(circle at 100% 30%, rgba(120, 0, 255, 0.06) 0%, transparent 40%);
 }
 
-.font-body {
-  font-family: 'Chakra Petch', sans-serif;
+/* PS5 Dashboard Glass Cards */
+.ps-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-ambient);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Cyberpunk Neon Glows */
-.neon-border-cyan {
-  border-color: #00f0ff;
-  box-shadow: 0 0 15px rgba(0, 240, 255, 0.3), inset 0 0 10px rgba(0, 240, 255, 0.15);
+.ps-card:hover {
+  background-color: var(--bg-surface-hover);
+  border-color: rgba(0, 112, 209, 0.3);
 }
 
-.neon-border-pink {
-  border-color: #ff007f;
-  box-shadow: 0 0 15px rgba(255, 0, 127, 0.3), inset 0 0 10px rgba(255, 0, 127, 0.15);
+/* PS5 Active Focus Ring */
+.ps-focus-ring {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
 }
 
-.neon-border-yellow {
-  border-color: #ffe600;
-  box-shadow: 0 0 15px rgba(255, 230, 0, 0.3), inset 0 0 10px rgba(255, 230, 0, 0.15);
+.ps-focus-ring:focus-visible,
+.ps-card-active {
+  border-color: var(--accent-color) !important;
+  box-shadow: 0 0 0 2px var(--accent-color), var(--shadow-ambient) !important;
 }
 
-.neon-text-cyan {
-  color: #00f0ff;
-  text-shadow: 0 0 8px rgba(0, 240, 255, 0.6);
+/* Primary Console Action Button */
+.ps-btn-primary {
+  background-color: var(--accent-color);
+  color: #ffffff;
+  font-weight: 600;
+  transition: all 0.2s ease;
 }
 
-.neon-text-pink {
-  color: #ff007f;
-  text-shadow: 0 0 8px rgba(255, 0, 127, 0.6);
+.ps-btn-primary:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 112, 209, 0.35);
 }
 
-.neon-text-yellow {
-  color: #ffe600;
-  text-shadow: 0 0 8px rgba(255, 230, 0, 0.6);
-}
-
-/* Glassmorphism panel */
-.cyber-panel {
-  background: rgba(18, 20, 32, 0.75);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.cyber-button {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
-}
-
-.cyber-button:hover {
-  transform: translateY(-2px);
-}
-
-.cyber-button:active {
+.ps-btn-primary:active {
   transform: translateY(1px);
 }
 
-/* Touch Control Buttons */
-.touch-btn {
+/* Secondary Button */
+.ps-btn-secondary {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+
+.ps-btn-secondary:hover {
+  background-color: var(--bg-surface-hover);
+  border-color: rgba(0, 112, 209, 0.4);
+}
+
+/* Pill Badges */
+.ps-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(140, 150, 170, 0.3);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(140, 150, 170, 0.5);
+}
+
+/* Smooth Touch Buttons */
+.touch-control-btn {
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
-  -webkit-tap-highlight-color: transparent;
 }

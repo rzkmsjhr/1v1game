@@ -4,39 +4,25 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
-      colors: {
-        cyber: {
-          dark: '#0a0b10',
-          card: '#121420',
-          border: '#1f2438',
-          accent: '#00f0ff',
-          pink: '#ff007f',
-          yellow: '#ffe600',
-          purple: '#9d00ff',
-          green: '#00ff66'
-        }
-      },
       fontFamily: {
-        mono: ['"JetBrains Mono"', '"Fira Code"', 'ui-monospace', 'monospace'],
-        display: ['"Orbitron"', '"Chakra Petch"', 'sans-serif'],
+        sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'monospace'],
       },
-      animation: {
-        'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'shake': 'shake 0.2s ease-in-out',
-        'glow': 'glow 1.5s ease-in-out infinite alternate',
-      },
-      keyframes: {
-        shake: {
-          '0%, 100%': { transform: 'translateX(0)' },
-          '25%': { transform: 'translateX(-4px) translateY(2px)' },
-          '75%': { transform: 'translateX(4px) translateY(-2px)' },
-        },
-        glow: {
-          'from': { filter: 'drop-shadow(0 0 5px rgba(0, 240, 255, 0.4))' },
-          'to': { filter: 'drop-shadow(0 0 15px rgba(0, 240, 255, 0.8))' },
+      colors: {
+        ps: {
+          blue: '#00439c',
+          accent: '#0070d1',
+          cyan: '#00d4ff',
+          coral: '#ff4a68',
         }
+      },
+      boxShadow: {
+        'ps-glow': '0 0 25px rgba(0, 112, 209, 0.25)',
+        'ps-card': '0 8px 30px rgba(0, 0, 0, 0.12)',
+        'ps-card-dark': '0 8px 30px rgba(0, 0, 0, 0.4)',
       }
     },
   },

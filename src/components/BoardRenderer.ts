@@ -31,16 +31,22 @@ export class BoardRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private blockSize: number = 28;
+  public theme: 'dark' | 'light' = 'dark';
   private particles: Particle[] = [];
   private floatingTexts: FloatingText[] = [];
   public shakeOffset: { x: number; y: number } = { x: 0, y: 0 };
   private shakeTimer: number = 0;
 
-  constructor(canvas: HTMLCanvasElement, blockSize: number = 28) {
+  constructor(canvas: HTMLCanvasElement, blockSize: number = 28, theme: 'dark' | 'light' = 'dark') {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.blockSize = blockSize;
+    this.theme = theme;
     this.resize(blockSize);
+  }
+
+  public setTheme(theme: 'dark' | 'light') {
+    this.theme = theme;
   }
 
   public resize(blockSize: number) {
@@ -110,15 +116,21 @@ export class BoardRenderer {
     ctx.save();
     ctx.translate(this.shakeOffset.x, this.shakeOffset.y);
 
-    // Clear background with deep dark cyberpunk tone
-    ctx.fillStyle = isOpponent ? '#08090e' : '#0a0b12';
+    const isDark = this.theme === 'dark';
+
+    // Clear background with theme-aware clean styling
+    if (isDark) {
+      ctx.fillStyle = isOpponent ? '#0a0d16' : '#111420';
+    } else {
+      ctx.fillStyle = isOpponent ? '#f1f5f9' : '#ffffff';
+    }
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     // Render Incoming Garbage Warning Meter on the left
-    this.renderGarbageMeter(engine.pendingGarbage, meterWidth);
+    this.renderGarbageMeter(engine.pendingGarbage, meterWidth, isDark);
 
     // Render Grid Lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+    ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)';
     ctx.lineWidth = 1;
     for (let r = 0; r <= ROWS; r++) {
       ctx.beginPath();
@@ -192,13 +204,13 @@ export class BoardRenderer {
   }
 
   // Draw incoming garbage bar
-  private renderGarbageMeter(pendingLines: number, meterWidth: number) {
+  private renderGarbageMeter(pendingLines: number, meterWidth: number, isDark: boolean = true) {
     const ctx = this.ctx;
     const bs = this.blockSize;
     const totalH = ROWS * bs;
 
     // Background track
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.fillStyle = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)';
     ctx.fillRect(1, 0, meterWidth, totalH);
 
     if (pendingLines <= 0) return;
@@ -209,14 +221,14 @@ export class BoardRenderer {
 
     // Color: Yellow if <= 3, Red if > 3
     const isCritical = pendingLines > 3;
-    ctx.fillStyle = isCritical ? '#ff0055' : '#ffe600';
-    ctx.shadowColor = isCritical ? 'rgba(255, 0, 85, 0.8)' : 'rgba(255, 230, 0, 0.8)';
-    ctx.shadowBlur = 8;
+    ctx.fillStyle = isCritical ? '#ef4444' : '#eab308';
+    ctx.shadowColor = isCritical ? 'rgba(239, 68, 68, 0.4)' : 'rgba(234, 179, 8, 0.4)';
+    ctx.shadowBlur = 6;
     ctx.fillRect(1, startY, meterWidth, meterHeight);
     ctx.shadowBlur = 0;
 
     // Segment divider notches
-    ctx.fillStyle = '#0a0b12';
+    ctx.fillStyle = isDark ? '#111420' : '#ffffff';
     for (let i = 1; i < pendingLines && i < ROWS; i++) {
       ctx.fillRect(1, totalH - i * bs - 1, meterWidth, 2);
     }
