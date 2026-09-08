@@ -1342,6 +1342,12 @@ export class PoolGame implements GameInstance {
         desc.textContent = customSubtitle || 'Opponent won the match.';
       }
       modal.classList.remove('hidden');
+      const btn = document.getElementById('btn-pool-rematch');
+      if (btn) {
+        btn.textContent = 'Rematch';
+        btn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold';
+        btn.onclick = null;
+      }
     }
   }
 
@@ -1355,6 +1361,15 @@ export class PoolGame implements GameInstance {
     if (btn) {
       btn.textContent = 'Accept Rematch!';
       btn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold animate-pulse bg-emerald-600';
+      btn.onclick = () => {
+        this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT' });
+        this.hideGameOverModal();
+        this.isLagModalShown = false;
+        this.isGameOverModalShown = false;
+        this.isAITurnProcessing = false;
+        this.engine.setupLagging();
+        this.updateHUD();
+      };
     }
   }
 
