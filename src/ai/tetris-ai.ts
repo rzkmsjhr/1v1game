@@ -22,6 +22,7 @@ export class TetrisAI {
   private lastActionTime: number = 0;
   private currentPlannedMove: MoveCandidate | null = null;
   private stepState: 'rotate' | 'shift' | 'drop' = 'rotate';
+  private activePieceType: TetrominoType | null = null;
 
   constructor(difficulty: AIDifficulty = 'medium') {
     this.difficulty = difficulty;
@@ -45,7 +46,14 @@ export class TetrisAI {
   public update(engine: TetrisEngine, timestamp: number) {
     if (engine.isGameOver || !engine.currentPiece) {
       this.currentPlannedMove = null;
+      this.activePieceType = null;
       return;
+    }
+
+    // If piece locked or changed unexpectedly, reset planned move
+    if (this.activePieceType !== engine.currentPiece.type) {
+      this.activePieceType = engine.currentPiece.type;
+      this.currentPlannedMove = null;
     }
 
     if (timestamp - this.lastActionTime < this.dropInterval) {
@@ -58,6 +66,7 @@ export class TetrisAI {
       this.currentPlannedMove = this.findBestMove(engine);
       if (this.currentPlannedMove?.useHold && engine.canHold) {
         engine.hold();
+        this.activePieceType = engine.currentPiece?.type || null;
         this.currentPlannedMove = this.findBestMove(engine);
       }
       this.stepState = 'rotate';
@@ -69,7 +78,11 @@ export class TetrisAI {
     // Step 1: Rotate to target
     if (this.stepState === 'rotate') {
       if (engine.currentPiece.rotation !== move.rotation) {
-        engine.rotate('cw');
+        const rotated = engine.rotate('cw');
+        if (!rotated) {
+          // Blocked from rotating further; proceed to shift
+          this.stepState = 'shift';
+        }
         return;
       }
       this.stepState = 'shift';
@@ -78,10 +91,20 @@ export class TetrisAI {
     // Step 2: Shift laterally
     if (this.stepState === 'shift') {
       if (engine.currentPiece.x < move.targetX) {
-        engine.moveRight();
+        const moved = engine.moveRight();
+        if (!moved) {
+          // Blocked by stack or wall; force drop to avoid infinite lock
+          this.stepState = 'drop';
+          return;
+        }
         return;
       } else if (engine.currentPiece.x > move.targetX) {
-        engine.moveLeft();
+        const moved = engine.moveLeft();
+        if (!moved) {
+          // Blocked by stack or wall; force drop to avoid infinite lock
+          this.stepState = 'drop';
+          return;
+        }
         return;
       }
       this.stepState = 'drop';
@@ -91,6 +114,7 @@ export class TetrisAI {
     if (this.stepState === 'drop') {
       engine.hardDrop();
       this.currentPlannedMove = null;
+      this.activePieceType = null;
     }
   }
 

@@ -255,6 +255,10 @@ export class PoolEngine {
 
   private handleMotionSettled() {
     if (this.phase === 'LAGGING') {
+      // Both players must complete their lag shot before evaluating winner/disqualifications
+      if (!this.playerLagShotDone || !this.opponentLagShotDone) {
+        return;
+      }
       this.evaluateLag();
     } else if (this.phase === 'PLAYING') {
       this.evaluateShot();
@@ -609,5 +613,34 @@ export class PoolEngine {
     if (this.phase === 'BALL_IN_HAND') {
       this.phase = 'PLAYING';
     }
+  }
+
+  // Reconcile ball positions and game state from peer authoritative broadcast
+  public syncTableState(data: {
+    balls: Array<{ id: number; x: number; y: number; isPotted: boolean; isSinking: boolean }>;
+    currentTurn?: PlayerId;
+    playerGroup?: BallGroup;
+    opponentGroup?: BallGroup;
+    phase?: MatchPhase;
+    winner?: PlayerId | null;
+  }) {
+    if (!data.balls) return;
+    for (const bData of data.balls) {
+      const existing = this.balls.find(b => b.id === bData.id);
+      if (existing) {
+        existing.x = bData.x;
+        existing.y = bData.y;
+        existing.isPotted = bData.isPotted;
+        existing.isSinking = bData.isSinking;
+        existing.vx = 0;
+        existing.vy = 0;
+      }
+    }
+    if (data.currentTurn) this.currentTurn = data.currentTurn;
+    if (data.playerGroup !== undefined) this.playerGroup = data.playerGroup;
+    if (data.opponentGroup !== undefined) this.opponentGroup = data.opponentGroup;
+    if (data.phase && this.phase !== 'GAME_OVER') this.phase = data.phase;
+    if (data.winner !== undefined) this.winner = data.winner;
+    this.isSimulating = false;
   }
 }

@@ -2,6 +2,7 @@ import { SignalingClient } from './signaling';
 
 export type NetworkMessage =
   | { type: 'TETRIS_SYNC_BOARD'; grid: (string | null)[][]; score: number; pendingGarbage: number; currentPiece?: any }
+  | { type: 'TETRIS_PIECE_MOVE'; currentPiece: any; score: number }
   | { type: 'TETRIS_GARBAGE'; lines: number }
   | { type: 'TETRIS_START_SEED'; seed: number }
   | { type: 'OTHELLO_MOVE'; r: number; c: number; player: number }
@@ -11,9 +12,12 @@ export type NetworkMessage =
   | { type: 'POOL_LAG_SHOT'; power: number }
   | { type: 'POOL_DECIDE_BREAK'; breaker: 'player' | 'opponent' }
   | { type: 'POOL_SHOT'; angle: number; power: number }
+  | { type: 'POOL_AIM_MOVE'; angle: number; power: number }
+  | { type: 'POOL_SYNC_TABLE'; balls: Array<{ id: number; x: number; y: number; isPotted: boolean; isSinking: boolean }>; currentTurn: 'player' | 'opponent'; playerGroup: any; opponentGroup: any; phase: any; winner?: any }
   | { type: 'POOL_MOVE_BALL'; x: number; y: number }
   | { type: 'POOL_PLACE_BALL'; x: number; y: number }
   | { type: 'SNAKE_INIT_BOARD'; board: any }
+  | { type: 'SNAKE_REQUEST_BOARD' }
   | { type: 'SNAKE_INITIAL_ROLL'; d1: number; d2: number; total: number }
   | { type: 'SNAKE_INITIAL_CHOICE'; choice: 'start_first' | 'start_second' }
   | { type: 'SNAKE_DICE_ROLL'; d1: number; d2: number; total: number; isDouble: boolean }
@@ -42,6 +46,7 @@ export class WebRTCPeer {
   public signaling: SignalingClient;
   private peer: RTCPeerConnection | null = null;
   private dataChannel: RTCDataChannel | null = null;
+  private processedIceKeys = new Set<string>();
   public role: 'host' | 'guest' | null = null;
   public roomCode: string | null = null;
   public gameId: string | null = null;
@@ -179,7 +184,11 @@ export class WebRTCPeer {
 
         if (poll.guestIce && this.peer) {
           for (const ice of poll.guestIce) {
-            await this.peer.addIceCandidate(new RTCIceCandidate(ice)).catch(() => {});
+            const key = ice.candidate || JSON.stringify(ice);
+            if (!this.processedIceKeys.has(key)) {
+              this.processedIceKeys.add(key);
+              await this.peer.addIceCandidate(new RTCIceCandidate(ice)).catch(() => {});
+            }
           }
         }
       } catch (e: any) {
@@ -200,7 +209,11 @@ export class WebRTCPeer {
         const poll = await this.signaling.pollRoom(this.roomCode, 'guest');
         if (poll.hostIce && this.peer) {
           for (const ice of poll.hostIce) {
-            await this.peer.addIceCandidate(new RTCIceCandidate(ice)).catch(() => {});
+            const key = ice.candidate || JSON.stringify(ice);
+            if (!this.processedIceKeys.has(key)) {
+              this.processedIceKeys.add(key);
+              await this.peer.addIceCandidate(new RTCIceCandidate(ice)).catch(() => {});
+            }
           }
         }
       } catch (e: any) {
@@ -268,5 +281,6 @@ export class WebRTCPeer {
     this.isConnected = false;
     this.roomCode = null;
     this.role = null;
+    this.processedIceKeys.clear();
   }
 }

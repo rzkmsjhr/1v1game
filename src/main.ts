@@ -58,6 +58,13 @@ class ConsoleDashboard {
       }
     }
 
+    const playParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('play') : null;
+    if (playParam && this.selectedGameIndex !== -1) {
+      const g = GAMES_REGISTRY[this.selectedGameIndex];
+      this.launchGame(g, 'ai');
+      return;
+    }
+
     this.renderDashboard();
 
     const modalParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('modal') : null;
@@ -192,7 +199,26 @@ class ConsoleDashboard {
         ` : ''}
 
         <!-- Hero Showcase Card -->
-        <div class="relative overflow-hidden rounded-3xl p-6 sm:p-10 mb-8 ps-card shadow-2xl bg-gradient-to-br ${currentGame.bannerGradient} text-white group">
+        <div class="relative overflow-hidden rounded-3xl p-6 sm:p-10 mb-8 ps-card shadow-2xl bg-gradient-to-br ${currentGame.bannerGradient} text-white group border border-white/10 dark:border-white/15">
+          ${currentGame.id === 'pool' ? `
+            <!-- Iconic Billiard 8-Ball & Stripes Decorative Overlay -->
+            <div class="absolute inset-0 pointer-events-none overflow-hidden select-none z-0">
+              <!-- Radial warm amber overhead table spotlight -->
+              <div class="absolute -top-28 right-1/3 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl"></div>
+              
+              <!-- Stylized Diagonal Billiard Rally / 9-Ball Stripes -->
+              <div class="absolute -top-16 -left-32 w-[160%] h-36 transform -rotate-12 pointer-events-none opacity-25">
+                <div class="w-full h-1.5 bg-white/40 mb-2"></div>
+                <div class="w-full h-10 bg-gradient-to-r from-amber-500/30 via-yellow-400/40 to-amber-600/30 mb-2 shadow-lg shadow-amber-500/10"></div>
+                <div class="w-full h-1.5 bg-white/40"></div>
+              </div>
+
+              <!-- Subtle Billiard Aim Accent Lines -->
+              <div class="absolute bottom-6 left-12 w-64 h-[1px] bg-gradient-to-r from-white/20 via-amber-400/30 to-transparent"></div>
+              <div class="absolute bottom-9 left-16 w-40 h-[1px] bg-gradient-to-r from-white/10 via-amber-400/15 to-transparent"></div>
+            </div>
+          ` : ''}
+
           <div class="relative z-10 max-w-xl">
             <div class="flex items-center space-x-2 mb-3">
               <span class="ps-badge bg-white/20 backdrop-blur-md text-white">

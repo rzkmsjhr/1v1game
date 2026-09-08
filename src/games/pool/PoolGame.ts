@@ -112,6 +112,8 @@ export class PoolGame implements GameInstance {
   private handleWindowPointerMove: ((e: PointerEvent) => void) | null = null;
   private handleWindowPointerUp: ((e: PointerEvent) => void) | null = null;
   private lastMoveBroadcastTime: number = 0;
+  private opponentCue: { angle: number; power: number } | null = null;
+  private lastAimBroadcastTime: number = 0;
 
   // Mobile & Auto-Rotation State
   private isMobileView: boolean = false;
@@ -137,6 +139,12 @@ export class PoolGame implements GameInstance {
     this.checkMobileAndOrientation();
     this.render();
     this.setupNetwork();
+
+    const matchParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('match') : null;
+    if (matchParam === '1') {
+      this.engine.setupMatchTable('player');
+    }
+
     this.startLoop();
 
     window.addEventListener('resize', this.handleResize);
@@ -234,7 +242,16 @@ export class PoolGame implements GameInstance {
         this.engine.setupMatchTable(msg.breaker);
         this.updateHUD();
         break;
+      case 'POOL_AIM_MOVE':
+        this.opponentCue = { angle: msg.angle, power: msg.power };
+        break;
+      case 'POOL_SYNC_TABLE':
+        this.opponentCue = null;
+        this.engine.syncTableState(msg);
+        this.updateHUD();
+        break;
       case 'POOL_SHOT':
+        this.opponentCue = null;
         this.engine.shoot(msg.angle, msg.power);
         sounds.playCueHit(msg.power);
         break;
@@ -789,6 +806,20 @@ export class PoolGame implements GameInstance {
     if (sliderModal && parseFloat(sliderModal.value) !== pct) {
       sliderModal.value = `${pct}`;
     }
+    this.broadcastAim();
+  }
+
+  private broadcastAim() {
+    if (this.session.mode !== 'online' || !this.session.peer?.isConnected || !this.isHumanTurn()) return;
+    const now = performance.now();
+    if (now - this.lastAimBroadcastTime > 40) {
+      this.lastAimBroadcastTime = now;
+      this.session.peer.sendMessage({
+        type: 'POOL_AIM_MOVE',
+        angle: this.cueAngle,
+        power: this.cuePower
+      });
+    }
   }
 
   private openPowerModal() {
@@ -957,6 +988,7 @@ export class PoolGame implements GameInstance {
     const dy = cue.y - stickY;
     if (Math.hypot(dx, dy) >= 15) {
       this.cueAngle = Math.atan2(dy, dx);
+      this.broadcastAim();
     }
   }
 
@@ -967,6 +999,7 @@ export class PoolGame implements GameInstance {
     const dy = targetY - cue.y;
     if (Math.hypot(dx, dy) >= cue.radius + 4) {
       this.cueAngle = Math.atan2(dy, dx);
+      this.broadcastAim();
     }
   }
 
@@ -1128,22 +1161,52 @@ export class PoolGame implements GameInstance {
   // -------------------------------------------------------------
   private startLoop() {
     this.isRunning = true;
+    let screenshotFrames = 0;
 
-    const loop = () => {
+    const FIXED_TIMESTEP = 1000 / 60; // 16.6667ms per physics tick (consistent across 60Hz/120Hz/144Hz)
+    let lastTime = performance.now();
+    let accumulator = 0;
+
+    const loop = (currentTime: number) => {
       if (!this.isRunning) return;
 
-      // Physics tick with sound callbacks
-      this.engine.update(
-        (_b1, _b2, speed) => sounds.playBallHit(Math.min(1.0, speed / 8)),
-        (_ball, speed) => sounds.playCushionBounce(Math.min(1.0, speed / 8)),
-        () => sounds.playPocketDrop()
-      );
+      const delta = Math.min(currentTime - lastTime, 100);
+      lastTime = currentTime;
+      accumulator += delta;
+
+      // 60Hz fixed-timestep physics updates
+      while (accumulator >= FIXED_TIMESTEP) {
+        this.engine.update(
+          (_b1, _b2, speed) => sounds.playBallHit(Math.min(1.0, speed / 8)),
+          (_ball, speed) => sounds.playCushionBounce(Math.min(1.0, speed / 8)),
+          () => sounds.playPocketDrop()
+        );
+        accumulator -= FIXED_TIMESTEP;
+      }
 
       // Reset AI processing flag when physics simulation settles
       if (this.wasSimulating && !this.engine.isSimulating) {
         this.isAITurnProcessing = false;
         if (this.isHumanTurn()) {
           this.setPower(this.humanCuePower);
+        }
+        // In online PvP, broadcast authoritative table snapshot when balls settle
+        if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+          this.session.peer.sendMessage({
+            type: 'POOL_SYNC_TABLE',
+            balls: this.engine.balls.map(b => ({
+              id: b.id,
+              x: b.x,
+              y: b.y,
+              isPotted: b.isPotted,
+              isSinking: b.isSinking
+            })),
+            currentTurn: this.engine.currentTurn,
+            playerGroup: this.engine.playerGroup,
+            opponentGroup: this.engine.opponentGroup,
+            phase: this.engine.phase,
+            winner: this.engine.winner
+          });
         }
       }
       this.wasSimulating = this.engine.isSimulating;
@@ -1167,16 +1230,22 @@ export class PoolGame implements GameInstance {
         this.processAITurn();
       }
 
-      // Render frame
+      // Render frame with opponent cue if applicable
       this.renderer.render(
         this.engine,
         this.cueAngle,
         this.cuePower,
         this.isAiming,
-        this.isHumanTurn()
+        this.isHumanTurn(),
+        this.opponentCue
       );
 
       this.updateHUD();
+
+      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('screenshot') === '1') {
+        screenshotFrames++;
+        if (screenshotFrames >= 5) return;
+      }
 
       this.animationFrameId = requestAnimationFrame(loop);
     };

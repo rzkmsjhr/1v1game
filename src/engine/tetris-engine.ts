@@ -19,7 +19,7 @@ export interface ActivePiece {
 export interface EngineEvents {
   onChange?: () => void;
   onPieceLocked?: () => void;
-  onLinesCleared?: (lines: number, garbageSent: number, isTetris: boolean, combo: number) => void;
+  onLinesCleared?: (lines: number, garbageSent: number, isTetris: boolean, combo: number, clearedRows?: number[]) => void;
   onGarbageReceived?: (lines: number) => void;
   onGameOver?: (isWinner: boolean) => void;
 }
@@ -388,7 +388,7 @@ export class TetrisEngine {
     this.events.onPieceLocked?.();
 
     // Check line clears
-    const clearedLines = this.clearLines();
+    const { count: clearedLines, rows: clearedRows } = this.clearLines();
 
     // Competitive 1v1 Garbage Attack / Counter Calculation
     if (clearedLines > 0) {
@@ -412,7 +412,7 @@ export class TetrisEngine {
       }
 
       this.linesClearedTotal += clearedLines;
-      this.events.onLinesCleared?.(clearedLines, outgoingGarbage, isTetris, this.combo);
+      this.events.onLinesCleared?.(clearedLines, outgoingGarbage, isTetris, this.combo, clearedRows);
     } else {
       this.combo = -1;
       // No lines cleared -> Receive pending garbage into the board!
@@ -431,14 +431,14 @@ export class TetrisEngine {
     this.spawnNextPiece();
   }
 
-  private clearLines(): number {
-    let linesCleared = 0;
+  private clearLines(): { count: number; rows: number[] } {
+    const clearedRows: number[] = [];
     const newGrid: (string | null)[][] = [];
 
     for (let r = 0; r < TOTAL_ROWS; r++) {
       const isFull = this.grid[r].every(cell => cell !== null);
       if (isFull) {
-        linesCleared++;
+        clearedRows.push(r);
       } else {
         newGrid.push([...this.grid[r]]);
       }
@@ -450,13 +450,14 @@ export class TetrisEngine {
     }
 
     this.grid = newGrid;
+    const linesCleared = clearedRows.length;
 
     if (linesCleared > 0) {
       const baseScores = [0, 100, 300, 500, 800];
       this.score += (baseScores[linesCleared] || 1000) * (this.combo > 0 ? (1 + this.combo * 0.5) : 1);
     }
 
-    return linesCleared;
+    return { count: linesCleared, rows: clearedRows };
   }
 
   // Pushes pending garbage up from the bottom

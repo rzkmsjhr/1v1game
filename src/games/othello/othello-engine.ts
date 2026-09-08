@@ -176,11 +176,11 @@ export class OthelloEngine {
     }
 
     if (difficulty === 'hard') {
-      return this.searchBestMove(4);
+      return this.searchBestMove(3);
     }
 
-    // Extreme: 5-to-6 ply search
-    return this.searchBestMove(5);
+    // Extreme: 4-ply search with move ordering
+    return this.searchBestMove(4);
   }
 
   private searchBestMove(depth: number): [number, number] {
@@ -188,10 +188,10 @@ export class OthelloEngine {
     let bestScore = -Infinity;
     let bestMove: [number, number] = validMoves[0];
 
-    // Shuffle moves slightly to avoid predictability on identical scores
-    const shuffled = [...validMoves].sort(() => Math.random() - 0.5);
+    // Order moves by positional weight to maximize early alpha-beta cutoffs
+    validMoves.sort((a, b) => POSITION_WEIGHTS[b[0]][b[1]] - POSITION_WEIGHTS[a[0]][a[1]]);
 
-    for (const [r, c] of shuffled) {
+    for (const [r, c] of validMoves) {
       const simulatedBoard = this.cloneBoard(this.board);
       const flipped = this.getFlippedDiscs(r, c, this.currentPlayer, simulatedBoard);
       simulatedBoard[r][c] = this.currentPlayer;
@@ -221,6 +221,7 @@ export class OthelloEngine {
     curPlayer: PlayerColor
   ): number {
     const validMoves = this.getValidMoves(curPlayer, board);
+    validMoves.sort((a, b) => POSITION_WEIGHTS[b[0]][b[1]] - POSITION_WEIGHTS[a[0]][a[1]]);
     const opponent: PlayerColor = curPlayer === 1 ? 2 : 1;
 
     // If no moves, check if opponent has moves (pass) or game over

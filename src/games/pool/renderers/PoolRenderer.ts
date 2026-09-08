@@ -54,7 +54,8 @@ export class PoolRenderer {
     cueAngle: number,
     cuePower: number,
     isAiming: boolean = false,
-    isHumanTurn: boolean = true
+    isHumanTurn: boolean = true,
+    opponentCue?: { angle: number; power: number } | null
   ) {
     const ctx = this.ctx;
     // Clear full high-DPI canvas buffer
@@ -70,16 +71,20 @@ export class PoolRenderer {
     this.renderClothAndMarkers(ctx, engine);
     this.renderPockets(ctx);
 
-    // 2. Render Aiming Guideline & Ghost Ball (if human turn and ready to shoot)
+    // 2. Render Aiming Guideline & Ghost Ball (player or opponent)
     const cue = engine.getCueBall();
+    const isPlayerTurn = engine.currentTurn === 'player';
+    const isOpponentTurn = engine.currentTurn === 'opponent';
+    const activeAngle = isPlayerTurn ? cueAngle : (opponentCue ? opponentCue.angle : cueAngle);
+    const activePower = isPlayerTurn ? cuePower : (opponentCue ? opponentCue.power : cuePower);
+
     if (
       cue &&
       !engine.isSimulating &&
       engine.phase === 'PLAYING' &&
-      isHumanTurn &&
-      engine.currentTurn === 'player'
+      ((isHumanTurn && isPlayerTurn) || (isOpponentTurn && opponentCue))
     ) {
-      const trajectory = PoolPhysics.calculateTrajectory(cue, cueAngle, engine.balls);
+      const trajectory = PoolPhysics.calculateTrajectory(cue, activeAngle, engine.balls);
       this.renderAimingGuide(ctx, cue, trajectory);
     }
 
@@ -87,17 +92,18 @@ export class PoolRenderer {
     this.renderBalls(ctx, engine.balls);
 
     // 4. Render Cue Stick (on active turns when settled)
-    if (
-      cue &&
-      !engine.isSimulating &&
-      (engine.phase === 'PLAYING' || (engine.phase === 'LAGGING' && !engine.playerLagShotDone))
-    ) {
-      this.renderCueStick(ctx, cue, cueAngle, cuePower, isAiming);
+    const shouldShowCue = cue && !engine.isSimulating && (
+      (engine.phase === 'PLAYING' && (isPlayerTurn ? isHumanTurn : (opponentCue != null || !isHumanTurn))) ||
+      (engine.phase === 'LAGGING' && !engine.playerLagShotDone && isHumanTurn)
+    );
+
+    if (shouldShowCue && cue) {
+      this.renderCueStick(ctx, cue, activeAngle, activePower, isPlayerTurn ? isAiming : true);
     }
 
     // 5. Render Ball-in-hand indicator
     if (engine.phase === 'BALL_IN_HAND' && cue) {
-      this.renderBallInHandGuide(ctx, cue, isHumanTurn, engine.ballInHandKitchenOnly);
+      this.renderBallInHandGuide(ctx, cue, isPlayerTurn, engine.ballInHandKitchenOnly);
     }
 
     ctx.restore();

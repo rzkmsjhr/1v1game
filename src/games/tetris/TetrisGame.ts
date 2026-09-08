@@ -34,6 +34,7 @@ export class TetrisGame implements GameInstance {
   private animationFrameId: number | null = null;
   private opponentName: string = 'AI Bot';
   private opponentScore: number = 0;
+  private lastPieceBroadcastTime: number = 0;
   private isMobileView: boolean = typeof window !== 'undefined' ? window.innerWidth < 768 : false;
 
   constructor(container: HTMLElement, session: GameSession) {
@@ -65,8 +66,11 @@ export class TetrisGame implements GameInstance {
     // 2. Initialize player engine with synchronized matchSeed
     this.playerEngine = new TetrisEngine({
       onChange: () => this.handlePlayerChange(),
-      onPieceLocked: () => sounds.playHardDrop(),
-      onLinesCleared: (_lines, garbageSent, isTetris, combo) => {
+      onPieceLocked: () => {
+        sounds.playHardDrop();
+        this.syncFullBoard();
+      },
+      onLinesCleared: (_lines, garbageSent, isTetris, combo, clearedRows) => {
         sounds.playLineClear(_lines);
         if (isTetris) {
           this.playerRenderer?.triggerShake(8);
@@ -75,13 +79,24 @@ export class TetrisGame implements GameInstance {
           this.playerRenderer?.addFloatingText(`COMBO x${combo + 1}`, '#eab308');
         }
 
+        // Spawn particle explosions on all cleared rows
+        if (clearedRows && clearedRows.length > 0) {
+          const colors = ['#00f0f0', '#0000f0', '#f0a000', '#f0f000', '#00f000', '#a000f0', '#f00000'];
+          for (const row of clearedRows) {
+            const rowColor = isTetris ? '#38bdf8' : colors[Math.floor(Math.random() * colors.length)];
+            this.playerRenderer?.addLineClearParticles(row, rowColor);
+          }
+        }
+
         if (garbageSent > 0) {
           this.sendGarbageToOpponent(garbageSent);
         }
+        this.syncFullBoard();
       },
       onGarbageReceived: () => {
         sounds.playGarbageAlert();
         this.playerRenderer?.triggerShake(5);
+        this.syncFullBoard();
       },
       onGameOver: () => {
         this.handleGameOver(false);
@@ -92,10 +107,17 @@ export class TetrisGame implements GameInstance {
     this.opponentEngine = new TetrisEngine({
       onChange: () => {},
       onPieceLocked: () => {},
-      onLinesCleared: (_lines, garbageSent, isTetris) => {
+      onLinesCleared: (_lines, garbageSent, isTetris, _combo, clearedRows) => {
         if (isTetris) {
           this.opponentRenderer?.triggerShake(6);
           this.opponentRenderer?.addFloatingText('TETRIS!', '#ef4444');
+        }
+        if (clearedRows && clearedRows.length > 0) {
+          const colors = ['#00f0f0', '#0000f0', '#f0a000', '#f0f000', '#00f000', '#a000f0', '#f00000'];
+          for (const row of clearedRows) {
+            const rowColor = isTetris ? '#ef4444' : colors[Math.floor(Math.random() * colors.length)];
+            this.opponentRenderer?.addLineClearParticles(row, rowColor);
+          }
         }
         if (garbageSent > 0 && this.session.mode === 'ai') {
           this.playerEngine.addIncomingGarbage(garbageSent);
@@ -204,7 +226,12 @@ export class TetrisGame implements GameInstance {
       hardDrop: () => { this.playerEngine.hardDrop(); },
       rotateCW: () => { if (this.playerEngine.rotate('cw')) sounds.playRotate(); },
       rotateCCW: () => { if (this.playerEngine.rotate('ccw')) sounds.playRotate(); },
-      hold: () => { if (this.playerEngine.hold()) sounds.playHold(); }
+      hold: () => {
+        if (this.playerEngine.hold()) {
+          sounds.playHold();
+          this.syncFullBoard();
+        }
+      }
     });
   }
 
@@ -271,6 +298,16 @@ export class TetrisGame implements GameInstance {
         }
         break;
 
+      case 'TETRIS_PIECE_MOVE':
+        if (this.opponentEngine) {
+          if (msg.currentPiece !== undefined) {
+            this.opponentEngine.currentPiece = msg.currentPiece;
+          }
+          this.opponentScore = msg.score;
+          this.updateStatsUI();
+        }
+        break;
+
       case 'TETRIS_SYNC_BOARD':
         for (let r = 0; r < 20; r++) {
           for (let c = 0; c < 10; c++) {
@@ -317,7 +354,22 @@ export class TetrisGame implements GameInstance {
     this.updateStatsUI();
     this.renderPreviews();
 
+    // Active movement broadcast: lightweight, throttled to 35ms (saving >95% bandwidth)
     if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      const now = performance.now();
+      if (now - this.lastPieceBroadcastTime > 35) {
+        this.lastPieceBroadcastTime = now;
+        this.session.peer.sendMessage({
+          type: 'TETRIS_PIECE_MOVE',
+          currentPiece: this.playerEngine.currentPiece,
+          score: this.playerEngine.score
+        });
+      }
+    }
+  }
+
+  private syncFullBoard() {
+    if (this.session.mode === 'online' && this.session.peer?.isConnected && this.playerEngine) {
       this.session.peer.sendMessage({
         type: 'TETRIS_SYNC_BOARD',
         grid: this.playerEngine.getVisibleGrid(),

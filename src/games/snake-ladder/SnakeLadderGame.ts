@@ -185,6 +185,17 @@ export class SnakeLadderGame implements GameInstance {
         board: this.engine.board
       });
     }
+
+    const matchParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('match') : null;
+    if (matchParam === '1') {
+      this.engine.chooseStartTurn('start_first');
+      this.hideDuelModal();
+      this.engine.playerPos = 24;
+      this.engine.opponentPos = 18;
+      this.lastDice = { d1: 4, d2: 2, total: 6, isDouble: false };
+      this.updateHUD();
+      this.renderBoard();
+    }
   }
 
   public destroy() {
@@ -217,10 +228,46 @@ export class SnakeLadderGame implements GameInstance {
     if (!this.session.peer) return;
 
     const origOnMessage = this.session.peer.events?.onMessage;
-    this.session.peer.events.onMessage = (msg: NetworkMessage) => {
-      origOnMessage?.(msg);
-      this.handleNetworkMessage(msg);
-    };
+    const origOnStatusChange = this.session.peer.events?.onStatusChange;
+
+    this.session.peer = Object.assign(this.session.peer, {
+      events: {
+        ...this.session.peer.events,
+        onMessage: (msg: NetworkMessage) => {
+          origOnMessage?.(msg);
+          this.handleNetworkMessage(msg);
+        },
+        onStatusChange: (status: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error', message?: string) => {
+          origOnStatusChange?.(status, message);
+          if (status === 'connected') {
+            if (this.session.peer?.role === 'host') {
+              this.session.peer.sendMessage({
+                type: 'SNAKE_INIT_BOARD',
+                board: this.engine.board
+              });
+            } else if (this.session.peer?.role === 'guest') {
+              this.session.peer.sendMessage({
+                type: 'SNAKE_REQUEST_BOARD'
+              });
+            }
+          }
+        }
+      }
+    });
+
+    // Send board request/init if already connected
+    if (this.session.peer.isConnected) {
+      if (this.session.peer.role === 'host') {
+        this.session.peer.sendMessage({
+          type: 'SNAKE_INIT_BOARD',
+          board: this.engine.board
+        });
+      } else if (this.session.peer.role === 'guest') {
+        this.session.peer.sendMessage({
+          type: 'SNAKE_REQUEST_BOARD'
+        });
+      }
+    }
   }
 
   private handleNetworkMessage(msg: any) {
@@ -228,9 +275,22 @@ export class SnakeLadderGame implements GameInstance {
       case 'PLAYER_LEAVE':
         this.showGameOverModal(true, 'Opponent left the game.');
         break;
+      case 'SNAKE_REQUEST_BOARD':
+        if (this.session.peer?.role === 'host') {
+          this.session.peer.sendMessage({
+            type: 'SNAKE_INIT_BOARD',
+            board: this.engine.board
+          });
+        }
+        break;
       case 'SNAKE_INIT_BOARD':
         // Guest receives host's randomized board config
         this.engine.reset(msg.board);
+        this.renderBoard();
+        this.updateHUD();
+        break;
+      case 'SNAKE_MOVE_COMPLETE':
+        this.engine.opponentPos = msg.finalPos;
         this.renderBoard();
         this.updateHUD();
         break;
@@ -803,6 +863,13 @@ export class SnakeLadderGame implements GameInstance {
     this.renderBoard();
     this.updateHUD();
 
+    if (playerId === 'player' && this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({
+        type: 'SNAKE_MOVE_COMPLETE',
+        finalPos: this.engine.playerPos
+      });
+    }
+
     // Check game over
     if (result.won) {
       sounds.playFanfare();
@@ -952,23 +1019,14 @@ export class SnakeLadderGame implements GameInstance {
 
   private handleRematchClick() {
     if (this.session.mode === 'online' && this.session.peer?.isConnected) {
-      const seed = Math.floor(Math.random() * 10000000);
       this.session.peer.sendMessage({
-        type: 'REMATCH_ACCEPT',
-        seed
+        type: 'REMATCH_REQUEST'
       });
-      this.hideGameOverModal();
-      this.engine.reset(generateBoard(seed));
-      this.playerDuelD1 = null;
-      this.playerDuelD2 = null;
-      this.oppDuelD1 = null;
-      this.oppDuelD2 = null;
-      this.isDuelRolling = false;
-      this.lastDice = { d1: 1, d2: 1, total: 2, isDouble: false };
-      this.updateDiceDisplay(this.lastDice);
-      this.renderBoard();
-      this.updateHUD();
-      this.showDuelModal();
+      const btn = document.getElementById('btn-sl-rematch');
+      if (btn) {
+        btn.textContent = 'Waiting for Opponent...';
+        btn.setAttribute('disabled', 'true');
+      }
     } else {
       // AI rematch: fresh randomized board
       this.hideGameOverModal();
@@ -987,24 +1045,30 @@ export class SnakeLadderGame implements GameInstance {
   }
 
   private showRematchOffer() {
-    if (confirm(`${this.opponentName} wants a rematch on a new randomized board! Accept?`)) {
-      const seed = Math.floor(Math.random() * 10000000);
-      this.session.peer?.sendMessage({
-        type: 'REMATCH_ACCEPT',
-        seed
-      });
-      this.hideGameOverModal();
-      this.engine.reset(generateBoard(seed));
-      this.playerDuelD1 = null;
-      this.playerDuelD2 = null;
-      this.oppDuelD1 = null;
-      this.oppDuelD2 = null;
-      this.isDuelRolling = false;
-      this.lastDice = { d1: 1, d2: 1, total: 2, isDouble: false };
-      this.updateDiceDisplay(this.lastDice);
-      this.renderBoard();
-      this.updateHUD();
-      this.showDuelModal();
+    const btn = document.getElementById('btn-sl-rematch');
+    if (btn) {
+      btn.removeAttribute('disabled');
+      btn.textContent = 'Opponent Wants Rematch! Accept?';
+      btn.className = 'ps-btn-primary px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider animate-bounce';
+      btn.onclick = () => {
+        const seed = Math.floor(Math.random() * 10000000);
+        this.session.peer?.sendMessage({
+          type: 'REMATCH_ACCEPT',
+          seed
+        });
+        this.hideGameOverModal();
+        this.engine.reset(generateBoard(seed));
+        this.playerDuelD1 = null;
+        this.playerDuelD2 = null;
+        this.oppDuelD1 = null;
+        this.oppDuelD2 = null;
+        this.isDuelRolling = false;
+        this.lastDice = { d1: 1, d2: 1, total: 2, isDouble: false };
+        this.updateDiceDisplay(this.lastDice);
+        this.renderBoard();
+        this.updateHUD();
+        this.showDuelModal();
+      };
     }
   }
 }

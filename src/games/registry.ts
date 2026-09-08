@@ -40,9 +40,10 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     description: 'Lag for the break to choose play order, line up precision bank shots with realistic physics, and compete in 8-Ball & 9-Ball modes.',
     genre: 'Sports & Physics',
     badge: '8-Ball & 9-Ball',
-    bannerGradient: 'from-emerald-700 via-teal-800 to-slate-950',
-    accentColor: '#10b981',
-    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="10.5" r="1"/><circle cx="12" cy="13.5" r="1"/></svg>`,
+    bannerGradient: 'from-zinc-950 via-neutral-900 to-amber-950',
+    accentColor: '#f59e0b',
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9.5" fill="#18181b" stroke="#3f3f46" stroke-width="1.2"/><circle cx="12" cy="12" r="4.4" fill="#ffffff"/><text x="12" y="14.5" font-size="7.5" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" fill="#09090b">8</text></svg>`,
+    screenshotUrl: '/screenshots/pool.png',
     supportsAI: true,
     create: (container, session) => new PoolGame(container, session)
   },
@@ -56,6 +57,7 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     bannerGradient: 'from-amber-600 via-orange-700 to-emerald-900',
     accentColor: '#ea580c',
     iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 3L5 21M9 6h7M8 11h7M7 16h7M15 13c1.5 0 2.5 1 2.5 2s-1 2-2.5 2-2.5-1-2.5-2 1-2 2.5-2z"/></svg>`,
+    screenshotUrl: '/screenshots/snake-ladder.png',
     supportsAI: true,
     create: (container, session) => new SnakeLadderGame(container, session)
   }
