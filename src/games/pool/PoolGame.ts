@@ -114,6 +114,7 @@ export class PoolGame implements GameInstance {
   private lastMoveBroadcastTime: number = 0;
   private opponentCue: { angle: number; power: number } | null = null;
   private lastAimBroadcastTime: number = 0;
+  private isLocalShooter: boolean = false;
 
   // Mobile & Auto-Rotation State
   private isMobileView: boolean = false;
@@ -247,11 +248,20 @@ export class PoolGame implements GameInstance {
         break;
       case 'POOL_SYNC_TABLE':
         this.opponentCue = null;
-        this.engine.syncTableState(msg);
+        this.isLocalShooter = false;
+        this.engine.syncTableState({
+          balls: msg.balls,
+          currentTurn: msg.currentTurn ? (msg.currentTurn === 'player' ? 'opponent' : 'player') : undefined,
+          playerGroup: msg.opponentGroup,
+          opponentGroup: msg.playerGroup,
+          phase: msg.phase,
+          winner: msg.winner ? (msg.winner === 'player' ? 'opponent' : (msg.winner === 'opponent' ? 'player' : msg.winner)) : msg.winner
+        });
         this.updateHUD();
         break;
       case 'POOL_SHOT':
         this.opponentCue = null;
+        this.isLocalShooter = false;
         this.engine.shoot(msg.angle, msg.power);
         sounds.playCueHit(msg.power);
         break;
@@ -1051,6 +1061,7 @@ export class PoolGame implements GameInstance {
 
       const success = this.engine.shoot(this.cueAngle, this.cuePower);
       if (success) {
+        this.isLocalShooter = true;
         this.isAiming = false;
         this.isDraggingCueStick = false;
         this.canvas.style.cursor = 'crosshair';
@@ -1190,8 +1201,9 @@ export class PoolGame implements GameInstance {
         if (this.isHumanTurn()) {
           this.setPower(this.humanCuePower);
         }
-        // In online PvP, broadcast authoritative table snapshot when balls settle
-        if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        // In online PvP, broadcast authoritative table snapshot when balls settle ONLY if we were the shooter
+        if (this.session.mode === 'online' && this.session.peer?.isConnected && this.isLocalShooter) {
+          this.isLocalShooter = false;
           this.session.peer.sendMessage({
             type: 'POOL_SYNC_TABLE',
             balls: this.engine.balls.map(b => ({

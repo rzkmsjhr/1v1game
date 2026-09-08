@@ -117,7 +117,7 @@ export class PoolEngine {
     // Speed mapped from power (0 to 1) -> 8 to 28 px/frame
     const speed = 7 + power * 22;
     ball.vx = speed;
-    ball.vy = (Math.random() - 0.5) * 0.2; // minimal drift
+    ball.vy = 0; // Pure horizontal trajectory ensures 100% deterministic lag distance across peers
 
     if (isPlayer) this.playerLagShotDone = true;
     else this.opponentLagShotDone = true;
