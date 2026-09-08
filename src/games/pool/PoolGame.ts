@@ -252,8 +252,16 @@ export class PoolGame implements GameInstance {
         break;
       case 'POOL_LAG_RESULT':
         if (msg.winner === 'tie') {
-          this.engine.setupLagging();
-          this.updateHUD();
+          this.engine.lagResult = {
+            winner: 'tie',
+            playerDist: 0,
+            opponentDist: 0,
+            playerDisqualified: false,
+            opponentDisqualified: false,
+            reason: msg.reason || 'Lag distance tied! Re-lag for break.'
+          };
+          this.engine.phase = 'LAG_RESULT';
+          this.handleLagResultTransition();
         } else {
           const resolvedLagWinner: PlayerId = msg.winner === 'player' ? 'opponent' : 'player';
           this.engine.lagResult = {
@@ -294,7 +302,19 @@ export class PoolGame implements GameInstance {
           phase: msg.phase,
           winner: resolvedWinner
         };
-        if (this.engine.isSimulating) {
+        // If balls have practically stopped (< 0.35px/s), apply immediately for snappy feel
+        const canSyncImmediately = !this.engine.isSimulating || this.engine.balls.every(b => b.isPotted || (Math.hypot(b.vx, b.vy) < 0.35));
+        if (canSyncImmediately) {
+          if (this.pendingSyncTimer !== null) {
+            clearTimeout(this.pendingSyncTimer);
+            this.pendingSyncTimer = null;
+          }
+          this.engine.isSimulating = false;
+          this.engine.syncTableState(syncPayload);
+          this.pendingSyncTable = null;
+          this.engine.isAuthoritative = true;
+          this.updateHUD();
+        } else {
           // Ball motion is still decelerating locally; buffer sync so balls decelerate naturally
           this.pendingSyncTable = syncPayload;
           if (this.pendingSyncTimer !== null) clearTimeout(this.pendingSyncTimer);
@@ -305,11 +325,7 @@ export class PoolGame implements GameInstance {
               this.engine.isAuthoritative = true;
               this.updateHUD();
             }
-          }, 800);
-        } else {
-          this.engine.syncTableState(syncPayload);
-          this.engine.isAuthoritative = true;
-          this.updateHUD();
+          }, 400);
         }
         break;
       case 'POOL_SHOT':
@@ -697,12 +713,41 @@ export class PoolGame implements GameInstance {
 
       if (this.engine.phase === 'BALL_IN_HAND' && cue && this.isHumanTurn()) {
         const dist = Math.hypot(coords.x - cue.x, coords.y - cue.y);
-        if (dist < cue.radius + 18) {
+        if (dist < cue.radius + 22) {
           this.isDraggingCueBall = true;
+          return;
+        }
+        if (this.isPointerOnCueStick(coords)) {
+          // Player dragged cue stick -> auto-confirm ball position & start aiming
+          this.engine.confirmBallInHand();
+          if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+            this.session.peer.sendMessage({
+              type: 'POOL_PLACE_BALL',
+              x: cue.x,
+              y: cue.y
+            });
+          }
+          this.updateHUD();
+          this.isAiming = true;
+          this.isDraggingCueStick = true;
+          this.canvas.style.cursor = 'grabbing';
+          this.updateAimFromStick(coords.x, coords.y);
           return;
         }
         // If kitchen only, don't allow tapping outside the kitchen line
         if (this.engine.ballInHandKitchenOnly && coords.x > HEAD_STRING_X) {
+          // Auto-confirm placement and aim
+          this.engine.confirmBallInHand();
+          if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+            this.session.peer.sendMessage({
+              type: 'POOL_PLACE_BALL',
+              x: cue.x,
+              y: cue.y
+            });
+          }
+          this.updateHUD();
+          this.isAiming = true;
+          this.updateAimAngle(coords.x, coords.y);
           return;
         }
         // Allow tapping anywhere on felt inside legal zone to place cue ball
@@ -1114,6 +1159,7 @@ export class PoolGame implements GameInstance {
     } else if (this.engine.phase === 'PLAYING') {
       if (!this.isHumanTurn()) return;
 
+      this.engine.isAuthoritative = true;
       const success = this.engine.shoot(this.cueAngle, this.cuePower);
       if (success) {
         this.isLocalShooter = true;
@@ -1265,6 +1311,7 @@ export class PoolGame implements GameInstance {
           }
           this.engine.syncTableState(this.pendingSyncTable);
           this.pendingSyncTable = null;
+          this.engine.isAuthoritative = true;
         }
         this.updateHUD();
 
@@ -1369,7 +1416,23 @@ export class PoolGame implements GameInstance {
     const res = this.engine.lagResult;
     if (!res) return;
 
-    if (res.winner === 'player') {
+    if (res.winner === 'tie') {
+      title.textContent = "IT'S A TIE!";
+      title.className = 'text-2xl font-extrabold mb-2 text-amber-400';
+      desc.textContent = `${res.reason} Re-lagging for break in 2 seconds...`;
+      actions.classList.add('hidden');
+      modal.classList.remove('hidden');
+
+      setTimeout(() => {
+        this.hideLagModal();
+        this.engine.setupLagging();
+        if (this.session.mode === 'online') {
+          this.engine.isAuthoritative = this.session.peer?.role === 'host';
+        }
+        this.updateHUD();
+      }, 2000);
+      return;
+    } else if (res.winner === 'player') {
       title.textContent = 'YOU WON THE LAG!';
       title.className = 'text-2xl font-extrabold mb-2 text-emerald-400';
       desc.textContent = `${res.reason} Choose whether to break first or pass.`;
@@ -1610,7 +1673,7 @@ export class PoolGame implements GameInstance {
       }
       if (btnShootLabel) {
         btnShootLabel.textContent = isMyTurn
-          ? (isBreak ? 'CONFIRM BREAK' : 'CONFIRM POS')
+          ? (isBreak ? 'CONFIRM BREAK' : 'CONFIRM / AIM')
           : 'OPPONENT PLACING...';
       }
       this.updateActionButtonState(isMyTurn);
@@ -1618,13 +1681,18 @@ export class PoolGame implements GameInstance {
     }
 
     if (this.engine.phase === 'PLAYING') {
+      const turnContinued = !!(isMyTurn && this.engine.lastShotResult?.turnContinues && this.engine.lastShotResult.pottedCount > 0);
       if (statusBanner) {
         statusBanner.className = isMyTurn
           ? 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-emerald-600/15 border border-emerald-500/30 text-center mx-auto'
           : 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-rose-600/15 border border-rose-500/30 text-center mx-auto';
       }
       if (statusText) {
-        statusText.textContent = isMyTurn ? 'YOUR TURN' : `${this.opponentName.toUpperCase()}'S TURN`;
+        if (turnContinued) {
+          statusText.textContent = 'YOUR TURN (CONTINUES)';
+        } else {
+          statusText.textContent = isMyTurn ? 'YOUR TURN' : `${this.opponentName.toUpperCase()}'S TURN`;
+        }
         statusText.className = isMyTurn
           ? 'text-[11px] sm:text-xs font-black tracking-wide text-emerald-600 dark:text-emerald-400 uppercase truncate w-full'
           : 'text-[11px] sm:text-xs font-black tracking-wide text-rose-600 dark:text-rose-400 uppercase truncate w-full';
@@ -1641,6 +1709,8 @@ export class PoolGame implements GameInstance {
             hintText.textContent = isMyTurn
               ? 'Tap cue ball to adjust, or aim & strike to break!'
               : `${this.opponentName} is breaking!`;
+          } else if (turnContinued) {
+            hintText.textContent = 'Ball pocketed! Turn continues — take your next shot!';
           } else if (isMyTurn) {
             if (!pGrp) hintText.textContent = 'Open table: Sink any ball to claim group';
             else {

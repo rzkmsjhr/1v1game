@@ -21,7 +21,7 @@ export type BallGroup = 'solid' | 'stripe' | null;
 export type GameVariant = '8ball' | '9ball';
 
 export interface LagResult {
-  winner: PlayerId;
+  winner: PlayerId | 'tie';
   playerDist: number; // distance to head cushion in pixels
   opponentDist: number;
   playerDisqualified: boolean;
@@ -72,6 +72,13 @@ export class PoolEngine {
   public gameOverReason: string = '';
   public ballsPocketedByPlayer: number[] = [];
   public ballsPocketedByOpponent: number[] = [];
+  public lastShotResult: {
+    foul: boolean;
+    foulReason: string;
+    turnContinues: boolean;
+    pottedOwn: boolean;
+    pottedCount: number;
+  } | null = null;
 
   constructor(variant: GameVariant = '8ball') {
     this.variant = variant;
@@ -309,7 +316,7 @@ export class PoolEngine {
     const pDist = Math.max(0, pBall.x - pBall.radius - PLAY_X_MIN);
     const oDist = Math.max(0, oBall.x - oBall.radius - PLAY_X_MIN);
 
-    let winner: PlayerId = 'player';
+    let winner: PlayerId | 'tie' = 'player';
     let reason = '';
 
     if (this.playerLagDisqualified && !this.opponentLagDisqualified) {
@@ -319,13 +326,12 @@ export class PoolEngine {
       winner = 'player';
       reason = 'Opponent fouled on lag.';
     } else if (this.playerLagDisqualified && this.opponentLagDisqualified) {
-      // Re-lag
-      this.setupLagging();
-      return;
-    } else if (Math.abs(pDist - oDist) < 0.5) {
-      // Tie distance (within 0.5px / ~1mm) - Re-lag per official BCA/WPA rules
-      this.setupLagging();
-      return;
+      winner = 'tie';
+      reason = 'Both players fouled! Re-lag for break.';
+    } else if (Math.abs(pDist - oDist) < 1.0) {
+      // Tie distance (within 1.0px / ~2mm) - Re-lag per official BCA/WPA rules
+      winner = 'tie';
+      reason = 'Lag distance tied! Re-lag for break.';
     } else {
       // Closest to head cushion wins!
       winner = pDist < oDist ? 'player' : 'opponent';
@@ -404,6 +410,14 @@ export class PoolEngine {
       this.phase = 'PLAYING';
       this.ballInHandKitchenOnly = false;
     }
+
+    this.lastShotResult = {
+      foul,
+      foulReason,
+      turnContinues,
+      pottedOwn: !foul && turnContinues && this.pottedBallsThisShot.length > 0,
+      pottedCount: this.pottedBallsThisShot.length
+    };
 
     this.isBreakShot = false;
   }
@@ -607,6 +621,8 @@ export class PoolEngine {
     }
     cue.x = spawnX;
     cue.y = spawnY;
+    cue.prevX = spawnX;
+    cue.prevY = spawnY;
   }
 
   // Place cue ball during Ball-in-Hand

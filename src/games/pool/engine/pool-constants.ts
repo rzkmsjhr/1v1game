@@ -48,7 +48,7 @@ export const BALL_MASS = 1.0;
 export const ROLLING_FRICTION = 0.988;
 export const BALL_RESTITUTION = 0.96;
 export const CUSHION_RESTITUTION = 0.85;
-export const VELOCITY_STOP_THRESHOLD = 0.05;
+export const VELOCITY_STOP_THRESHOLD = 0.12;
 
 // Six pockets with accurate corner mouth capture
 export const POCKETS: PocketDef[] = [
