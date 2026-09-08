@@ -2,13 +2,11 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "1v1game",
   "compatibility_date": "2024-09-23",
-  "pages_build_output_dir": "dist"
-  // Note: Bind ROOMS_KV in Cloudflare Dashboard -> Settings -> Functions -> KV namespace bindings
-  // Or create with `npx wrangler kv namespace create ROOMS_KV` and uncomment with the 32-char hex ID:
-  // "kv_namespaces": [
-  //   {
-  //     "binding": "ROOMS_KV",
-  //     "id": "<32-char-hex-namespace-id>"
-  //   }
-  // ]
+  "pages_build_output_dir": "dist",
+  "kv_namespaces": [
+    {
+      "binding": "ROOMS_KV",
+      "id": "7758a2b7c85a4b1badda3b3fec7eb9bf"
+    }
+  ]
 }
