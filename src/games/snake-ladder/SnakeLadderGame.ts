@@ -387,7 +387,7 @@ export class SnakeLadderGame implements GameInstance {
         <div class="w-full flex-1 min-h-0 flex flex-col lg:flex-row items-center justify-center gap-2 sm:gap-3 lg:gap-8 px-1 sm:px-2 my-auto overflow-hidden">
           
           <!-- 10x10 Board Viewport -->
-          <div class="flex items-center justify-center h-full max-h-[min(560px,calc(100vh-175px))] lg:max-h-[min(560px,calc(100vh-90px))] aspect-square shrink-0">
+          <div class="flex items-center justify-center h-full max-h-[min(560px,calc(100vh-220px))] lg:max-h-[min(560px,calc(100vh-90px))] max-w-full aspect-square">
             <div id="sl-board-viewport" class="relative w-full h-full rounded-2xl shadow-2xl overflow-hidden">
               <!-- SVG Board mounts here -->
             </div>
