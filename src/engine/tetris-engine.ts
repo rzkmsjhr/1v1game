@@ -146,7 +146,7 @@ export class TetrisEngine {
     const shape = TETROMINOES[type].rotations[0];
     const pieceWidth = shape[0].length;
     const startX = Math.floor((COLS - pieceWidth) / 2);
-    const startY = BUFFER_ROWS - 2;
+    const startY = BUFFER_ROWS;
 
     this.currentPiece = {
       type,
@@ -183,7 +183,7 @@ export class TetrisEngine {
       this.holdPieceType = currentType;
       const shape = TETROMINOES[prevHold].rotations[0];
       const startX = Math.floor((COLS - shape[0].length) / 2);
-      const startY = BUFFER_ROWS - 2;
+      const startY = BUFFER_ROWS;
       this.currentPiece = {
         type: prevHold,
         x: startX,
@@ -385,7 +385,6 @@ export class TetrisEngine {
     }
 
     this.currentPiece = null;
-    this.events.onPieceLocked?.();
 
     // Check line clears
     const { count: clearedLines, rows: clearedRows } = this.clearLines();
@@ -429,6 +428,7 @@ export class TetrisEngine {
 
     // Spawn next piece
     this.spawnNextPiece();
+    this.events.onPieceLocked?.();
   }
 
   private clearLines(): { count: number; rows: number[] } {

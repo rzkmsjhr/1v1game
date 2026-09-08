@@ -115,6 +115,8 @@ export class PoolGame implements GameInstance {
   private opponentCue: { angle: number; power: number } | null = null;
   private lastAimBroadcastTime: number = 0;
   private isLocalShooter: boolean = false;
+  private pendingSyncTable: any = null;
+  private pendingSyncTimer: number | null = null;
 
   // Mobile & Auto-Rotation State
   private isMobileView: boolean = false;
@@ -155,6 +157,10 @@ export class PoolGame implements GameInstance {
   public destroy() {
     this.isRunning = false;
     if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+    if (this.pendingSyncTimer !== null) {
+      clearTimeout(this.pendingSyncTimer);
+      this.pendingSyncTimer = null;
+    }
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
@@ -228,6 +234,7 @@ export class PoolGame implements GameInstance {
       origOnMessage?.(msg);
       this.handleNetworkMessage(msg);
     };
+    this.session.peer.flushEarlyMessages();
   }
 
   private handleNetworkMessage(msg: any) {
@@ -240,6 +247,7 @@ export class PoolGame implements GameInstance {
         sounds.playCueHit(msg.power);
         break;
       case 'POOL_DECIDE_BREAK':
+        this.hideLagModal();
         this.engine.setupMatchTable(msg.breaker);
         this.updateHUD();
         break;
@@ -248,16 +256,35 @@ export class PoolGame implements GameInstance {
         break;
       case 'POOL_SYNC_TABLE':
         this.opponentCue = null;
-        this.isLocalShooter = false;
-        this.engine.syncTableState({
+        const resolvedTurn: PlayerId | undefined = msg.currentTurn
+          ? (msg.currentTurn === 'player' ? 'opponent' : 'player')
+          : undefined;
+        const resolvedWinner: PlayerId | null | undefined = msg.winner
+          ? (msg.winner === 'player' ? 'opponent' : (msg.winner === 'opponent' ? 'player' : null))
+          : (msg.winner ?? undefined);
+        const syncPayload = {
           balls: msg.balls,
-          currentTurn: msg.currentTurn ? (msg.currentTurn === 'player' ? 'opponent' : 'player') : undefined,
+          currentTurn: resolvedTurn,
           playerGroup: msg.opponentGroup,
           opponentGroup: msg.playerGroup,
           phase: msg.phase,
-          winner: msg.winner ? (msg.winner === 'player' ? 'opponent' : (msg.winner === 'opponent' ? 'player' : msg.winner)) : msg.winner
-        });
-        this.updateHUD();
+          winner: resolvedWinner
+        };
+        if (this.engine.isSimulating) {
+          // Ball motion is still decelerating locally; buffer sync so balls decelerate naturally
+          this.pendingSyncTable = syncPayload;
+          if (this.pendingSyncTimer !== null) clearTimeout(this.pendingSyncTimer);
+          this.pendingSyncTimer = window.setTimeout(() => {
+            if (this.pendingSyncTable) {
+              this.engine.syncTableState(this.pendingSyncTable);
+              this.pendingSyncTable = null;
+              this.updateHUD();
+            }
+          }, 800);
+        } else {
+          this.engine.syncTableState(syncPayload);
+          this.updateHUD();
+        }
         break;
       case 'POOL_SHOT':
         this.opponentCue = null;
@@ -1201,6 +1228,18 @@ export class PoolGame implements GameInstance {
         if (this.isHumanTurn()) {
           this.setPower(this.humanCuePower);
         }
+
+        // Apply pending table state smoothly after local rolling finishes
+        if (this.pendingSyncTable) {
+          if (this.pendingSyncTimer !== null) {
+            clearTimeout(this.pendingSyncTimer);
+            this.pendingSyncTimer = null;
+          }
+          this.engine.syncTableState(this.pendingSyncTable);
+          this.pendingSyncTable = null;
+        }
+        this.updateHUD();
+
         // In online PvP, broadcast authoritative table snapshot when balls settle ONLY if we were the shooter
         if (this.session.mode === 'online' && this.session.peer?.isConnected && this.isLocalShooter) {
           this.isLocalShooter = false;

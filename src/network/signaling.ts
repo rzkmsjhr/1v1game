@@ -2,6 +2,7 @@
 
 export interface RoomPollResponse {
   gameId?: string;
+  gameVariant?: string;
   hostOffer?: RTCSessionDescriptionInit | null;
   hostIce?: RTCIceCandidateInit[];
   guestAnswer?: RTCSessionDescriptionInit | null;
@@ -15,11 +16,11 @@ export class SignalingClient {
     this.baseUrl = window.location.origin;
   }
 
-  public async createRoom(gameId: string, offer: RTCSessionDescriptionInit, ice: RTCIceCandidateInit[]): Promise<string> {
+  public async createRoom(gameId: string, offer: RTCSessionDescriptionInit, ice: RTCIceCandidateInit[], gameVariant?: string): Promise<string> {
     const res = await fetch(`${this.baseUrl}/api/room/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gameId, offer, ice })
+      body: JSON.stringify({ gameId, gameVariant, offer, ice })
     });
 
     if (!res.ok) {
@@ -32,6 +33,7 @@ export class SignalingClient {
 
   public async joinRoom(code: string, answer: RTCSessionDescriptionInit, ice: RTCIceCandidateInit[]): Promise<{
     gameId: string;
+    gameVariant?: string;
     hostOffer: RTCSessionDescriptionInit;
     hostIce: RTCIceCandidateInit[];
   }> {
@@ -49,6 +51,7 @@ export class SignalingClient {
     const data = await res.json();
     return {
       gameId: data.gameId || 'tetris',
+      gameVariant: data.gameVariant,
       hostOffer: data.hostOffer,
       hostIce: data.hostIce || []
     };
@@ -70,12 +73,12 @@ export class SignalingClient {
     return await res.json();
   }
 
-  public async getRoomInfo(code: string): Promise<{ exists: boolean; gameId?: string }> {
+  public async getRoomInfo(code: string): Promise<{ exists: boolean; gameId?: string; gameVariant?: string }> {
     try {
       const res = await fetch(`${this.baseUrl}/api/room/${code}`);
       if (!res.ok) return { exists: false };
       const data = await res.json();
-      return { exists: true, gameId: data.gameId };
+      return { exists: true, gameId: data.gameId, gameVariant: data.gameVariant };
     } catch {
       return { exists: false };
     }

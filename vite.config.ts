@@ -64,13 +64,14 @@ function localSignalingPlugin(): Plugin {
           const code = Math.random().toString(36).substring(2, 8).toUpperCase();
           localRooms.set(code, {
             gameId: body.gameId || 'tetris',
+            gameVariant: body.gameVariant || null,
             hostOffer: body.offer,
             hostIce: body.ice || [],
             guestIce: [],
             createdAt: Date.now()
           });
           res.statusCode = 200;
-          return res.end(JSON.stringify({ success: true, code, gameId: body.gameId || 'tetris' }));
+          return res.end(JSON.stringify({ success: true, code, gameId: body.gameId || 'tetris', gameVariant: body.gameVariant || null }));
         }
 
         const roomCode = pathParts[0]?.toUpperCase();
@@ -90,6 +91,7 @@ function localSignalingPlugin(): Plugin {
           return res.end(JSON.stringify({
             success: true,
             gameId: room.gameId,
+            gameVariant: room.gameVariant || null,
             hostOffer: room.hostOffer,
             hostIce: room.hostIce
           }));
@@ -114,12 +116,14 @@ function localSignalingPlugin(): Plugin {
           if (role === 'host') {
             return res.end(JSON.stringify({
               gameId: room.gameId,
+              gameVariant: room.gameVariant || null,
               guestAnswer: room.guestAnswer || null,
               guestIce: room.guestIce
             }));
           } else {
             return res.end(JSON.stringify({
               gameId: room.gameId,
+              gameVariant: room.gameVariant || null,
               hostOffer: room.hostOffer || null,
               hostIce: room.hostIce
             }));
@@ -131,6 +135,7 @@ function localSignalingPlugin(): Plugin {
           return res.end(JSON.stringify({
             exists: true,
             gameId: room.gameId,
+            gameVariant: room.gameVariant || null,
             hasOffer: !!room.hostOffer,
             hasAnswer: !!room.guestAnswer
           }));

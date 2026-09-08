@@ -80,83 +80,92 @@ export class InputController {
     this.actions.hold();
   }
 
+  public destroy() {
+    this.clearAll();
+    window.removeEventListener('keydown', this.handleKeyDown);
+    window.removeEventListener('keyup', this.handleKeyUp);
+  }
+
+  private handleKeyDown = (e: KeyboardEvent) => {
+    if (!this.isEnabled) return;
+
+    // Prevent default scrolling on arrow keys and space
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+      e.preventDefault();
+    }
+
+    if (e.repeat) return; // Managed by custom DAS/ARR
+
+    switch (e.code) {
+      case 'ArrowLeft':
+      case 'KeyA':
+        this.actions.moveLeft();
+        this.startLeftShift();
+        break;
+
+      case 'ArrowRight':
+      case 'KeyD':
+        this.actions.moveRight();
+        this.startRightShift();
+        break;
+
+      case 'ArrowDown':
+      case 'KeyS':
+        this.actions.softDrop();
+        this.startSoftDrop();
+        break;
+
+      case 'Space':
+        this.actions.hardDrop();
+        break;
+
+      case 'ArrowUp':
+      case 'KeyX':
+      case 'KeyW':
+        this.actions.rotateCW();
+        break;
+
+      case 'KeyZ':
+      case 'ControlLeft':
+      case 'ControlRight':
+        this.actions.rotateCCW();
+        break;
+
+      case 'KeyC':
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        this.actions.hold();
+        break;
+
+      case 'Escape':
+      case 'KeyP':
+        this.actions.pause?.();
+        break;
+    }
+  };
+
+  private handleKeyUp = (e: KeyboardEvent) => {
+    switch (e.code) {
+      case 'ArrowLeft':
+      case 'KeyA':
+        this.stopLeftShift();
+        break;
+
+      case 'ArrowRight':
+      case 'KeyD':
+        this.stopRightShift();
+        break;
+
+      case 'ArrowDown':
+      case 'KeyS':
+        this.stopSoftDrop();
+        break;
+    }
+  };
+
   private setupListeners() {
-    window.addEventListener('keydown', (e) => {
-      if (!this.isEnabled) return;
-
-      // Prevent default scrolling on arrow keys and space
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
-        e.preventDefault();
-      }
-
-      if (e.repeat) return; // Managed by custom DAS/ARR
-
-      switch (e.code) {
-        case 'ArrowLeft':
-        case 'KeyA':
-          this.actions.moveLeft();
-          this.startLeftShift();
-          break;
-
-        case 'ArrowRight':
-        case 'KeyD':
-          this.actions.moveRight();
-          this.startRightShift();
-          break;
-
-        case 'ArrowDown':
-        case 'KeyS':
-          this.actions.softDrop();
-          this.startSoftDrop();
-          break;
-
-        case 'Space':
-          this.actions.hardDrop();
-          break;
-
-        case 'ArrowUp':
-        case 'KeyX':
-        case 'KeyW':
-          this.actions.rotateCW();
-          break;
-
-        case 'KeyZ':
-        case 'ControlLeft':
-        case 'ControlRight':
-          this.actions.rotateCCW();
-          break;
-
-        case 'KeyC':
-        case 'ShiftLeft':
-        case 'ShiftRight':
-          this.actions.hold();
-          break;
-
-        case 'Escape':
-        case 'KeyP':
-          this.actions.pause?.();
-          break;
-      }
-    });
-
-    window.addEventListener('keyup', (e) => {
-      switch (e.code) {
-        case 'ArrowLeft':
-        case 'KeyA':
-          this.stopLeftShift();
-          break;
-
-        case 'ArrowRight':
-        case 'KeyD':
-          this.stopRightShift();
-          break;
-
-        case 'ArrowDown':
-        case 'KeyS':
-          this.stopSoftDrop();
-          break;
-      }
-    });
+    window.addEventListener('keydown', this.handleKeyDown);
+    window.addEventListener('keyup', this.handleKeyUp);
   }
 
   private startLeftShift() {

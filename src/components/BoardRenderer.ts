@@ -51,10 +51,13 @@ export class BoardRenderer {
 
   public resize(blockSize: number) {
     this.blockSize = blockSize;
+    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
     const width = COLS * blockSize;
     const height = ROWS * blockSize;
-    this.canvas.width = width;
-    this.canvas.height = height;
+    this.canvas.width = Math.round(width * dpr);
+    this.canvas.height = Math.round(height * dpr);
+    this.canvas.style.width = `${width}px`;
+    this.canvas.style.height = `${height}px`;
   }
 
   public triggerShake(intensity: number = 6) {
@@ -71,12 +74,12 @@ export class BoardRenderer {
       const screenX = c * this.blockSize + this.blockSize / 2;
       for (let i = 0; i < 4; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const speed = Math.random() * 4 + 2;
+        const speed = Math.random() * 4 + 1.5;
         this.particles.push({
-          x: screenX,
-          y: screenY,
+          x: screenX + (Math.random() - 0.5) * this.blockSize,
+          y: screenY + (Math.random() - 0.5) * this.blockSize,
           vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
+          vy: Math.sin(angle) * speed - 1,
           color,
           size: Math.random() * 4 + 2,
           alpha: 1,
@@ -89,8 +92,8 @@ export class BoardRenderer {
   public addFloatingText(text: string, color: string = '#00f0ff') {
     this.floatingTexts.push({
       text,
-      x: this.canvas.width / 2,
-      y: this.canvas.height * 0.45,
+      x: (COLS * this.blockSize) / 2,
+      y: (ROWS * this.blockSize) * 0.45,
       color,
       alpha: 1,
       vy: -1.2
@@ -101,6 +104,7 @@ export class BoardRenderer {
     const ctx = this.ctx;
     const bs = this.blockSize;
     const boardOffsetX = 0;
+    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
 
     // Handle screen shake
     if (this.shakeTimer > 0) {
@@ -112,9 +116,12 @@ export class BoardRenderer {
     }
 
     ctx.save();
+    ctx.scale(dpr, dpr);
     ctx.translate(this.shakeOffset.x, this.shakeOffset.y);
 
     const isDark = this.theme === 'dark';
+    const logicalWidth = COLS * bs;
+    const logicalHeight = ROWS * bs;
 
     // Clear background with theme-aware clean styling
     if (isDark) {
@@ -122,7 +129,7 @@ export class BoardRenderer {
     } else {
       ctx.fillStyle = isOpponent ? '#f1f5f9' : '#ffffff';
     }
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.fillRect(0, 0, logicalWidth, logicalHeight);
 
     // Render Grid Lines
     ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)';

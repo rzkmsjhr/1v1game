@@ -50,19 +50,33 @@ export class WebRTCPeer {
   public role: 'host' | 'guest' | null = null;
   public roomCode: string | null = null;
   public gameId: string | null = null;
+  public gameVariant: string | null = null;
   public isConnected: boolean = false;
   private pollingInterval: number | null = null;
-  public events: WebRTCEvents;
+  private earlyMessageQueue: NetworkMessage[] = [];
+  private _events: WebRTCEvents;
+
+  public get events(): WebRTCEvents {
+    return this._events;
+  }
+
+  public set events(newEvents: WebRTCEvents) {
+    this._events = newEvents;
+    if (newEvents && newEvents.onMessage) {
+      this.flushEarlyMessages();
+    }
+  }
 
   constructor(events: WebRTCEvents = {}) {
-    this.events = events;
+    this._events = events;
     this.signaling = new SignalingClient();
   }
 
-  public async hostRoom(gameId: string): Promise<string> {
+  public async hostRoom(gameId: string, gameVariant?: string): Promise<string> {
     this.cleanup();
     this.role = 'host';
     this.gameId = gameId;
+    this.gameVariant = gameVariant || null;
     this.events.onStatusChange?.('connecting', 'Creating game room...');
 
     this.peer = new RTCPeerConnection(RTC_CONFIG);
@@ -98,7 +112,7 @@ export class WebRTCPeer {
     // Wait brief 400ms for initial candidates
     await new Promise(r => setTimeout(r, 400));
 
-    this.roomCode = await this.signaling.createRoom(gameId, this.peer.localDescription!, localIceCandidates);
+    this.roomCode = await this.signaling.createRoom(gameId, this.peer.localDescription!, localIceCandidates, gameVariant);
     this.events.onRoomCreated?.(this.roomCode);
     this.events.onStatusChange?.('connecting', `Room code: ${this.roomCode}`);
 
@@ -144,6 +158,7 @@ export class WebRTCPeer {
     }
 
     this.gameId = initialPoll.gameId || 'tetris';
+    this.gameVariant = initialPoll.gameVariant || null;
 
     await this.peer.setRemoteDescription(new RTCSessionDescription(initialPoll.hostOffer));
 
@@ -194,7 +209,7 @@ export class WebRTCPeer {
       } catch (e: any) {
         console.warn('Host polling error:', e);
       }
-    }, 1000);
+    }, 250);
   }
 
   private startGuestPolling() {
@@ -219,13 +234,14 @@ export class WebRTCPeer {
       } catch (e: any) {
         console.warn('Guest polling error:', e);
       }
-    }, 1000);
+    }, 250);
   }
 
   private setupDataChannel(dc: RTCDataChannel) {
     const handleOpen = () => {
       this.isConnected = true;
       this.stopPolling();
+      this.flushEarlyMessages();
       this.events.onStatusChange?.('connected', 'Opponent connected! Match starting.');
     };
 
@@ -248,11 +264,29 @@ export class WebRTCPeer {
     dc.onmessage = (event) => {
       try {
         const msg: NetworkMessage = JSON.parse(event.data);
-        this.events.onMessage?.(msg);
+        if (this.events.onMessage) {
+          this.events.onMessage(msg);
+        } else {
+          this.earlyMessageQueue.push(msg);
+        }
       } catch (e) {
         console.error('Failed to parse network message:', e);
       }
     };
+  }
+
+  public flushEarlyMessages() {
+    if (this.events?.onMessage && this.earlyMessageQueue.length > 0) {
+      const queue = [...this.earlyMessageQueue];
+      this.earlyMessageQueue = [];
+      for (const msg of queue) {
+        try {
+          this.events.onMessage(msg);
+        } catch (e) {
+          console.error('Error handling queued early message:', e);
+        }
+      }
+    }
   }
 
   public sendMessage(msg: NetworkMessage) {
@@ -270,6 +304,7 @@ export class WebRTCPeer {
 
   public cleanup() {
     this.stopPolling();
+    this.earlyMessageQueue = [];
     if (this.dataChannel) {
       this.dataChannel.close();
       this.dataChannel = null;
@@ -281,6 +316,7 @@ export class WebRTCPeer {
     this.isConnected = false;
     this.roomCode = null;
     this.role = null;
+    this.gameVariant = null;
     this.processedIceKeys.clear();
   }
 }

@@ -534,13 +534,14 @@ class ConsoleDashboard {
     `;
 
     const arena = document.getElementById('arena-container')!;
+    const effectiveVariant = (peer?.gameVariant as '8ball' | '9ball') || this.currentPoolVariant;
     this.activeGameInstance = gameDef.create(arena, {
       gameId: gameDef.id,
       mode,
       aiDifficulty: this.currentAIDifficulty,
       peer,
       theme: this.currentTheme,
-      gameVariant: this.currentPoolVariant,
+      gameVariant: effectiveVariant,
       onExit: () => {
         this.peer?.cleanup();
         this.roomCode = null;
@@ -570,7 +571,8 @@ class ConsoleDashboard {
     });
 
     try {
-      await this.peer.hostRoom(gameDef.id);
+      const variant = gameDef.id === 'pool' ? this.currentPoolVariant : undefined;
+      await this.peer.hostRoom(gameDef.id, variant);
     } catch (e: any) {
       alert(`Error hosting match: ${e.message}`);
       this.roomCode = null;
@@ -590,6 +592,9 @@ class ConsoleDashboard {
         if (el && message) el.textContent = message;
         if (status === 'connected') {
           const gameId = this.peer?.gameId || 'tetris';
+          if (this.peer?.gameVariant && gameId === 'pool') {
+            this.currentPoolVariant = this.peer.gameVariant as '8ball' | '9ball';
+          }
           const gameDef = GAMES_REGISTRY.find(g => g.id === gameId) || GAMES_REGISTRY[0];
           this.launchGame(gameDef, 'online', this.peer!);
         }

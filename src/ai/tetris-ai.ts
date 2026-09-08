@@ -164,7 +164,7 @@ export class TetrisAI {
 
       for (let x = -2; x <= COLS - pieceWidth + 2; x++) {
         // Check if piece can start dropping at this x and rot
-        const startY = BUFFER_ROWS - 2;
+        const startY = BUFFER_ROWS;
         if (engine.checkCollision(x, startY, rot, pieceType)) {
           continue;
         }

@@ -299,9 +299,13 @@ export class PoolEngine {
       // Re-lag
       this.setupLagging();
       return;
+    } else if (Math.abs(pDist - oDist) < 0.5) {
+      // Tie distance (within 0.5px / ~1mm) - Re-lag per official BCA/WPA rules
+      this.setupLagging();
+      return;
     } else {
       // Closest to head cushion wins!
-      winner = pDist <= oDist ? 'player' : 'opponent';
+      winner = pDist < oDist ? 'player' : 'opponent';
       const pCm = (pDist * 0.25).toFixed(1);
       const oCm = (oDist * 0.25).toFixed(1);
       reason = winner === 'player'
@@ -437,8 +441,8 @@ export class PoolEngine {
       }
     }
 
-    // Assign groups if open table
-    if (!foul && this.playerGroup === null && this.pottedBallsThisShot.length > 0) {
+    // Assign groups if open table (official rules: table remains open after break shot)
+    if (!foul && !this.isBreakShot && this.playerGroup === null && this.pottedBallsThisShot.length > 0) {
       const firstPotted = this.pottedBallsThisShot[0];
       const pDef = BALL_DEFS[firstPotted];
       if (pDef.type === 'solid' || pDef.type === 'stripe') {

@@ -146,6 +146,7 @@ export class SnakeLadderGame implements GameInstance {
 
   private opponentName: string = 'Opponent';
   private isProcessingMove: boolean = false;
+  private pendingOpponentPos: number | null = null;
   private isRollingDiceAnimation: boolean = false;
   private isAIThinking: boolean = false;
 
@@ -255,6 +256,8 @@ export class SnakeLadderGame implements GameInstance {
       }
     });
 
+    this.session.peer.flushEarlyMessages();
+
     // Send board request/init if already connected
     if (this.session.peer.isConnected) {
       if (this.session.peer.role === 'host') {
@@ -290,9 +293,13 @@ export class SnakeLadderGame implements GameInstance {
         this.updateHUD();
         break;
       case 'SNAKE_MOVE_COMPLETE':
-        this.engine.opponentPos = msg.finalPos;
-        this.renderBoard();
-        this.updateHUD();
+        if (this.isProcessingMove) {
+          this.pendingOpponentPos = msg.finalPos;
+        } else {
+          this.engine.opponentPos = msg.finalPos;
+          this.renderBoard();
+          this.updateHUD();
+        }
         break;
       case 'SNAKE_INITIAL_ROLL':
         this.oppDuelD1 = msg.d1;
@@ -695,11 +702,9 @@ export class SnakeLadderGame implements GameInstance {
     this.engine.chooseStartTurn(choice);
 
     if (this.session.mode === 'online' && this.session.peer?.isConnected) {
-      // In guest's perspective, choices are reversed
-      const peerChoice = choice === 'start_first' ? 'start_second' : 'start_first';
       this.session.peer.sendMessage({
         type: 'SNAKE_INITIAL_CHOICE',
-        choice: peerChoice
+        choice
       });
     }
 
@@ -860,6 +865,10 @@ export class SnakeLadderGame implements GameInstance {
     }
 
     this.isProcessingMove = false;
+    if (this.pendingOpponentPos !== null) {
+      this.engine.opponentPos = this.pendingOpponentPos;
+      this.pendingOpponentPos = null;
+    }
     this.renderBoard();
     this.updateHUD();
 

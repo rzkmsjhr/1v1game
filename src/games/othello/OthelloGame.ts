@@ -123,6 +123,8 @@ export class OthelloGame implements GameInstance {
       }
     });
 
+    this.session.peer.flushEarlyMessages();
+
     window.addEventListener('beforeunload', this.handleBeforeUnload);
   }
 

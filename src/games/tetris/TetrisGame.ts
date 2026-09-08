@@ -35,7 +35,9 @@ export class TetrisGame implements GameInstance {
   private opponentName: string = 'AI Bot';
   private opponentScore: number = 0;
   private lastPieceBroadcastTime: number = 0;
+  private trailingBroadcastTimer: number | null = null;
   private isMobileView: boolean = typeof window !== 'undefined' ? window.innerWidth < 768 : false;
+  private isGameOverHandled: boolean = false;
 
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
@@ -91,7 +93,6 @@ export class TetrisGame implements GameInstance {
         if (garbageSent > 0) {
           this.sendGarbageToOpponent(garbageSent);
         }
-        this.syncFullBoard();
       },
       onGarbageReceived: () => {
         sounds.playGarbageAlert();
@@ -169,7 +170,11 @@ export class TetrisGame implements GameInstance {
   public destroy() {
     this.isRunning = false;
     if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
-    this.inputController?.clearAll();
+    if (this.trailingBroadcastTimer !== null) {
+      clearTimeout(this.trailingBroadcastTimer);
+      this.trailingBroadcastTimer = null;
+    }
+    this.inputController?.destroy();
     window.removeEventListener('beforeunload', this.handleBeforeUnload);
     window.removeEventListener('resize', this.handleResize);
     this.container.innerHTML = '';
@@ -266,6 +271,8 @@ export class TetrisGame implements GameInstance {
       }
     });
 
+    this.session.peer.flushEarlyMessages();
+
     if (this.session.peer.isConnected && this.session.peer.role === 'host') {
       this.session.peer.sendMessage({ type: 'TETRIS_START_SEED', seed: this.matchSeed });
     }
@@ -329,7 +336,7 @@ export class TetrisGame implements GameInstance {
         break;
 
       case 'GAME_OVER':
-        this.handleGameOver(!msg.didWin);
+        this.handleGameOver(msg.didWin, true);
         break;
 
       case 'REMATCH_REQUEST':
@@ -354,22 +361,47 @@ export class TetrisGame implements GameInstance {
     this.updateStatsUI();
     this.renderPreviews();
 
-    // Active movement broadcast: lightweight, throttled to 35ms (saving >95% bandwidth)
+    // Active movement broadcast: lightweight, throttled to 25ms (faster than ARR: 33ms) with trailing flush
     if (this.session.mode === 'online' && this.session.peer?.isConnected) {
       const now = performance.now();
-      if (now - this.lastPieceBroadcastTime > 35) {
+      if (now - this.lastPieceBroadcastTime > 25) {
+        if (this.trailingBroadcastTimer !== null) {
+          clearTimeout(this.trailingBroadcastTimer);
+          this.trailingBroadcastTimer = null;
+        }
         this.lastPieceBroadcastTime = now;
         this.session.peer.sendMessage({
           type: 'TETRIS_PIECE_MOVE',
           currentPiece: this.playerEngine.currentPiece,
           score: this.playerEngine.score
         });
+      } else {
+        // Trailing timer guarantees the final shift position is always broadcast to peer
+        if (this.trailingBroadcastTimer !== null) {
+          clearTimeout(this.trailingBroadcastTimer);
+        }
+        this.trailingBroadcastTimer = window.setTimeout(() => {
+          this.trailingBroadcastTimer = null;
+          if (this.session.mode === 'online' && this.session.peer?.isConnected && this.playerEngine) {
+            this.lastPieceBroadcastTime = performance.now();
+            this.session.peer.sendMessage({
+              type: 'TETRIS_PIECE_MOVE',
+              currentPiece: this.playerEngine.currentPiece,
+              score: this.playerEngine.score
+            });
+          }
+        }, 28);
       }
     }
   }
 
   private syncFullBoard() {
     if (this.session.mode === 'online' && this.session.peer?.isConnected && this.playerEngine) {
+      if (this.trailingBroadcastTimer !== null) {
+        clearTimeout(this.trailingBroadcastTimer);
+        this.trailingBroadcastTimer = null;
+      }
+      this.lastPieceBroadcastTime = performance.now();
       this.session.peer.sendMessage({
         type: 'TETRIS_SYNC_BOARD',
         grid: this.playerEngine.getVisibleGrid(),
@@ -384,6 +416,8 @@ export class TetrisGame implements GameInstance {
     if (this.session.mode === 'ai') {
       this.opponentEngine.addIncomingGarbage(lines);
     } else if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.opponentEngine.addIncomingGarbage(lines);
+      this.updateStatsUI();
       this.session.peer.sendMessage({
         type: 'TETRIS_GARBAGE',
         lines
@@ -391,11 +425,13 @@ export class TetrisGame implements GameInstance {
     }
   }
 
-  private handleGameOver(playerWon: boolean) {
+  private handleGameOver(playerWon: boolean, isRemote: boolean = false) {
+    if (this.isGameOverHandled) return;
+    this.isGameOverHandled = true;
     this.isRunning = false;
     this.inputController.setEnabled(false);
 
-    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+    if (!isRemote && this.session.mode === 'online' && this.session.peer?.isConnected) {
       this.session.peer.sendMessage({
         type: 'GAME_OVER',
         didWin: !playerWon
@@ -776,6 +812,7 @@ export class TetrisGame implements GameInstance {
   }
 
   private startLoop() {
+    this.isGameOverHandled = false;
     this.isRunning = true;
     this.inputController.setEnabled(true);
 
