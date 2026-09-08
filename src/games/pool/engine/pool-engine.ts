@@ -49,6 +49,7 @@ export class PoolEngine {
   public opponentGroup: BallGroup = null;
 
   // Shot tracking
+  public isAuthoritative: boolean = true;
   public isSimulating: boolean = false;
   public isBreakShot: boolean = false;
   public ballInHandKitchenOnly: boolean = false;
@@ -96,6 +97,8 @@ export class PoolEngine {
         id: d.id,
         x: d.x,
         y: d.y,
+        prevX: d.x,
+        prevY: d.y,
         vx: 0,
         vy: 0,
         radius: BALL_RADIUS,
@@ -144,6 +147,8 @@ export class PoolEngine {
       id: 0,
       x: HEAD_STRING_X - BALL_RADIUS - 1,
       y: CENTER_Y,
+      prevX: HEAD_STRING_X - BALL_RADIUS - 1,
+      prevY: CENTER_Y,
       vx: 0,
       vy: 0,
       radius: BALL_RADIUS,
@@ -160,6 +165,8 @@ export class PoolEngine {
         id: r.id,
         x: r.x,
         y: r.y,
+        prevX: r.x,
+        prevY: r.y,
         vx: 0,
         vy: 0,
         radius: BALL_RADIUS,
@@ -205,6 +212,12 @@ export class PoolEngine {
   ) {
     if (!this.isSimulating) return;
 
+    // Track previous positions for sub-tick render interpolation on 120Hz/144Hz displays
+    for (const b of this.balls) {
+      b.prevX = b.x;
+      b.prevY = b.y;
+    }
+
     PoolPhysics.update(
       this.balls,
       8,
@@ -249,11 +262,21 @@ export class PoolEngine {
     // Check if motion has settled
     if (PoolPhysics.areAllBallsSettled(this.balls)) {
       this.isSimulating = false;
+      for (const b of this.balls) {
+        b.prevX = b.x;
+        b.prevY = b.y;
+      }
       this.handleMotionSettled();
     }
   }
 
   private handleMotionSettled() {
+    if (!this.isAuthoritative) {
+      // Non-authoritative peer (opponent): purely visual prediction.
+      // Do not mutate game rules, fouls, or turns locally.
+      // Authoritative POOL_SYNC_TABLE snapshot will apply the true outcome.
+      return;
+    }
     if (this.phase === 'LAGGING') {
       // Both players must complete their lag shot before evaluating winner/disqualifications
       if (!this.playerLagShotDone || !this.opponentLagShotDone) {
@@ -593,20 +616,36 @@ export class PoolEngine {
     // Bounds checking
     const r = BALL_RADIUS;
     const maxX = this.ballInHandKitchenOnly ? (HEAD_STRING_X - r) : (PLAY_X_MAX - r);
-    const clampedX = Math.max(PLAY_X_MIN + r, Math.min(x, maxX));
-    const clampedY = Math.max(PLAY_Y_MIN + r, Math.min(y, PLAY_Y_MAX - r));
+    let clampedX = Math.max(PLAY_X_MIN + r, Math.min(x, maxX));
+    let clampedY = Math.max(PLAY_Y_MIN + r, Math.min(y, PLAY_Y_MAX - r));
 
-    // Ensure no overlap with other object balls
-    for (const b of this.balls) {
-      if (b.id === 0 || b.isPotted) continue;
-      const dist = Math.hypot(clampedX - b.x, clampedY - b.y);
-      if (dist < r * 2 + 1) return false;
+    // Resolve overlap with other object balls so dragging smoothly contours around obstacles
+    for (let iter = 0; iter < 3; iter++) {
+      let collided = false;
+      for (const b of this.balls) {
+        if (b.id === 0 || b.isPotted) continue;
+        const dx = clampedX - b.x;
+        const dy = clampedY - b.y;
+        const dist = Math.hypot(dx, dy);
+        const minDist = r * 2 + 1.5;
+        if (dist < minDist) {
+          collided = true;
+          const angle = dist > 0.001 ? Math.atan2(dy, dx) : Math.random() * Math.PI * 2;
+          clampedX = b.x + Math.cos(angle) * minDist;
+          clampedY = b.y + Math.sin(angle) * minDist;
+          clampedX = Math.max(PLAY_X_MIN + r, Math.min(clampedX, maxX));
+          clampedY = Math.max(PLAY_Y_MIN + r, Math.min(clampedY, PLAY_Y_MAX - r));
+        }
+      }
+      if (!collided) break;
     }
 
     const cue = this.getCueBall();
     if (cue) {
       cue.x = clampedX;
       cue.y = clampedY;
+      cue.prevX = clampedX;
+      cue.prevY = clampedY;
       cue.vx = 0;
       cue.vy = 0;
     }
@@ -643,8 +682,12 @@ export class PoolEngine {
     if (data.currentTurn) this.currentTurn = data.currentTurn;
     if (data.playerGroup !== undefined) this.playerGroup = data.playerGroup;
     if (data.opponentGroup !== undefined) this.opponentGroup = data.opponentGroup;
-    if (data.phase && this.phase !== 'GAME_OVER') this.phase = data.phase;
+    if (data.phase) this.phase = data.phase;
     if (data.winner !== undefined) this.winner = data.winner;
     this.isSimulating = false;
+    for (const b of this.balls) {
+      b.prevX = b.x;
+      b.prevY = b.y;
+    }
   }
 }

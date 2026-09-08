@@ -117,6 +117,7 @@ export class PoolGame implements GameInstance {
   private isLocalShooter: boolean = false;
   private pendingSyncTable: any = null;
   private pendingSyncTimer: number | null = null;
+  private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
 
   // Mobile & Auto-Rotation State
   private isMobileView: boolean = false;
@@ -137,6 +138,9 @@ export class PoolGame implements GameInstance {
       this.opponentName = `AI (${(session.aiDifficulty || 'medium').toUpperCase()})`;
     } else {
       this.opponentName = session.peer ? 'Player 2' : 'Opponent';
+      if (session.peer?.role === 'guest') {
+        this.engine.isAuthoritative = false;
+      }
     }
 
     this.checkMobileAndOrientation();
@@ -246,9 +250,29 @@ export class PoolGame implements GameInstance {
         this.engine.shootLagBall(false, msg.power);
         sounds.playCueHit(msg.power);
         break;
+      case 'POOL_LAG_RESULT':
+        if (msg.winner === 'tie') {
+          this.engine.setupLagging();
+          this.updateHUD();
+        } else {
+          const resolvedLagWinner: PlayerId = msg.winner === 'player' ? 'opponent' : 'player';
+          this.engine.lagResult = {
+            winner: resolvedLagWinner,
+            playerDist: 0,
+            opponentDist: 0,
+            playerDisqualified: false,
+            opponentDisqualified: false,
+            reason: msg.reason
+          };
+          this.engine.phase = 'LAG_RESULT';
+          this.handleLagResultTransition();
+          this.updateHUD();
+        }
+        break;
       case 'POOL_DECIDE_BREAK':
         this.hideLagModal();
         this.engine.setupMatchTable(msg.breaker);
+        this.engine.isAuthoritative = true;
         this.updateHUD();
         break;
       case 'POOL_AIM_MOVE':
@@ -278,17 +302,20 @@ export class PoolGame implements GameInstance {
             if (this.pendingSyncTable) {
               this.engine.syncTableState(this.pendingSyncTable);
               this.pendingSyncTable = null;
+              this.engine.isAuthoritative = true;
               this.updateHUD();
             }
           }, 800);
         } else {
           this.engine.syncTableState(syncPayload);
+          this.engine.isAuthoritative = true;
           this.updateHUD();
         }
         break;
       case 'POOL_SHOT':
         this.opponentCue = null;
         this.isLocalShooter = false;
+        this.engine.isAuthoritative = false; // Non-shooter purely predicts visually
         this.engine.shoot(msg.angle, msg.power);
         sounds.playCueHit(msg.power);
         break;
@@ -304,12 +331,7 @@ export class PoolGame implements GameInstance {
         this.showRematchOffer();
         break;
       case 'REMATCH_ACCEPT':
-        this.hideGameOverModal();
-        this.isLagModalShown = false;
-        this.isGameOverModalShown = false;
-        this.isAITurnProcessing = false;
-        this.engine.setupLagging();
-        this.updateHUD();
+        this.startNewMatch();
         break;
     }
   }
@@ -628,16 +650,22 @@ export class PoolGame implements GameInstance {
     // Rematch button
     document.getElementById('btn-pool-rematch')?.addEventListener('click', () => {
       if (this.session.mode === 'ai') {
-        this.hideGameOverModal();
-        this.isLagModalShown = false;
-        this.isGameOverModalShown = false;
-        this.isAITurnProcessing = false;
-        this.engine.setupLagging();
-        this.updateHUD();
+        this.startNewMatch();
       } else if (this.session.peer?.isConnected) {
-        this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
-        const btn = document.getElementById('btn-pool-rematch');
-        if (btn) btn.textContent = 'Waiting for Opponent...';
+        if (this.rematchState === 'offer_received') {
+          this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT' });
+          this.startNewMatch();
+          return;
+        }
+        if (this.rematchState === 'idle') {
+          this.rematchState = 'requested';
+          this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
+          const btn = document.getElementById('btn-pool-rematch');
+          if (btn) {
+            btn.textContent = 'Waiting for Opponent...';
+            btn.setAttribute('disabled', 'true');
+          }
+        }
       }
     });
 
@@ -1259,6 +1287,21 @@ export class PoolGame implements GameInstance {
             winner: this.engine.winner
           });
         }
+
+        // In online PvP lagging, host is 100% authoritative for the lag outcome
+        if (
+          this.session.mode === 'online' &&
+          this.session.peer?.isConnected &&
+          this.session.peer.role === 'host' &&
+          this.engine.phase === 'LAG_RESULT' &&
+          this.engine.lagResult
+        ) {
+          this.session.peer.sendMessage({
+            type: 'POOL_LAG_RESULT',
+            winner: this.engine.lagResult.winner,
+            reason: this.engine.lagResult.reason
+          });
+        }
       }
       this.wasSimulating = this.engine.isSimulating;
 
@@ -1281,6 +1324,9 @@ export class PoolGame implements GameInstance {
         this.processAITurn();
       }
 
+      // Sub-tick render interpolation alpha for high-refresh 120Hz/144Hz displays
+      const alpha = Math.min(1.0, Math.max(0.0, accumulator / FIXED_TIMESTEP));
+
       // Render frame with opponent cue if applicable
       this.renderer.render(
         this.engine,
@@ -1288,7 +1334,8 @@ export class PoolGame implements GameInstance {
         this.cuePower,
         this.isAiming,
         this.isHumanTurn(),
-        this.opponentCue
+        this.opponentCue,
+        alpha
       );
 
       this.updateHUD();
@@ -1366,6 +1413,7 @@ export class PoolGame implements GameInstance {
   }
 
   private showGameOverModal(playerWon: boolean, customSubtitle?: string) {
+    this.rematchState = 'idle';
     const modal = document.getElementById('modal-pool-gameover');
     const title = document.getElementById('pool-gameover-title');
     const desc = document.getElementById('pool-gameover-desc');
@@ -1383,9 +1431,9 @@ export class PoolGame implements GameInstance {
       modal.classList.remove('hidden');
       const btn = document.getElementById('btn-pool-rematch');
       if (btn) {
+        btn.removeAttribute('disabled');
         btn.textContent = 'Rematch';
         btn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold';
-        btn.onclick = null;
       }
     }
   }
@@ -1395,20 +1443,28 @@ export class PoolGame implements GameInstance {
     document.getElementById('modal-pool-gameover')?.classList.add('hidden');
   }
 
+  private startNewMatch() {
+    this.rematchState = 'idle';
+    this.hideGameOverModal();
+    this.isLagModalShown = false;
+    this.isGameOverModalShown = false;
+    this.isAITurnProcessing = false;
+    if (this.session.mode === 'online' && this.session.peer?.role === 'guest') {
+      this.engine.isAuthoritative = false;
+    } else {
+      this.engine.isAuthoritative = true;
+    }
+    this.engine.setupLagging();
+    this.updateHUD();
+  }
+
   private showRematchOffer() {
+    this.rematchState = 'offer_received';
     const btn = document.getElementById('btn-pool-rematch');
     if (btn) {
+      btn.removeAttribute('disabled');
       btn.textContent = 'Accept Rematch!';
       btn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold animate-pulse bg-emerald-600';
-      btn.onclick = () => {
-        this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT' });
-        this.hideGameOverModal();
-        this.isLagModalShown = false;
-        this.isGameOverModalShown = false;
-        this.isAITurnProcessing = false;
-        this.engine.setupLagging();
-        this.updateHUD();
-      };
     }
   }
 

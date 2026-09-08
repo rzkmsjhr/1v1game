@@ -83,7 +83,17 @@ This runs TypeScript checking (`tsc`) and bundles optimized static assets into t
 - Designed for Cloudflare Pages with Serverless Functions (`functions/api/room/[[path]].ts`).
 - Set build command: `npm run build`
 - Set build output directory: `dist`
-- *Note on Signaling*: Vite dev mode includes a built-in single-process mock signaling server. For production deployment with players connecting across different geographic edge regions, bind a shared storage provider (such as Cloudflare KV or Durable Objects) to `functions/api/room` to synchronize room states across distributed edge isolates.
+- **Production Edge KV Signaling**:
+  Cloudflare Pages Functions execute across globally distributed, ephemeral edge isolates. To ensure players connecting from different regions find each other's room codes, bind a Cloudflare KV namespace named `ROOMS_KV`:
+  1. Create the KV namespace:
+     ```bash
+     npx wrangler kv namespace create ROOMS_KV
+     ```
+  2. In Cloudflare Dashboard:
+     Go to **Workers & Pages** -> your project -> **Settings** -> **Functions** -> **KV namespace bindings** -> Add binding:
+     - Variable name: `ROOMS_KV`
+     - KV namespace: select the created namespace.
+  *(In local Vite development, the built-in single-process signaling mock runs automatically with zero setup).*
 
 ---
 

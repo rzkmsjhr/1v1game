@@ -55,7 +55,8 @@ export class PoolRenderer {
     cuePower: number,
     isAiming: boolean = false,
     isHumanTurn: boolean = true,
-    opponentCue?: { angle: number; power: number } | null
+    opponentCue?: { angle: number; power: number } | null,
+    alpha: number = 1.0
   ) {
     const ctx = this.ctx;
     // Clear full high-DPI canvas buffer
@@ -88,8 +89,8 @@ export class PoolRenderer {
       this.renderAimingGuide(ctx, cue, trajectory);
     }
 
-    // 3. Render Balls
-    this.renderBalls(ctx, engine.balls);
+    // 3. Render Balls with sub-tick interpolation
+    this.renderBalls(ctx, engine.balls, alpha, engine.isSimulating);
 
     // 4. Render Cue Stick (on active turns when settled)
     const shouldShowCue = cue && !engine.isSimulating && (
@@ -292,7 +293,7 @@ export class PoolRenderer {
   // -------------------------------------------------------------
   // BALL RENDERING
   // -------------------------------------------------------------
-  private renderBalls(ctx: CanvasRenderingContext2D, balls: PoolBall[]) {
+  private renderBalls(ctx: CanvasRenderingContext2D, balls: PoolBall[], alpha: number = 1.0, isSimulating: boolean = false) {
     // Sort balls so sinking balls render first (underneath)
     const sorted = [...balls].sort((a, _b) => (a.isSinking ? -1 : 1));
 
@@ -301,8 +302,12 @@ export class PoolRenderer {
 
       const scale = b.isSinking ? Math.max(0.2, 1.0 - b.pottedAnimProgress * 0.75) : 1.0;
       const radius = b.radius * scale;
-      const x = b.x;
-      const y = b.y;
+      const x = (isSimulating && b.prevX !== undefined)
+        ? b.prevX + (b.x - b.prevX) * alpha
+        : b.x;
+      const y = (isSimulating && b.prevY !== undefined)
+        ? b.prevY + (b.y - b.prevY) * alpha
+        : b.y;
 
       const def = BALL_DEFS[b.id];
       if (!def) continue;

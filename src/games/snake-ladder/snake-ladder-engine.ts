@@ -169,6 +169,10 @@ export class SnakeLadderEngine {
     this.reset();
   }
 
+  public setBoard(newBoardConfig: BoardConfig) {
+    this.board = newBoardConfig;
+  }
+
   public reset(newBoardConfig?: BoardConfig) {
     if (newBoardConfig) {
       this.board = newBoardConfig;

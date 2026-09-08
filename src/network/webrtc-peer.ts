@@ -10,6 +10,7 @@ export type NetworkMessage =
   | { type: 'OTHELLO_DICE_REROLL' }
   | { type: 'OTHELLO_COLOR_CHOICE'; chosenColor: 1 | 2; chooserRole: 'host' | 'guest' }
   | { type: 'POOL_LAG_SHOT'; power: number }
+  | { type: 'POOL_LAG_RESULT'; winner: 'player' | 'opponent' | 'tie'; reason: string }
   | { type: 'POOL_DECIDE_BREAK'; breaker: 'player' | 'opponent' }
   | { type: 'POOL_SHOT'; angle: number; power: number }
   | { type: 'POOL_AIM_MOVE'; angle: number; power: number }

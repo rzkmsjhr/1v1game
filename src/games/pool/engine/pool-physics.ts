@@ -22,6 +22,8 @@ export interface PoolBall {
   pottedAnimProgress: number; // 0 to 1
   isCue: boolean;
   isPlayerLag?: boolean;
+  prevX?: number;
+  prevY?: number;
 }
 
 export interface TrajectoryPreview {

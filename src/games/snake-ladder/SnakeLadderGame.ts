@@ -5,7 +5,7 @@ import { sounds } from '../../engine/sound';
 import { SnakeLadderEngine, generateBoard } from './snake-ladder-engine';
 import { SnakeLadderRenderer } from './renderers/SnakeLadderRenderer';
 import { SnakeLadderAI } from './ai/snake-ladder-ai';
-import { DiceRoll, PlayerId } from './snake-ladder-types';
+import { DiceRoll, PlayerId, BoardConfig } from './snake-ladder-types';
 
 interface PipDef {
   x: number;
@@ -157,6 +157,7 @@ export class SnakeLadderGame implements GameInstance {
   private oppDuelD2: number | null = null;
   private isDuelRolling: boolean = false;
   private lastDice: DiceRoll = { d1: 1, d2: 1, total: 2, isDouble: false };
+  private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
 
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
@@ -287,8 +288,8 @@ export class SnakeLadderGame implements GameInstance {
         }
         break;
       case 'SNAKE_INIT_BOARD':
-        // Guest receives host's randomized board config
-        this.engine.reset(msg.board);
+        // Guest receives host's randomized board config without wiping duel state
+        this.engine.setBoard(msg.board);
         this.renderBoard();
         this.updateHUD();
         break;
@@ -325,19 +326,7 @@ export class SnakeLadderGame implements GameInstance {
         this.showRematchOffer();
         break;
       case 'REMATCH_ACCEPT':
-        this.hideGameOverModal();
-        const newBoard = msg.seed ? generateBoard(msg.seed) : generateBoard();
-        this.engine.reset(newBoard);
-        this.playerDuelD1 = null;
-        this.playerDuelD2 = null;
-        this.oppDuelD1 = null;
-        this.oppDuelD2 = null;
-        this.isDuelRolling = false;
-        this.lastDice = { d1: 1, d2: 1, total: 2, isDouble: false };
-        this.updateDiceDisplay(this.lastDice);
-        this.renderBoard();
-        this.updateHUD();
-        this.showDuelModal();
+        this.startNewMatch(msg.seed ? generateBoard(msg.seed) : undefined);
         break;
     }
   }
@@ -1009,14 +998,21 @@ export class SnakeLadderGame implements GameInstance {
   // GAME OVER & REMATCH
   // -------------------------------------------------------------
   private showGameOverModal(didIWin: boolean, message: string) {
+    this.rematchState = 'idle';
     const modal = document.getElementById('modal-game-over');
     const icon = document.getElementById('game-over-icon');
     const title = document.getElementById('game-over-title');
     const desc = document.getElementById('game-over-desc');
+    const btn = document.getElementById('btn-sl-rematch');
 
     if (icon) icon.textContent = didIWin ? '🏆' : '💀';
     if (title) title.textContent = didIWin ? 'VICTORY!' : 'DEFEAT!';
     if (desc) desc.textContent = message;
+    if (btn) {
+      btn.removeAttribute('disabled');
+      btn.textContent = 'Rematch';
+      btn.className = 'ps-btn-primary px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider';
+    }
 
     if (modal) modal.classList.remove('hidden');
   }
@@ -1026,58 +1022,57 @@ export class SnakeLadderGame implements GameInstance {
     if (modal) modal.classList.add('hidden');
   }
 
+  private startNewMatch(boardConfig?: BoardConfig) {
+    this.rematchState = 'idle';
+    this.hideGameOverModal();
+    this.engine.reset(boardConfig);
+    this.playerDuelD1 = null;
+    this.playerDuelD2 = null;
+    this.oppDuelD1 = null;
+    this.oppDuelD2 = null;
+    this.isDuelRolling = false;
+    this.lastDice = { d1: 1, d2: 1, total: 2, isDouble: false };
+    this.updateDiceDisplay(this.lastDice);
+    this.renderBoard();
+    this.updateHUD();
+    this.showDuelModal();
+  }
+
   private handleRematchClick() {
     if (this.session.mode === 'online' && this.session.peer?.isConnected) {
-      this.session.peer.sendMessage({
-        type: 'REMATCH_REQUEST'
-      });
-      const btn = document.getElementById('btn-sl-rematch');
-      if (btn) {
-        btn.textContent = 'Waiting for Opponent...';
-        btn.setAttribute('disabled', 'true');
+      if (this.rematchState === 'offer_received') {
+        const seed = Math.floor(Math.random() * 10000000);
+        this.session.peer.sendMessage({
+          type: 'REMATCH_ACCEPT',
+          seed
+        });
+        this.startNewMatch(generateBoard(seed));
+        return;
+      }
+      if (this.rematchState === 'idle') {
+        this.rematchState = 'requested';
+        this.session.peer.sendMessage({
+          type: 'REMATCH_REQUEST'
+        });
+        const btn = document.getElementById('btn-sl-rematch');
+        if (btn) {
+          btn.textContent = 'Waiting for Opponent...';
+          btn.setAttribute('disabled', 'true');
+        }
       }
     } else {
       // AI rematch: fresh randomized board
-      this.hideGameOverModal();
-      this.engine.reset();
-      this.playerDuelD1 = null;
-      this.playerDuelD2 = null;
-      this.oppDuelD1 = null;
-      this.oppDuelD2 = null;
-      this.isDuelRolling = false;
-      this.lastDice = { d1: 1, d2: 1, total: 2, isDouble: false };
-      this.updateDiceDisplay(this.lastDice);
-      this.renderBoard();
-      this.updateHUD();
-      this.showDuelModal();
+      this.startNewMatch();
     }
   }
 
   private showRematchOffer() {
+    this.rematchState = 'offer_received';
     const btn = document.getElementById('btn-sl-rematch');
     if (btn) {
       btn.removeAttribute('disabled');
       btn.textContent = 'Opponent Wants Rematch! Accept?';
       btn.className = 'ps-btn-primary px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider animate-bounce';
-      btn.onclick = () => {
-        const seed = Math.floor(Math.random() * 10000000);
-        this.session.peer?.sendMessage({
-          type: 'REMATCH_ACCEPT',
-          seed
-        });
-        this.hideGameOverModal();
-        this.engine.reset(generateBoard(seed));
-        this.playerDuelD1 = null;
-        this.playerDuelD2 = null;
-        this.oppDuelD1 = null;
-        this.oppDuelD2 = null;
-        this.isDuelRolling = false;
-        this.lastDice = { d1: 1, d2: 1, total: 2, isDouble: false };
-        this.updateDiceDisplay(this.lastDice);
-        this.renderBoard();
-        this.updateHUD();
-        this.showDuelModal();
-      };
     }
   }
 }

@@ -54,6 +54,7 @@ export class OthelloGame implements GameInstance {
   private opponentDiceRoll: number | null = null;
   private isRollingAnimation: boolean = false;
   private diceWinner: 'me' | 'opponent' | 'tie' | null = null;
+  private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
 
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
@@ -623,9 +624,20 @@ export class OthelloGame implements GameInstance {
       if (this.session.mode === 'ai') {
         this.resetMatch();
       } else if (this.session.peer?.isConnected) {
-        this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
-        const btn = document.getElementById('btn-othello-rematch');
-        if (btn) btn.textContent = 'Waiting for Opponent...';
+        if (this.rematchState === 'offer_received') {
+          this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT' });
+          this.resetMatch();
+          return;
+        }
+        if (this.rematchState === 'idle') {
+          this.rematchState = 'requested';
+          this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
+          const btn = document.getElementById('btn-othello-rematch');
+          if (btn) {
+            btn.textContent = 'Waiting for Opponent...';
+            btn.setAttribute('disabled', 'true');
+          }
+        }
       }
     });
 
@@ -738,17 +750,21 @@ export class OthelloGame implements GameInstance {
   }
 
   private showRematchOffer() {
+    this.rematchState = 'offer_received';
     const btn = document.getElementById('btn-othello-rematch');
     if (btn) {
+      btn.removeAttribute('disabled');
       btn.textContent = 'Accept Rematch';
-      btn.onclick = () => {
-        this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT' });
-        this.resetMatch();
-      };
     }
   }
 
   private resetMatch() {
+    this.rematchState = 'idle';
+    const btn = document.getElementById('btn-othello-rematch');
+    if (btn) {
+      btn.removeAttribute('disabled');
+      btn.textContent = 'Rematch';
+    }
     this.forfeitMessage = null;
     this.engine.reset();
     this.isProcessing = false;

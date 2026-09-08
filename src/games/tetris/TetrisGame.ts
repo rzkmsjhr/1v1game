@@ -38,6 +38,7 @@ export class TetrisGame implements GameInstance {
   private trailingBroadcastTimer: number | null = null;
   private isMobileView: boolean = typeof window !== 'undefined' ? window.innerWidth < 768 : false;
   private isGameOverHandled: boolean = false;
+  private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
 
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
@@ -344,14 +345,7 @@ export class TetrisGame implements GameInstance {
         break;
 
       case 'REMATCH_ACCEPT':
-        this.hideGameOverModal();
-        const rematchSeed = msg.seed || Math.floor(Math.random() * 2147483647) + 1;
-        this.matchSeed = rematchSeed;
-        this.playerEngine.reset(true, rematchSeed);
-        this.opponentEngine.reset(false, rematchSeed);
-        this.updateStatsUI();
-        this.renderPreviews();
-        this.startLoop();
+        this.startNewMatch(msg.seed);
         break;
     }
   }
@@ -416,8 +410,6 @@ export class TetrisGame implements GameInstance {
     if (this.session.mode === 'ai') {
       this.opponentEngine.addIncomingGarbage(lines);
     } else if (this.session.mode === 'online' && this.session.peer?.isConnected) {
-      this.opponentEngine.addIncomingGarbage(lines);
-      this.updateStatsUI();
       this.session.peer.sendMessage({
         type: 'TETRIS_GARBAGE',
         lines
@@ -755,18 +747,23 @@ export class TetrisGame implements GameInstance {
 
     document.getElementById('btn-rematch')?.addEventListener('click', () => {
       if (this.session.mode === 'ai') {
-        this.hideGameOverModal();
-        const newSeed = Math.floor(Math.random() * 2147483647) + 1;
-        this.matchSeed = newSeed;
-        this.playerEngine.reset(true, newSeed);
-        this.opponentEngine.reset(false, newSeed);
-        this.updateStatsUI();
-        this.renderPreviews();
-        this.startLoop();
+        this.startNewMatch();
       } else if (this.session.peer?.isConnected) {
-        this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
-        const btn = document.getElementById('btn-rematch');
-        if (btn) btn.textContent = 'Waiting for Opponent...';
+        if (this.rematchState === 'offer_received') {
+          const newSeed = Math.floor(Math.random() * 2147483647) + 1;
+          this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT', seed: newSeed });
+          this.startNewMatch(newSeed);
+          return;
+        }
+        if (this.rematchState === 'idle') {
+          this.rematchState = 'requested';
+          this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
+          const btn = document.getElementById('btn-rematch');
+          if (btn) {
+            btn.textContent = 'Waiting for Opponent...';
+            btn.setAttribute('disabled', 'true');
+          }
+        }
       }
     });
 
@@ -886,6 +883,7 @@ export class TetrisGame implements GameInstance {
 
       const rematchBtn = document.getElementById('btn-rematch');
       const exitBtn = document.getElementById('btn-modal-exit');
+      this.rematchState = 'idle';
       if (customSubtitle) {
         rematchBtn?.classList.add('hidden');
         if (exitBtn) {
@@ -893,7 +891,10 @@ export class TetrisGame implements GameInstance {
         }
       } else {
         rematchBtn?.classList.remove('hidden');
-        if (rematchBtn) rematchBtn.textContent = 'Play Again';
+        if (rematchBtn) {
+          rematchBtn.removeAttribute('disabled');
+          rematchBtn.textContent = 'Play Again';
+        }
         if (exitBtn) {
           exitBtn.className = 'w-full py-2 text-xs font-semibold text-gray-500 hover:text-gray-400';
         }
@@ -908,23 +909,26 @@ export class TetrisGame implements GameInstance {
     modal?.classList.add('hidden');
   }
 
+  private startNewMatch(seed?: number) {
+    this.rematchState = 'idle';
+    this.hideGameOverModal();
+    const newSeed = seed || Math.floor(Math.random() * 2147483647) + 1;
+    this.matchSeed = newSeed;
+    this.playerEngine.reset(true, newSeed);
+    this.opponentEngine.reset(false, newSeed);
+    this.updateStatsUI();
+    this.renderPreviews();
+    this.startLoop();
+  }
+
   private showRematchOffer() {
+    this.rematchState = 'offer_received';
     const subtitle = document.getElementById('gameover-subtitle');
     if (subtitle) subtitle.textContent = 'Opponent requested a rematch!';
     const btn = document.getElementById('btn-rematch');
     if (btn) {
+      btn.removeAttribute('disabled');
       btn.textContent = 'Accept Rematch';
-      btn.onclick = () => {
-        const newSeed = Math.floor(Math.random() * 2147483647) + 1;
-        this.matchSeed = newSeed;
-        this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT', seed: newSeed });
-        this.hideGameOverModal();
-        this.playerEngine.reset(true, newSeed);
-        this.opponentEngine.reset(false, newSeed);
-        this.updateStatsUI();
-        this.renderPreviews();
-        this.startLoop();
-      };
     }
   }
 }
