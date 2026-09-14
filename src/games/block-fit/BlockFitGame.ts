@@ -32,6 +32,11 @@ export class BlockFitGame implements GameInstance {
   private matchOverModalEl!: HTMLElement;
 
   // Interactive Drag & Selection State
+  private dragCanvas!: HTMLCanvasElement;
+  private dragGrabOffsetX: number = 0;
+  private dragGrabOffsetY: number = 0;
+  private dragTouchLiftY: number = 0;
+  private lastDragValidState: boolean | null = null;
   private activeDragPiece: PolyominoPiece | null = null;
   private activeDragElem: HTMLElement | null = null;
   private dragGhost: DragGhostState | null = null;
@@ -66,6 +71,65 @@ export class BlockFitGame implements GameInstance {
 
     // Start Round 1
     this.startRoundFlow();
+
+    // Visual Testing & Verification Helper
+    if (typeof window !== 'undefined') {
+      (window as any).__testDrag = {
+        dragToGap: () => {
+          const firstPiece = this.dockContainer.querySelector('.piece-card') as HTMLElement;
+          if (!firstPiece) return false;
+          const rect = firstPiece.getBoundingClientRect();
+          firstPiece.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true,
+            clientX: rect.left + rect.width / 2,
+            clientY: rect.top + rect.height / 2,
+            pointerType: 'mouse'
+          }));
+          window.dispatchEvent(new PointerEvent('pointermove', {
+            bubbles: true,
+            clientX: rect.left + rect.width / 2,
+            clientY: rect.top - 140,
+            pointerType: 'mouse'
+          }));
+          return true;
+        },
+        dragToValid: () => {
+          const firstPiece = this.dockContainer.querySelector('.piece-card') as HTMLElement;
+          if (!firstPiece) return false;
+          const pId = firstPiece.dataset.pieceId;
+          const piece = this.engine.currentPuzzle.pieces.find(p => p.id === pId);
+          if (!piece) return false;
+          const rect = firstPiece.getBoundingClientRect();
+          firstPiece.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true,
+            clientX: rect.left + rect.width / 2,
+            clientY: rect.top + rect.height / 2,
+            pointerType: 'mouse'
+          }));
+          const layout = BlockFitRenderer.getTrayLayout(this.canvasTray, this.engine.currentPuzzle.tray);
+          const targetX = layout.rect.left + layout.originX + (piece.solutionC + piece.width / 2) * layout.cellSize;
+          const targetY = layout.rect.top + layout.originY + (piece.solutionR + piece.height / 2) * layout.cellSize;
+          window.dispatchEvent(new PointerEvent('pointermove', {
+            bubbles: true,
+            clientX: targetX,
+            clientY: targetY,
+            pointerType: 'mouse'
+          }));
+          return true;
+        }
+      };
+
+      const autodrag = new URLSearchParams(window.location.search).get('autodrag');
+      if (autodrag) {
+        window.setTimeout(() => {
+          if (autodrag === 'gap') {
+            (window as any).__testDrag?.dragToGap();
+          } else if (autodrag === 'valid') {
+            (window as any).__testDrag?.dragToValid();
+          }
+        }, 350);
+      }
+    }
   }
 
   // -------------------------------------------------------------
@@ -205,12 +269,16 @@ export class BlockFitGame implements GameInstance {
           </div>
         </div>
 
+        <!-- Floating Drag Canvas (Follows finger/mouse from bottom to tray) -->
+        <canvas id="fit-drag-canvas" class="fixed pointer-events-none z-50 hidden drop-shadow-2xl" style="top: 0; left: 0; touch-action: none; will-change: transform;"></canvas>
+
       </div>
     `;
 
     // Cache elements
     this.canvasTray = document.getElementById('canvas-tray') as HTMLCanvasElement;
     this.canvasOppTray = document.getElementById('canvas-opp-tray') as HTMLCanvasElement;
+    this.dragCanvas = document.getElementById('fit-drag-canvas') as HTMLCanvasElement;
     this.dockContainer = document.getElementById('block-fit-dock')!;
     this.statusTextEl = document.getElementById('fit-status-text')!;
     this.roundBadgeEl = document.getElementById('fit-round-badge')!;
@@ -345,6 +413,14 @@ export class BlockFitGame implements GameInstance {
     this.updateHUD();
     this.renderDock();
     this.renderAll();
+
+    const isNoCountdown = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('nocountdown') === '1';
+    if (isNoCountdown) {
+      this.countdownOverlayEl.classList.add('hidden');
+      this.engine.startRound();
+      this.ai?.start();
+      return;
+    }
 
     // Show 3, 2, 1 Countdown
     this.countdownOverlayEl.classList.remove('hidden');
@@ -530,8 +606,9 @@ export class BlockFitGame implements GameInstance {
     }
 
     for (const piece of unplaced) {
+      const isSelected = this.selectedDockPiece?.id === piece.id;
       const pieceCard = document.createElement('div');
-      pieceCard.className = `piece-card p-1.5 sm:p-2 rounded-xl border ${isDark ? 'bg-slate-800/80 border-slate-700/80 hover:border-slate-500' : 'bg-slate-100 border-slate-300 hover:border-slate-400'} shadow-sm hover:shadow-md cursor-grab active:cursor-grabbing transition-transform transform hover:-translate-y-0.5 active:scale-95 flex items-center justify-center`;
+      pieceCard.className = `piece-card p-1.5 sm:p-2 rounded-xl border ${isSelected ? 'ring-2 ring-purple-500 bg-purple-500/20 border-purple-400 scale-105 shadow-md shadow-purple-500/25' : isDark ? 'bg-slate-800/80 border-slate-700/80 hover:border-slate-500' : 'bg-slate-100 border-slate-300 hover:border-slate-400'} shadow-sm hover:shadow-md cursor-grab active:cursor-grabbing transition-all transform hover:-translate-y-0.5 flex items-center justify-center`;
       pieceCard.dataset.pieceId = piece.id;
 
       // Small static canvas for the piece
@@ -561,6 +638,24 @@ export class BlockFitGame implements GameInstance {
     this.hasMovedFar = false;
     this.activeDragPiece = piece;
     this.activeDragElem = elem;
+
+    const layout = BlockFitRenderer.getTrayLayout(this.canvasTray, this.engine.currentPuzzle.tray);
+    const pieceW = piece.width * layout.cellSize;
+    const pieceH = piece.height * layout.cellSize;
+
+    this.dragGrabOffsetX = pieceW / 2;
+    this.dragGrabOffsetY = pieceH / 2;
+    this.dragTouchLiftY = e.pointerType === 'touch' ? -48 : 0;
+    this.lastDragValidState = null;
+
+    // Pre-render floating piece as invalid (grayish with red border) initially
+    BlockFitRenderer.renderFloatingPiece(this.dragCanvas, piece, layout.cellSize, false);
+    this.lastDragValidState = false;
+
+    // Position floating canvas directly at cursor
+    const posX = e.clientX - this.dragGrabOffsetX;
+    const posY = e.clientY - this.dragGrabOffsetY + this.dragTouchLiftY;
+    this.dragCanvas.style.transform = `translate3d(${posX}px, ${posY}px, 0)`;
 
     sounds.playBlockPick();
   }
@@ -597,47 +692,77 @@ export class BlockFitGame implements GameInstance {
     // If a dock piece was previously selected via tap, place it here!
     if (this.selectedDockPiece) {
       const piece = this.selectedDockPiece;
-      this.selectedDockPiece = null;
-      this.tryPlacePieceAt(piece, cell.r, cell.c);
+      let placed = false;
+      for (const c of piece.cells) {
+        const tr = cell.r - c.r;
+        const tc = cell.c - c.c;
+        if (this.engine.canPlacePiece(this.engine.playerBoard, piece, tr, tc)) {
+          this.selectedDockPiece = null;
+          this.tryPlacePieceAt(piece, tr, tc);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        sounds.playInvalidBuzz();
+      }
     }
   }
 
   private onPointerMove(e: PointerEvent) {
     if (!this.isPointerDown || !this.activeDragPiece) return;
 
-    const dx = e.clientX - this.pointerStartX;
-    const dy = e.clientY - this.pointerStartY;
-    if (!this.hasMovedFar && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+    const dist = Math.hypot(e.clientX - this.pointerStartX, e.clientY - this.pointerStartY);
+    if (!this.hasMovedFar && dist > 5) {
       this.hasMovedFar = true;
+      this.dragCanvas.classList.remove('hidden');
       if (this.activeDragElem) {
-        this.activeDragElem.style.opacity = '0.35';
+        this.activeDragElem.style.opacity = '0.2';
+        this.activeDragElem.style.filter = 'grayscale(60%)';
       }
     }
 
     if (this.hasMovedFar) {
-      // Calculate hover snap target over tray canvas
-      const cell = BlockFitRenderer.clientToTrayCell(
-        this.canvasTray,
-        this.engine.currentPuzzle.tray,
-        e.clientX,
-        e.clientY
-      );
+      const piece = this.activeDragPiece;
+      const layout = BlockFitRenderer.getTrayLayout(this.canvasTray, this.engine.currentPuzzle.tray);
 
-      if (cell) {
-        const isValid = this.engine.canPlacePiece(
-          this.engine.playerBoard,
-          this.activeDragPiece,
-          cell.r,
-          cell.c
-        );
+      const posX = e.clientX - this.dragGrabOffsetX;
+      const posY = e.clientY - this.dragGrabOffsetY + this.dragTouchLiftY;
+      this.dragCanvas.style.transform = `translate3d(${posX}px, ${posY}px, 0)`;
+
+      // Map floating piece top-left to tray grid cell (targetR, targetC)
+      const relX = posX - layout.rect.left - layout.originX;
+      const relY = posY - layout.rect.top - layout.originY;
+      const targetC = Math.round(relX / layout.cellSize);
+      const targetR = Math.round(relY / layout.cellSize);
+
+      const tray = this.engine.currentPuzzle.tray;
+      // Is piece close enough to the tray to check placement?
+      const isNearTray =
+        targetR >= -1 &&
+        targetR <= tray.rows &&
+        targetC >= -1 &&
+        targetC <= tray.cols;
+
+      let isValid = false;
+      if (isNearTray) {
+        isValid = this.engine.canPlacePiece(this.engine.playerBoard, piece, targetR, targetC);
         this.dragGhost = {
-          piece: this.activeDragPiece,
-          targetR: cell.r,
-          targetC: cell.c,
+          piece,
+          targetR,
+          targetC,
           isValid
         };
       } else {
         this.dragGhost = null;
+      }
+
+      // Dynamically update floating canvas color:
+      // Valid -> Vibrant jewel color with green edge
+      // Invalid -> Grayish body with red border
+      if (isValid !== this.lastDragValidState) {
+        this.lastDragValidState = isValid;
+        BlockFitRenderer.renderFloatingPiece(this.dragCanvas, piece, layout.cellSize, isValid);
       }
 
       this.renderAll();
@@ -653,34 +778,43 @@ export class BlockFitGame implements GameInstance {
     this.activeDragPiece = null;
     this.activeDragElem = null;
 
+    // Hide floating drag canvas
+    this.dragCanvas.classList.add('hidden');
+
     if (elem) {
       elem.style.opacity = '1.0';
+      elem.style.filter = 'none';
     }
 
     if (!piece) return;
 
     if (this.hasMovedFar) {
-      // Drag & Drop release
-      const cell = BlockFitRenderer.clientToTrayCell(
-        this.canvasTray,
-        this.engine.currentPuzzle.tray,
-        e.clientX,
-        e.clientY
-      );
+      // Calculate drop placement
+      const layout = BlockFitRenderer.getTrayLayout(this.canvasTray, this.engine.currentPuzzle.tray);
+      const posX = e.clientX - this.dragGrabOffsetX;
+      const posY = e.clientY - this.dragGrabOffsetY + this.dragTouchLiftY;
+      const relX = posX - layout.rect.left - layout.originX;
+      const relY = posY - layout.rect.top - layout.originY;
+      const targetC = Math.round(relX / layout.cellSize);
+      const targetR = Math.round(relY / layout.cellSize);
 
       this.dragGhost = null;
 
-      if (cell) {
-        this.tryPlacePieceAt(piece, cell.r, cell.c);
+      if (this.engine.canPlacePiece(this.engine.playerBoard, piece, targetR, targetC)) {
+        this.tryPlacePieceAt(piece, targetR, targetC);
       } else {
-        // Dropped outside tray -> spring back to dock
         sounds.playInvalidBuzz();
         this.renderAll();
       }
     } else {
-      // Simple tap without dragging: select piece for tap-to-place
-      this.selectedDockPiece = piece;
-      sounds.playBlockPick();
+      // Tap selection toggle
+      if (this.selectedDockPiece?.id === piece.id) {
+        this.selectedDockPiece = null;
+      } else {
+        this.selectedDockPiece = piece;
+        sounds.playBlockPick();
+      }
+      this.renderDock();
     }
   }
 
@@ -732,6 +866,7 @@ export class BlockFitGame implements GameInstance {
     this.resizeObserver?.disconnect();
     window.removeEventListener('pointermove', this.boundOnPointerMove);
     window.removeEventListener('pointerup', this.boundOnPointerUp);
+    this.dragCanvas.classList.add('hidden');
     this.container.innerHTML = '';
   }
 }

@@ -1,4 +1,5 @@
 // High-DPI Canvas & 3D Glossy Polyomino Renderer for Block Fit Duel
+import { INVALID_BLOCK_COLOR, VALID_SNAP_COLOR } from '../block-fit-types';
 import type { BlockColor, PolyominoPiece, TrayDefinition, PlayerBoardState } from '../block-fit-types';
 
 export interface DragGhostState {
@@ -142,14 +143,10 @@ export class BlockFitRenderer {
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, width, height);
 
-    // Determine optimal cell size to fit tray inside canvas with padding
-    const padding = 16;
-    const availW = width - padding * 2;
-    const availH = height - padding * 2;
-    const cellSize = Math.min(availW / tray.cols, availH / tray.rows);
-
-    const originX = Math.round((width - cellSize * tray.cols) / 2);
-    const originY = Math.round((height - cellSize * tray.rows) / 2);
+    const layout = this.getTrayLayout(canvas, tray);
+    const cellSize = layout.cellSize;
+    const originX = layout.originX;
+    const originY = layout.originY;
 
     // 1. Draw Empty Slot Wells for all active tray cells
     for (let r = 0; r < tray.rows; r++) {
@@ -224,24 +221,8 @@ export class BlockFitRenderer {
     // 4. Render Ghost Snap Preview if a piece is being dragged over the tray
     if (ghost) {
       const ghostColor: BlockColor = ghost.isValid
-        ? {
-            id: 'valid-ghost',
-            name: 'Valid Ghost',
-            primary: 'rgba(34, 197, 94, 0.55)',
-            light: 'rgba(74, 222, 128, 0.8)',
-            dark: 'rgba(21, 128, 61, 0.6)',
-            border: '#4ade80',
-            glow: 'rgba(34, 197, 94, 0.5)'
-          }
-        : {
-            id: 'invalid-ghost',
-            name: 'Invalid Ghost',
-            primary: 'rgba(239, 68, 68, 0.45)',
-            light: 'rgba(248, 113, 113, 0.7)',
-            dark: 'rgba(185, 28, 28, 0.5)',
-            border: '#f87171',
-            glow: 'rgba(239, 68, 68, 0.5)'
-          };
+        ? VALID_SNAP_COLOR
+        : INVALID_BLOCK_COLOR;
 
       for (const cell of ghost.piece.cells) {
         const gr = ghost.targetR + cell.r;
@@ -263,6 +244,15 @@ export class BlockFitRenderer {
             connectedNeighbors: neighbors,
             isGhost: true
           });
+
+          // Extra crisp red border if invalid
+          if (!ghost.isValid) {
+            ctx.save();
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(gx + 1, gy + 1, cellSize - 2, cellSize - 2);
+            ctx.restore();
+          }
         }
       }
     }
@@ -376,6 +366,102 @@ export class BlockFitRenderer {
   }
 
   /**
+   * Calculate cell layout, origin, and bounds of the tray canvas
+   */
+  public static getTrayLayout(
+    canvas: HTMLCanvasElement,
+    tray: TrayDefinition
+  ) {
+    const rect = canvas.getBoundingClientRect();
+    const width = rect.width || canvas.width;
+    const height = rect.height || canvas.height;
+    const padding = 16;
+    const availW = Math.max(10, width - padding * 2);
+    const availH = Math.max(10, height - padding * 2);
+    const cellSize = Math.min(availW / tray.cols, availH / tray.rows);
+
+    const originX = Math.round((width - cellSize * tray.cols) / 2);
+    const originY = Math.round((height - cellSize * tray.rows) / 2);
+
+    return {
+      rect,
+      width,
+      height,
+      cellSize,
+      originX,
+      originY
+    };
+  }
+
+  /**
+   * Render the floating piece directly onto the drag canvas
+   * If isValid: vibrant jewel color
+   * If !isValid: grayish body with distinct red border
+   */
+  public static renderFloatingPiece(
+    canvas: HTMLCanvasElement,
+    piece: PolyominoPiece,
+    cellSize: number,
+    isValid: boolean
+  ) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = piece.width * cellSize;
+    const h = piece.height * cellSize;
+
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+    }
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, w, h);
+
+    const color = isValid ? piece.color : INVALID_BLOCK_COLOR;
+
+    for (const cell of piece.cells) {
+      const x = cell.c * cellSize;
+      const y = cell.r * cellSize;
+
+      const neighbors = {
+        top: piece.cells.some(c => c.r === cell.r - 1 && c.c === cell.c),
+        bottom: piece.cells.some(c => c.r === cell.r + 1 && c.c === cell.c),
+        left: piece.cells.some(c => c.r === cell.r && c.c === cell.c - 1),
+        right: piece.cells.some(c => c.r === cell.r && c.c === cell.c + 1)
+      };
+
+      this.drawBlock(ctx, x, y, cellSize, color, {
+        connectedNeighbors: neighbors,
+        isGhost: false,
+        alpha: isValid ? 1.0 : 0.92
+      });
+
+      // Distinct red border if invalid
+      if (!isValid) {
+        ctx.save();
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+        ctx.restore();
+      } else {
+        // Crisp subtle green edge to highlight valid placement
+        ctx.save();
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+        ctx.restore();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  /**
    * Helper: Convert client coordinates (clientX, clientY) to tray grid cell (r, c)
    */
   public static clientToTrayCell(
@@ -384,24 +470,16 @@ export class BlockFitRenderer {
     clientX: number,
     clientY: number
   ): { r: number; c: number } | null {
-    const rect = canvas.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    const layout = this.getTrayLayout(canvas, tray);
+    const x = clientX - layout.rect.left;
+    const y = clientY - layout.rect.top;
 
-    if (x < 0 || x > rect.width || y < 0 || y > rect.height) {
+    if (x < 0 || x > layout.rect.width || y < 0 || y > layout.rect.height) {
       return null;
     }
 
-    const padding = 16;
-    const availW = rect.width - padding * 2;
-    const availH = rect.height - padding * 2;
-    const cellSize = Math.min(availW / tray.cols, availH / tray.rows);
-
-    const originX = (rect.width - cellSize * tray.cols) / 2;
-    const originY = (rect.height - cellSize * tray.rows) / 2;
-
-    const c = Math.floor((x - originX) / cellSize);
-    const r = Math.floor((y - originY) / cellSize);
+    const c = Math.floor((x - layout.originX) / layout.cellSize);
+    const r = Math.floor((y - layout.originY) / layout.cellSize);
 
     return { r, c };
   }

@@ -15,6 +15,26 @@ export interface BlockColor {
   glow: string;
 }
 
+export const INVALID_BLOCK_COLOR: BlockColor = {
+  id: 'invalid-gray',
+  name: 'Cannot Place',
+  primary: '#475569', // Slate grayish body
+  light: '#64748b',   // Slate lighter bevel
+  dark: '#334155',    // Slate darker bevel
+  border: '#ef4444',  // Distinct vivid red border
+  glow: 'rgba(239, 68, 68, 0.55)'
+};
+
+export const VALID_SNAP_COLOR: BlockColor = {
+  id: 'valid-snap',
+  name: 'Valid Snap',
+  primary: 'rgba(34, 197, 94, 0.65)',
+  light: 'rgba(74, 222, 128, 0.85)',
+  dark: 'rgba(21, 128, 61, 0.65)',
+  border: '#22c55e',
+  glow: 'rgba(34, 197, 94, 0.6)'
+};
+
 export interface PolyominoPiece {
   id: string;
   cells: CellCoord[]; // Normalized with min(r) = 0, min(c) = 0
