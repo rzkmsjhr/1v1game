@@ -101,7 +101,8 @@ export class SlingEngine {
         vx: 0,
         vy: 0,
         radius: PUCK_RADIUS,
-        owner: 'player'
+        owner: 'player',
+        color: 'black'
       });
     }
 
@@ -116,7 +117,8 @@ export class SlingEngine {
         vx: 0,
         vy: 0,
         radius: PUCK_RADIUS,
-        owner: 'opponent'
+        owner: 'opponent',
+        color: 'red'
       });
     }
   }

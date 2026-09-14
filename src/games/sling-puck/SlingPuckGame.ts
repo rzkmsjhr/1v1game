@@ -106,7 +106,8 @@ export class SlingPuckGame implements GameInstance {
             x: puck.x,
             y: TABLE_HEIGHT - puck.y,
             vx: puck.vx,
-            vy: -puck.vy
+            vy: -puck.vy,
+            color: puck.color
           });
         }
       }
@@ -175,7 +176,8 @@ export class SlingPuckGame implements GameInstance {
             vx: msg.vx,
             vy: msg.vy,
             radius: 17,
-            owner: 'player'
+            owner: 'player',
+            color: msg.color || 'red'
           };
           this.engine.pucks.push(targetPuck);
         } else {
@@ -184,6 +186,9 @@ export class SlingPuckGame implements GameInstance {
           targetPuck.vx = msg.vx;
           targetPuck.vy = msg.vy;
           targetPuck.owner = 'player';
+          if (msg.color) {
+            targetPuck.color = msg.color;
+          }
         }
         this.updateHUD();
         break;

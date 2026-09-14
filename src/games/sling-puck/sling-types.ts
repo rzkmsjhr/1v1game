@@ -10,6 +10,7 @@ export interface Puck {
   vy: number;
   radius: number;
   owner: PlayerSide;
+  color: 'black' | 'red';
   isDragged?: boolean;
   dragX?: number;
   dragY?: number;

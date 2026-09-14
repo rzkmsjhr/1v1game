@@ -241,10 +241,10 @@ export class SlingRenderer {
     ctx.shadowOffsetY = puck.isDragged ? 6 : 3;
 
     // 2. Base Puck Circle
-    const isPlayer = puck.owner === 'player';
+    const isBlack = puck.color ? puck.color === 'black' : puck.owner === 'player';
     const puckGrad = ctx.createRadialGradient(x - 4, y - 4, 3, x, y, r);
 
-    if (isPlayer) {
+    if (isBlack) {
       // Obsidian Black Puck with glossy reflection
       puckGrad.addColorStop(0, '#4b5563');
       puckGrad.addColorStop(0.5, '#1f2937');
@@ -264,7 +264,7 @@ export class SlingRenderer {
     ctx.shadowColor = 'transparent';
 
     // 3. Concentric lathe ring grooves
-    ctx.strokeStyle = isPlayer
+    ctx.strokeStyle = isBlack
       ? 'rgba(255, 255, 255, 0.22)'
       : 'rgba(255, 255, 255, 0.35)';
     ctx.lineWidth = 1.2;
@@ -273,13 +273,13 @@ export class SlingRenderer {
     ctx.stroke();
 
     // Center brass / metal dot
-    ctx.fillStyle = isPlayer ? '#9ca3af' : '#fef08a';
+    ctx.fillStyle = isBlack ? '#9ca3af' : '#fef08a';
     ctx.beginPath();
     ctx.arc(x, y, 2.5, 0, Math.PI * 2);
     ctx.fill();
 
     // Rim highlight stroke
-    ctx.strokeStyle = isPlayer ? '#374151' : '#b91c1c';
+    ctx.strokeStyle = isBlack ? '#374151' : '#b91c1c';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);

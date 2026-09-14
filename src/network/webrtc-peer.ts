@@ -24,7 +24,7 @@ export type NetworkMessage =
   | { type: 'SNAKE_DICE_ROLL'; d1: number; d2: number; total: number; isDouble: boolean }
   | { type: 'SNAKE_MOVE_COMPLETE'; finalPos: number }
   | { type: 'SLING_START'; seed: number }
-  | { type: 'SLING_PUCK_CROSSED'; id: number; x: number; y: number; vx: number; vy: number }
+  | { type: 'SLING_PUCK_CROSSED'; id: number; x: number; y: number; vx: number; vy: number; color?: 'black' | 'red' }
   | { type: 'SLING_SYNC_PUCKS'; myPuckCount: number; oppPuckCount: number }
   | { type: 'SLING_VICTORY'; winner: 'player' | 'opponent' }
   | { type: 'GAME_OVER'; didWin: boolean }
