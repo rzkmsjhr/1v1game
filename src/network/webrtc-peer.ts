@@ -25,7 +25,7 @@ export type NetworkMessage =
   | { type: 'SNAKE_MOVE_COMPLETE'; finalPos: number }
   | { type: 'SLING_START'; seed: number }
   | { type: 'SLING_PUCK_CROSSED'; id: number; x: number; y: number; vx: number; vy: number; color?: 'black' | 'red' }
-  | { type: 'SLING_BAND_PULL'; isStretched: boolean; puckId?: number; x?: number; y?: number }
+  | { type: 'SLING_BAND_PULL'; isStretched: boolean; isDragging?: boolean; puckId?: number; x?: number; y?: number }
   | { type: 'SLING_PUCK_LAUNCH'; puckId: number; x: number; y: number; vx: number; vy: number; power: number }
   | { type: 'SLING_PUCK_SYNC'; pucks: Array<{ id: number; x: number; y: number; vx: number; vy: number; color?: 'black' | 'red' }>; myPuckCount: number; oppPuckCount: number }
   | { type: 'SLING_SYNC_PUCKS'; myPuckCount: number; oppPuckCount: number }

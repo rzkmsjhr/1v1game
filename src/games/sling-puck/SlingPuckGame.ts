@@ -54,6 +54,19 @@ export class SlingPuckGame implements GameInstance {
   private remoteTargetPuckY: number = 0;
   private resizeObserver: ResizeObserver | null = null;
 
+  // Cached DOM elements & values to eliminate layout thrashing
+  private badgePlayerEl: HTMLElement | null = null;
+  private badgeOppEl: HTMLElement | null = null;
+  private statusTextEl: HTMLElement | null = null;
+  private hintTextEl: HTMLElement | null = null;
+  private scoreTrackerEl: HTMLElement | null = null;
+  private cachedPlayerPuckCount: number = -1;
+  private cachedOppPuckCount: number = -1;
+  private cachedScoreText: string = '';
+  private cachedStatusText: string = '';
+  private cachedHintText: string = '';
+  private lastHUDUpdateTime: number = 0;
+
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
     this.session = session;
@@ -101,6 +114,11 @@ export class SlingPuckGame implements GameInstance {
       window.removeEventListener('pointercancel', this.boundPointerUp);
     }
     window.removeEventListener('resize', this.handleResize);
+    this.badgePlayerEl = null;
+    this.badgeOppEl = null;
+    this.statusTextEl = null;
+    this.hintTextEl = null;
+    this.scoreTrackerEl = null;
     this.container.innerHTML = '';
   }
 
@@ -282,13 +300,14 @@ export class SlingPuckGame implements GameInstance {
         }
         this.updateHUD();
         break;
-      case 'SLING_BAND_PULL':
+      case 'SLING_BAND_PULL': {
         this.lastOpponentBandPullTime = performance.now();
-        if (msg.isStretched && msg.x !== undefined && msg.y !== undefined) {
+        const isDragging = msg.isDragging ?? msg.isStretched;
+        if (isDragging && msg.x !== undefined && msg.y !== undefined) {
           const oppY = TABLE_HEIGHT - msg.y;
-          this.engine.opponentBand.isStretched = true;
           this.remoteTargetBandX = msg.x;
-          this.remoteTargetBandY = oppY;
+          this.remoteTargetBandY = msg.isStretched ? oppY : OPPONENT_BAND_REST_Y;
+          this.engine.opponentBand.isStretched = !!msg.isStretched;
           this.remoteTargetPuckId = msg.puckId ?? null;
           this.remoteTargetPuckX = msg.x;
           this.remoteTargetPuckY = oppY;
@@ -298,8 +317,10 @@ export class SlingPuckGame implements GameInstance {
             targetPuck.isDragged = true;
             // Snap immediately if starting fresh drag so there is no laggy slide across board
             if (this.engine.opponentBand.midY === OPPONENT_BAND_REST_Y || Math.hypot(targetPuck.x - msg.x, targetPuck.y - oppY) > 60) {
-              this.engine.opponentBand.midX = msg.x;
-              this.engine.opponentBand.midY = oppY;
+              if (msg.isStretched) {
+                this.engine.opponentBand.midX = msg.x;
+                this.engine.opponentBand.midY = oppY;
+              }
               targetPuck.x = msg.x;
               targetPuck.y = oppY;
               targetPuck.dragX = msg.x;
@@ -325,6 +346,7 @@ export class SlingPuckGame implements GameInstance {
           }
         }
         break;
+      }
       case 'SLING_PUCK_LAUNCH': {
         let targetPuck = this.engine.pucks.find(p => p.id === msg.puckId);
         if (targetPuck) {
@@ -353,25 +375,19 @@ export class SlingPuckGame implements GameInstance {
           for (const sp of msg.pucks) {
             let targetPuck = this.engine.pucks.find(p => p.id === sp.id);
             if (targetPuck) {
+              // Don't sync if this is the puck actively dragged by the remote opponent
+              if (targetPuck.id === this.remoteTargetPuckId) {
+                continue;
+              }
               // Only reconcile pucks on opponent half (y < CENTER_Y) that aren't being dragged locally
               if (targetPuck.y < CENTER_Y && !targetPuck.isDragged) {
                 const localSpeed = Math.hypot(targetPuck.vx, targetPuck.vy);
                 const remoteSpeed = Math.hypot(sp.vx, sp.vy);
 
                 if (localSpeed > 2.0 || remoteSpeed > 2.0) {
-                  // Fast-moving launched puck: smooth trajectory guidance WITHOUT teleporting backwards!
-                  targetPuck.vx += (sp.vx - targetPuck.vx) * 0.35;
-                  targetPuck.vy += (sp.vy - targetPuck.vy) * 0.35;
-
-                  // Micro-nudge position only if noticeably deviating from trajectory, clamped to 3px max
-                  const dx = sp.x - targetPuck.x;
-                  const dy = sp.y - targetPuck.y;
-                  const dist = Math.hypot(dx, dy);
-                  if (dist > 3.0) {
-                    const step = Math.min(dist * 0.25, 3.0);
-                    targetPuck.x += (dx / dist) * step;
-                    targetPuck.y += (dy / dist) * step;
-                  }
+                  // Fast-moving launched puck: guide velocity without snapping position mid-flight
+                  targetPuck.vx += (sp.vx - targetPuck.vx) * 0.25;
+                  targetPuck.vy += (sp.vy - targetPuck.vy) * 0.25;
                 } else {
                   // Slow or resting puck: smooth convergence
                   const dist = Math.hypot(targetPuck.x - sp.x, targetPuck.y - sp.y);
@@ -409,7 +425,6 @@ export class SlingPuckGame implements GameInstance {
             }
           }
         }
-        this.updateHUD();
         break;
       case 'SLING_SYNC_PUCKS':
         this.updateHUD();
@@ -528,6 +543,12 @@ export class SlingPuckGame implements GameInstance {
     `;
 
     this.canvas = document.getElementById('canvas-sling') as HTMLCanvasElement;
+    this.badgePlayerEl = document.getElementById('badge-player-pucks');
+    this.badgeOppEl = document.getElementById('badge-opp-pucks');
+    this.statusTextEl = document.getElementById('sling-status-text');
+    this.hintTextEl = document.getElementById('sling-hint-text');
+    this.scoreTrackerEl = document.getElementById('sling-score-tracker');
+
     this.renderer = new SlingRenderer(this.canvas);
 
     this.setupEventListeners();
@@ -692,7 +713,7 @@ export class SlingPuckGame implements GameInstance {
         this.engine.playerBand.midY = PLAYER_BAND_REST_Y;
       }
 
-      // Sync stretch state with peer in online PvP at 60Hz (every 16ms)
+      // Sync stretch & drag state with peer in online PvP at 60Hz (every 16ms)
       if (this.session.mode === 'online' && this.session.peer?.isConnected) {
         const now = performance.now();
         if (now - this.lastBandBroadcastTime >= 16) {
@@ -700,6 +721,7 @@ export class SlingPuckGame implements GameInstance {
           this.session.peer.sendMessage({
             type: 'SLING_BAND_PULL',
             isStretched: this.engine.playerBand.isStretched,
+            isDragging: true,
             puckId: this.draggedPuck.id,
             x: clampedX,
             y: clampedY
@@ -749,7 +771,8 @@ export class SlingPuckGame implements GameInstance {
         if (this.session.mode === 'online' && this.session.peer?.isConnected) {
           this.session.peer.sendMessage({
             type: 'SLING_BAND_PULL',
-            isStretched: false
+            isStretched: false,
+            isDragging: false
           });
         }
       }
@@ -801,9 +824,10 @@ export class SlingPuckGame implements GameInstance {
         accumulator -= FIXED_TIMESTEP;
       }
 
-      // Opponent rubber band watchdog: if stretched with no network updates for > 1200ms, auto-release to prevent sticking
-      if (this.engine.opponentBand.isStretched && (currentTime - this.lastOpponentBandPullTime > 1200)) {
+      // Opponent drag watchdog: if dragging or stretched with no network updates for > 1200ms, auto-release to prevent sticking
+      if ((this.engine.opponentBand.isStretched || this.remoteTargetPuckId !== null) && (currentTime - this.lastOpponentBandPullTime > 1200)) {
         this.engine.opponentBand.isStretched = false;
+        this.remoteTargetPuckId = null;
         this.engine.opponentBand.midX = (BAND_LEFT_X + BAND_RIGHT_X) * 0.5;
         this.engine.opponentBand.midY = OPPONENT_BAND_REST_Y;
         for (const p of this.engine.pucks) {
@@ -819,21 +843,21 @@ export class SlingPuckGame implements GameInstance {
       }
 
       // Butter-smooth frame interpolation for remote opponent dragging & rubber band
+      const lerpFactor = 0.55;
       if (this.engine.opponentBand.isStretched) {
-        const lerpFactor = 0.55;
         this.engine.opponentBand.midX += (this.remoteTargetBandX - this.engine.opponentBand.midX) * lerpFactor;
         this.engine.opponentBand.midY += (this.remoteTargetBandY - this.engine.opponentBand.midY) * lerpFactor;
+      }
 
-        if (this.remoteTargetPuckId) {
-          const remotePuck = this.engine.pucks.find(p => p.id === this.remoteTargetPuckId);
-          if (remotePuck && remotePuck.isDragged) {
-            remotePuck.x += (this.remoteTargetPuckX - remotePuck.x) * lerpFactor;
-            remotePuck.y += (this.remoteTargetPuckY - remotePuck.y) * lerpFactor;
-            remotePuck.dragX = remotePuck.x;
-            remotePuck.dragY = remotePuck.y;
-            remotePuck.prevX = remotePuck.x;
-            remotePuck.prevY = remotePuck.y;
-          }
+      if (this.remoteTargetPuckId !== null) {
+        const remotePuck = this.engine.pucks.find(p => p.id === this.remoteTargetPuckId);
+        if (remotePuck && remotePuck.isDragged) {
+          remotePuck.x += (this.remoteTargetPuckX - remotePuck.x) * lerpFactor;
+          remotePuck.y += (this.remoteTargetPuckY - remotePuck.y) * lerpFactor;
+          remotePuck.dragX = remotePuck.x;
+          remotePuck.dragY = remotePuck.y;
+          remotePuck.prevX = remotePuck.x;
+          remotePuck.prevY = remotePuck.y;
         }
       }
 
@@ -875,42 +899,63 @@ export class SlingPuckGame implements GameInstance {
     this.animationFrameId = requestAnimationFrame(loop);
   }
 
-  private updateHUD() {
-    const badgePlayer = document.getElementById('badge-player-pucks');
-    const badgeOpp = document.getElementById('badge-opp-pucks');
-    const statusText = document.getElementById('sling-status-text');
-    const hintText = document.getElementById('sling-hint-text');
-    const scoreTracker = document.getElementById('sling-score-tracker');
+  private updateHUD(force: boolean = false) {
+    const now = performance.now();
+    // Throttle DOM updates to max 15Hz unless forced (e.g., game state change, score change)
+    if (!force && now - this.lastHUDUpdateTime < 66) {
+      return;
+    }
+    this.lastHUDUpdateTime = now;
 
     const pCount = this.engine.getPlayerPuckCount();
     const oCount = this.engine.getOpponentPuckCount();
 
-    if (badgePlayer) badgePlayer.textContent = `${pCount} PUCK${pCount === 1 ? '' : 'S'}`;
-    if (badgeOpp) badgeOpp.textContent = `${oCount} PUCK${oCount === 1 ? '' : 'S'}`;
-
-    if (scoreTracker) {
-      scoreTracker.textContent = `SCORE: ${this.engine.playerScore} - ${this.engine.opponentScore}`;
+    if (this.badgePlayerEl && pCount !== this.cachedPlayerPuckCount) {
+      this.cachedPlayerPuckCount = pCount;
+      this.badgePlayerEl.textContent = `${pCount} PUCK${pCount === 1 ? '' : 'S'}`;
+    }
+    if (this.badgeOppEl && oCount !== this.cachedOppPuckCount) {
+      this.cachedOppPuckCount = oCount;
+      this.badgeOppEl.textContent = `${oCount} PUCK${oCount === 1 ? '' : 'S'}`;
     }
 
-    if (statusText && hintText) {
+    const scoreStr = `SCORE: ${this.engine.playerScore} - ${this.engine.opponentScore}`;
+    if (this.scoreTrackerEl && scoreStr !== this.cachedScoreText) {
+      this.cachedScoreText = scoreStr;
+      this.scoreTrackerEl.textContent = scoreStr;
+    }
+
+    if (this.statusTextEl && this.hintTextEl) {
+      let newStatus = '';
+      let newHint = '';
+
       if (this.engine.phase === 'COUNTDOWN') {
-        statusText.textContent = 'GET READY!';
-        hintText.textContent = `Match starts in ${this.engine.countdown}...`;
+        newStatus = 'GET READY!';
+        newHint = `Match starts in ${this.engine.countdown}...`;
       } else if (this.engine.phase === 'PLAYING') {
         if (pCount < oCount) {
-          statusText.textContent = 'YOU ARE LEADING!';
-          hintText.textContent = `Only ${pCount} left to clear!`;
+          newStatus = 'YOU ARE LEADING!';
+          newHint = `Only ${pCount} left to clear!`;
         } else if (pCount > oCount) {
-          statusText.textContent = 'OPPONENT LEADING!';
-          hintText.textContent = 'Shoot faster!';
+          newStatus = 'OPPONENT LEADING!';
+          newHint = 'Shoot faster!';
         } else {
-          statusText.textContent = 'TIED BATTLE!';
-          hintText.textContent = 'Sling pucks through the gate!';
+          newStatus = 'TIED BATTLE!';
+          newHint = 'Sling pucks through the gate!';
         }
       } else if (this.engine.phase === 'MATCH_OVER') {
         const didIWin = this.engine.matchWinner === 'player';
-        statusText.textContent = didIWin ? 'VICTORY!' : 'DEFEAT!';
-        hintText.textContent = didIWin ? 'You cleared all pucks!' : `${this.opponentName} cleared all pucks!`;
+        newStatus = didIWin ? 'VICTORY!' : 'DEFEAT!';
+        newHint = didIWin ? 'You cleared all pucks!' : `${this.opponentName} cleared all pucks!`;
+      }
+
+      if (newStatus !== this.cachedStatusText) {
+        this.cachedStatusText = newStatus;
+        this.statusTextEl.textContent = newStatus;
+      }
+      if (newHint !== this.cachedHintText) {
+        this.cachedHintText = newHint;
+        this.hintTextEl.textContent = newHint;
       }
     }
   }
@@ -982,6 +1027,6 @@ export class SlingPuckGame implements GameInstance {
 
     this.engine.resetMatch(this.session.peer?.role);
     if (seed) this.engine.setupRound(seed, this.session.peer?.role);
-    this.updateHUD();
+    this.updateHUD(true);
   }
 }
