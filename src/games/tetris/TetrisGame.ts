@@ -40,6 +40,23 @@ export class TetrisGame implements GameInstance {
   private isGameOverHandled: boolean = false;
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
 
+  // Cached DOM elements & dirty-checking fields to eliminate layout and canvas thrashing
+  private statPlayerScoreEl: HTMLElement | null = null;
+  private statPlayerLinesEl: HTMLElement | null = null;
+  private statPlayerGarbageEl: HTMLElement | null = null;
+  private statOpponentScoreEl: HTMLElement | null = null;
+  private statOpponentGarbageEl: HTMLElement | null = null;
+  private canvasHoldEl: HTMLCanvasElement | null = null;
+  private canvasNextEls: (HTMLCanvasElement | null)[] = [];
+  private cachedPlayerScore: number = -1;
+  private cachedPlayerLines: number = -1;
+  private cachedPlayerGarbage: number = -1;
+  private cachedOpponentScore: number = -1;
+  private cachedOpponentGarbage: number = -1;
+  private cachedHoldPieceType: string | null = '__init__';
+  private cachedNextQueue: string[] = [];
+  private lastStatsUpdateTime: number = 0;
+
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
     this.session = session;
@@ -178,6 +195,13 @@ export class TetrisGame implements GameInstance {
     this.inputController?.destroy();
     window.removeEventListener('beforeunload', this.handleBeforeUnload);
     window.removeEventListener('resize', this.handleResize);
+    this.statPlayerScoreEl = null;
+    this.statPlayerLinesEl = null;
+    this.statPlayerGarbageEl = null;
+    this.statOpponentScoreEl = null;
+    this.statOpponentGarbageEl = null;
+    this.canvasHoldEl = null;
+    this.canvasNextEls = [];
     this.container.innerHTML = '';
   }
 
@@ -301,8 +325,8 @@ export class TetrisGame implements GameInstance {
           this.matchSeed = msg.seed;
           this.playerEngine.reset(true, msg.seed);
           this.opponentEngine.reset(false, msg.seed);
-          this.updateStatsUI();
-          this.renderPreviews();
+          this.updateStatsUI(true);
+          this.renderPreviews(true);
         }
         break;
 
@@ -327,7 +351,7 @@ export class TetrisGame implements GameInstance {
         if (msg.currentPiece !== undefined) {
           this.opponentEngine.currentPiece = msg.currentPiece;
         }
-        this.updateStatsUI();
+        this.updateStatsUI(true);
         break;
 
       case 'TETRIS_GARBAGE':
@@ -355,10 +379,10 @@ export class TetrisGame implements GameInstance {
     this.updateStatsUI();
     this.renderPreviews();
 
-    // Active movement broadcast: lightweight, throttled to 25ms (faster than ARR: 33ms) with trailing flush
+    // Active movement broadcast: 60Hz transmission (every 16ms) with trailing flush
     if (this.session.mode === 'online' && this.session.peer?.isConnected) {
       const now = performance.now();
-      if (now - this.lastPieceBroadcastTime > 25) {
+      if (now - this.lastPieceBroadcastTime >= 16) {
         if (this.trailingBroadcastTimer !== null) {
           clearTimeout(this.trailingBroadcastTimer);
           this.trailingBroadcastTimer = null;
@@ -384,7 +408,7 @@ export class TetrisGame implements GameInstance {
               score: this.playerEngine.score
             });
           }
-        }, 28);
+        }, 16);
       }
     }
   }
@@ -735,6 +759,23 @@ export class TetrisGame implements GameInstance {
     if (oCanvas) {
       this.opponentRenderer = new BoardRenderer(oCanvas, opponentBlockSize, this.currentTheme);
     }
+
+    this.statPlayerScoreEl = document.getElementById('stat-player-score');
+    this.statPlayerLinesEl = document.getElementById('stat-player-lines');
+    this.statPlayerGarbageEl = document.getElementById('stat-player-garbage');
+    this.statOpponentScoreEl = document.getElementById('stat-opponent-score');
+    this.statOpponentGarbageEl = document.getElementById('stat-opponent-garbage');
+    this.canvasHoldEl = document.getElementById('canvas-hold') as HTMLCanvasElement;
+    this.canvasNextEls = [0, 1, 2, 3].map(i => document.getElementById(`canvas-next-${i}`) as HTMLCanvasElement);
+
+    // Reset caches so next UI pass paints cleanly
+    this.cachedPlayerScore = -1;
+    this.cachedPlayerLines = -1;
+    this.cachedPlayerGarbage = -1;
+    this.cachedOpponentScore = -1;
+    this.cachedOpponentGarbage = -1;
+    this.cachedHoldPieceType = '__init__';
+    this.cachedNextQueue = [];
   }
 
   private attachEventListeners() {
@@ -832,35 +873,78 @@ export class TetrisGame implements GameInstance {
     this.animationFrameId = requestAnimationFrame(loop);
   }
 
-  private updateStatsUI() {
+  private updateStatsUI(force: boolean = false) {
     if (!this.playerEngine) return;
-    const pScore = document.getElementById('stat-player-score');
-    const pLines = document.getElementById('stat-player-lines');
-    const pGarbage = document.getElementById('stat-player-garbage');
-    const oScore = document.getElementById('stat-opponent-score');
-    const oGarbage = document.getElementById('stat-opponent-garbage');
+    const now = performance.now();
+    // Throttle high-frequency stats updates to max 15Hz unless forced (lines clear, piece lock, etc.)
+    if (!force && now - this.lastStatsUpdateTime < 66) {
+      return;
+    }
+    this.lastStatsUpdateTime = now;
 
-    if (pScore) pScore.textContent = this.playerEngine.score.toString();
-    if (pLines) pLines.textContent = this.playerEngine.linesClearedTotal.toString();
-    if (pGarbage) pGarbage.textContent = this.playerEngine.pendingGarbage.toString();
-    if (oScore) oScore.textContent = (this.session.mode === 'ai' ? (this.opponentEngine?.score || 0) : this.opponentScore).toString();
-    if (oGarbage) oGarbage.textContent = (this.opponentEngine?.pendingGarbage || 0).toString();
+    const pScore = this.playerEngine.score;
+    const pLines = this.playerEngine.linesClearedTotal;
+    const pGarbage = this.playerEngine.pendingGarbage;
+    const oScore = this.session.mode === 'ai' ? (this.opponentEngine?.score || 0) : this.opponentScore;
+    const oGarbage = this.opponentEngine?.pendingGarbage || 0;
+
+    if (this.statPlayerScoreEl && (force || pScore !== this.cachedPlayerScore)) {
+      this.cachedPlayerScore = pScore;
+      this.statPlayerScoreEl.textContent = pScore.toString();
+    }
+    if (this.statPlayerLinesEl && (force || pLines !== this.cachedPlayerLines)) {
+      this.cachedPlayerLines = pLines;
+      this.statPlayerLinesEl.textContent = pLines.toString();
+    }
+    if (this.statPlayerGarbageEl && (force || pGarbage !== this.cachedPlayerGarbage)) {
+      this.cachedPlayerGarbage = pGarbage;
+      this.statPlayerGarbageEl.textContent = pGarbage.toString();
+    }
+    if (this.statOpponentScoreEl && (force || oScore !== this.cachedOpponentScore)) {
+      this.cachedOpponentScore = oScore;
+      this.statOpponentScoreEl.textContent = oScore.toString();
+    }
+    if (this.statOpponentGarbageEl && (force || oGarbage !== this.cachedOpponentGarbage)) {
+      this.cachedOpponentGarbage = oGarbage;
+      this.statOpponentGarbageEl.textContent = oGarbage.toString();
+    }
   }
 
-  private renderPreviews() {
+  private renderPreviews(force: boolean = false) {
     if (!this.playerEngine) return;
-    const holdScale = this.isMobileView ? 11 : 16;
-    const holdCanvas = document.getElementById('canvas-hold') as HTMLCanvasElement;
-    if (holdCanvas) {
-      PiecePreview.drawMiniPiece(holdCanvas, this.playerEngine.holdPieceType, holdScale);
+
+    // 1. Hold piece preview (only redraw if hold piece changed or forced)
+    const holdPiece = this.playerEngine.holdPieceType;
+    if (force || holdPiece !== this.cachedHoldPieceType) {
+      this.cachedHoldPieceType = holdPiece;
+      const holdCanvas = this.canvasHoldEl;
+      if (holdCanvas) {
+        const holdScale = this.isMobileView ? 11 : 16;
+        PiecePreview.drawMiniPiece(holdCanvas, holdPiece, holdScale);
+      }
     }
 
-    for (let i = 0; i < 4; i++) {
-      const nextCanvas = document.getElementById(`canvas-next-${i}`) as HTMLCanvasElement;
-      if (nextCanvas) {
-        const piece = this.playerEngine.nextQueue[i] || null;
-        const nextScale = this.isMobileView ? 11 : (i === 0 ? 15 : 12);
-        PiecePreview.drawMiniPiece(nextCanvas, piece, nextScale);
+    // 2. Next queue previews (only redraw if queue changed or forced)
+    const queue = this.playerEngine.nextQueue;
+    let queueChanged = force || queue.length !== this.cachedNextQueue.length;
+    if (!queueChanged) {
+      for (let i = 0; i < 4; i++) {
+        if (queue[i] !== this.cachedNextQueue[i]) {
+          queueChanged = true;
+          break;
+        }
+      }
+    }
+
+    if (queueChanged) {
+      this.cachedNextQueue = [...queue];
+      for (let i = 0; i < 4; i++) {
+        const nextCanvas = this.canvasNextEls[i];
+        if (nextCanvas) {
+          const piece = queue[i] || null;
+          const nextScale = this.isMobileView ? 11 : (i === 0 ? 15 : 12);
+          PiecePreview.drawMiniPiece(nextCanvas, piece, nextScale);
+        }
       }
     }
   }
@@ -916,8 +1000,8 @@ export class TetrisGame implements GameInstance {
     this.matchSeed = newSeed;
     this.playerEngine.reset(true, newSeed);
     this.opponentEngine.reset(false, newSeed);
-    this.updateStatsUI();
-    this.renderPreviews();
+    this.updateStatsUI(true);
+    this.renderPreviews(true);
     this.startLoop();
   }
 
