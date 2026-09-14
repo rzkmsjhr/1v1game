@@ -18,6 +18,7 @@ import {
   RAIL_LEFT,
   RAIL_RIGHT,
   RAIL_BOTTOM,
+  PUCK_RADIUS,
   FIXED_TIMESTEP
 } from './sling-constants';
 
@@ -245,12 +246,67 @@ export class SlingPuckGame implements GameInstance {
           for (const p of this.engine.pucks) {
             if (p.y < CENTER_Y && p.isDragged) {
               p.isDragged = false;
+              // Guarantee puck is never left behind the rubber band
+              if (p.y - p.radius <= OPPONENT_BAND_REST_Y) {
+                p.y = OPPONENT_BAND_REST_Y + p.radius + 1;
+                p.prevY = p.y;
+                p.dragY = p.y;
+              }
             }
           }
         }
         break;
+      case 'SLING_PUCK_LAUNCH': {
+        let targetPuck = this.engine.pucks.find(p => p.id === msg.puckId);
+        if (targetPuck) {
+          targetPuck.isDragged = false;
+          targetPuck.x = msg.x;
+          // Cleanly position in front of opponent band and apply launch velocity
+          targetPuck.y = Math.max(msg.y, OPPONENT_BAND_REST_Y + targetPuck.radius + 2);
+          targetPuck.prevX = targetPuck.x;
+          targetPuck.prevY = targetPuck.y;
+          targetPuck.dragX = targetPuck.x;
+          targetPuck.dragY = targetPuck.y;
+          targetPuck.vx = msg.vx;
+          targetPuck.vy = msg.vy;
+        }
+        // Snap opponent rubber band with energetic vibration and sound
+        this.engine.opponentBand.isStretched = false;
+        this.engine.opponentBand.midX = (BAND_LEFT_X + BAND_RIGHT_X) * 0.5;
+        this.engine.opponentBand.midY = OPPONENT_BAND_REST_Y;
+        this.engine.opponentBand.vibrationVelocity = Math.min(Math.hypot(msg.vx, msg.vy) * 0.65, 8.5);
+        sounds.playSlingSnap(msg.power || 0.8);
+        break;
+      }
+      case 'SLING_PUCK_SYNC':
+        if (msg.pucks && Array.isArray(msg.pucks)) {
+          for (const sp of msg.pucks) {
+            let targetPuck = this.engine.pucks.find(p => p.id === sp.id);
+            if (targetPuck) {
+              // Only reconcile pucks on opponent half (y < CENTER_Y) that aren't being dragged locally
+              if (targetPuck.y < CENTER_Y && !targetPuck.isDragged) {
+                const dist = Math.hypot(targetPuck.x - sp.x, targetPuck.y - sp.y);
+                if (dist > 35) {
+                  // Direct snap on large desync
+                  targetPuck.x = sp.x;
+                  targetPuck.y = sp.y;
+                  targetPuck.prevX = sp.x;
+                  targetPuck.prevY = sp.y;
+                } else if (dist > 1.5) {
+                  // Smooth position reconciliation
+                  targetPuck.x += (sp.x - targetPuck.x) * 0.4;
+                  targetPuck.y += (sp.y - targetPuck.y) * 0.4;
+                }
+                targetPuck.vx = sp.vx;
+                targetPuck.vy = sp.vy;
+                if (sp.color) targetPuck.color = sp.color;
+              }
+            }
+          }
+        }
+        this.updateHUD();
+        break;
       case 'SLING_SYNC_PUCKS':
-        // Lightweight sync validation
         this.updateHUD();
         break;
       case 'SLING_VICTORY':
@@ -541,18 +597,38 @@ export class SlingPuckGame implements GameInstance {
         this.wasBandStretched ||
         this.draggedPuck.y > PLAYER_BAND_REST_Y + 3;
 
+      let launched = false;
       if (shouldLaunch) {
         // Launch puck using elastic band physics!
-        SlingPhysics.launchFromBand(this.draggedPuck, this.engine.playerBand, power => {
+        launched = SlingPhysics.launchFromBand(this.draggedPuck, this.engine.playerBand, power => {
           sounds.playSlingSnap(power);
+          if (this.session.mode === 'online' && this.session.peer?.isConnected && this.draggedPuck) {
+            this.session.peer.sendMessage({
+              type: 'SLING_PUCK_LAUNCH',
+              puckId: this.draggedPuck.id,
+              x: this.draggedPuck.x,
+              y: TABLE_HEIGHT - this.draggedPuck.y,
+              vx: this.draggedPuck.vx,
+              vy: -this.draggedPuck.vy,
+              power
+            });
+          }
         });
       }
 
-      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
-        this.session.peer.sendMessage({
-          type: 'SLING_BAND_PULL',
-          isStretched: false
-        });
+      if (!launched) {
+        // Guarantee puck is never left behind the rubber band
+        if (this.draggedPuck.y > PLAYER_BAND_REST_Y - PUCK_RADIUS) {
+          this.draggedPuck.y = PLAYER_BAND_REST_Y - PUCK_RADIUS - 1;
+          this.draggedPuck.dragY = this.draggedPuck.y;
+          this.draggedPuck.prevY = this.draggedPuck.y;
+        }
+        if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+          this.session.peer.sendMessage({
+            type: 'SLING_BAND_PULL',
+            isStretched: false
+          });
+        }
       }
 
       this.draggedPuck.isDragged = false;
@@ -608,12 +684,26 @@ export class SlingPuckGame implements GameInstance {
 
       this.updateHUD();
 
-      // Broadcast periodic 2Hz sync heartbeat in online PvP
+      // Real-time P2P puck sync: 15Hz when moving/dragged pucks exist, 2Hz resting heartbeat
       if (this.session.mode === 'online' && this.session.peer?.isConnected) {
-        if (currentTime - this.lastSyncBroadcastTime > 500) {
+        const myPucks = this.engine.pucks.filter(p => p.y >= CENTER_Y || p.isDragged);
+        const hasMovingPucks = myPucks.some(p => Math.hypot(p.vx, p.vy) > 0.08 || p.isDragged);
+        const syncInterval = hasMovingPucks ? 66 : 500; // 15Hz active, 2Hz idle
+
+        if (currentTime - this.lastSyncBroadcastTime > syncInterval) {
           this.lastSyncBroadcastTime = currentTime;
+          const serializedPucks = myPucks.map(p => ({
+            id: p.id,
+            x: p.x,
+            y: TABLE_HEIGHT - p.y,
+            vx: p.vx,
+            vy: -p.vy,
+            color: p.color
+          }));
+
           this.session.peer.sendMessage({
-            type: 'SLING_SYNC_PUCKS',
+            type: 'SLING_PUCK_SYNC',
+            pucks: serializedPucks,
             myPuckCount: this.engine.getPlayerPuckCount(),
             oppPuckCount: this.engine.getOpponentPuckCount()
           });

@@ -235,29 +235,37 @@ export class SlingPhysics {
         }
       }
 
-      // 5. Elastic Band Bounces for Free Pucks (Absorbs & deadens incoming shots)
-      if (playerBand && !playerBand.isStretched) {
+      // 5. Elastic Band Bounces & Physical Barrier for Free Pucks
+      if (playerBand) {
         for (const p of pucks) {
           if (p.isDragged) continue;
-          if (p.vy > 0 && p.y + p.radius >= playerBand.restY && p.y - p.radius < playerBand.restY + 16) {
+          // Unconditional barrier: free puck edge must NEVER penetrate behind player's rubber band
+          if (p.y + p.radius >= playerBand.restY) {
             p.y = playerBand.restY - p.radius;
-            p.vy = -p.vy * 0.2;
-            p.vx *= 0.4;
-            playerBand.vibrationVelocity = -Math.min(Math.abs(p.vy) * 0.3, 2.5);
-            if (Math.abs(p.vy) > 0.4 && onCushionBounce) onCushionBounce(p, Math.abs(p.vy));
+            if (p.vy > 0) {
+              const bounceSpeed = Math.abs(p.vy);
+              p.vy = -bounceSpeed * 0.2;
+              p.vx *= 0.4;
+              playerBand.vibrationVelocity = -Math.min(bounceSpeed * 0.3, 2.5);
+              if (bounceSpeed > 0.4 && onCushionBounce) onCushionBounce(p, bounceSpeed);
+            }
           }
         }
       }
 
-      if (opponentBand && !opponentBand.isStretched) {
+      if (opponentBand) {
         for (const p of pucks) {
           if (p.isDragged) continue;
-          if (p.vy < 0 && p.y - p.radius <= opponentBand.restY && p.y + p.radius > opponentBand.restY - 16) {
+          // Unconditional barrier: free puck edge must NEVER penetrate behind opponent's rubber band
+          if (p.y - p.radius <= opponentBand.restY) {
             p.y = opponentBand.restY + p.radius;
-            p.vy = -p.vy * 0.2;
-            p.vx *= 0.4;
-            opponentBand.vibrationVelocity = Math.min(Math.abs(p.vy) * 0.3, 2.5);
-            if (Math.abs(p.vy) > 0.4 && onCushionBounce) onCushionBounce(p, Math.abs(p.vy));
+            if (p.vy < 0) {
+              const bounceSpeed = Math.abs(p.vy);
+              p.vy = bounceSpeed * 0.2;
+              p.vx *= 0.4;
+              opponentBand.vibrationVelocity = Math.min(bounceSpeed * 0.3, 2.5);
+              if (bounceSpeed > 0.4 && onCushionBounce) onCushionBounce(p, bounceSpeed);
+            }
           }
         }
       }
@@ -277,9 +285,12 @@ export class SlingPhysics {
     const dy = Math.max(dyFromPuck, dyFromBand);
 
     if (dy < 4) {
-      // Not pulled enough to trigger launch
+      // Not pulled enough to trigger launch: place cleanly in front of band so puck never gets stuck behind
       band.isStretched = false;
       band.midY = restY;
+      puck.y = isPlayer ? restY - puck.radius - 1 : restY + puck.radius + 1;
+      puck.dragY = puck.y;
+      puck.prevY = puck.y;
       return false;
     }
 
