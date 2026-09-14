@@ -31,7 +31,7 @@ const safeStorage = {
 
 class ConsoleDashboard {
   private appContainer: HTMLElement;
-  private currentTheme: AppTheme = 'dark';
+  private currentTheme: AppTheme = 'light';
   private isMuted: boolean = false;
 
   private selectedGameIndex: number = 0;
@@ -81,23 +81,18 @@ class ConsoleDashboard {
       return;
     }
 
-    const saved = safeStorage.getItem('hub_theme') as AppTheme | null;
-    if (saved) {
+    const saved = safeStorage.getItem('hub_theme_v2') as AppTheme | null;
+    if (saved === 'dark' || saved === 'light') {
       this.currentTheme = saved;
     } else {
-      let prefersDark = true;
-      try {
-        prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      } catch {
-        prefersDark = true;
-      }
-      this.currentTheme = prefersDark ? 'dark' : 'light';
+      this.currentTheme = 'light';
     }
     this.applyTheme(this.currentTheme);
   }
 
   private applyTheme(theme: AppTheme) {
     this.currentTheme = theme;
+    safeStorage.setItem('hub_theme_v2', theme);
     safeStorage.setItem('hub_theme', theme);
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');

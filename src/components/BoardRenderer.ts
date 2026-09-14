@@ -31,13 +31,13 @@ export class BoardRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private blockSize: number = 28;
-  public theme: 'dark' | 'light' = 'dark';
+  public theme: 'dark' | 'light' = 'light';
   private particles: Particle[] = [];
   private floatingTexts: FloatingText[] = [];
   public shakeOffset: { x: number; y: number } = { x: 0, y: 0 };
   private shakeTimer: number = 0;
 
-  constructor(canvas: HTMLCanvasElement, blockSize: number = 28, theme: 'dark' | 'light' = 'dark') {
+  constructor(canvas: HTMLCanvasElement, blockSize: number = 28, theme: 'dark' | 'light' = 'light') {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.blockSize = blockSize;
