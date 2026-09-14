@@ -47,6 +47,11 @@ export class SlingPuckGame implements GameInstance {
   private lastSyncBroadcastTime: number = 0;
   private lastBandBroadcastTime: number = 0;
   private lastOpponentBandPullTime: number = 0;
+  private remoteTargetBandX: number = (BAND_LEFT_X + BAND_RIGHT_X) * 0.5;
+  private remoteTargetBandY: number = OPPONENT_BAND_REST_Y;
+  private remoteTargetPuckId: number | null = null;
+  private remoteTargetPuckX: number = 0;
+  private remoteTargetPuckY: number = 0;
   private resizeObserver: ResizeObserver | null = null;
 
   constructor(container: HTMLElement, session: GameSession) {
@@ -279,29 +284,38 @@ export class SlingPuckGame implements GameInstance {
         break;
       case 'SLING_BAND_PULL':
         this.lastOpponentBandPullTime = performance.now();
-        this.engine.opponentBand.isStretched = msg.isStretched;
         if (msg.isStretched && msg.x !== undefined && msg.y !== undefined) {
           const oppY = TABLE_HEIGHT - msg.y;
-          this.engine.opponentBand.midX = msg.x;
-          this.engine.opponentBand.midY = oppY;
+          this.engine.opponentBand.isStretched = true;
+          this.remoteTargetBandX = msg.x;
+          this.remoteTargetBandY = oppY;
+          this.remoteTargetPuckId = msg.puckId ?? null;
+          this.remoteTargetPuckX = msg.x;
+          this.remoteTargetPuckY = oppY;
+
           let targetPuck = this.engine.pucks.find(p => p.id === msg.puckId);
           if (targetPuck) {
             targetPuck.isDragged = true;
-            targetPuck.x = msg.x;
-            targetPuck.y = oppY;
-            targetPuck.dragX = msg.x;
-            targetPuck.dragY = oppY;
-            targetPuck.prevX = msg.x;
-            targetPuck.prevY = oppY;
+            // Snap immediately if starting fresh drag so there is no laggy slide across board
+            if (this.engine.opponentBand.midY === OPPONENT_BAND_REST_Y || Math.hypot(targetPuck.x - msg.x, targetPuck.y - oppY) > 60) {
+              this.engine.opponentBand.midX = msg.x;
+              this.engine.opponentBand.midY = oppY;
+              targetPuck.x = msg.x;
+              targetPuck.y = oppY;
+              targetPuck.dragX = msg.x;
+              targetPuck.dragY = oppY;
+              targetPuck.prevX = msg.x;
+              targetPuck.prevY = oppY;
+            }
           }
         } else {
           this.engine.opponentBand.isStretched = false;
+          this.remoteTargetPuckId = null;
           this.engine.opponentBand.midX = (BAND_LEFT_X + BAND_RIGHT_X) * 0.5;
           this.engine.opponentBand.midY = OPPONENT_BAND_REST_Y;
           for (const p of this.engine.pucks) {
             if (p.y < CENTER_Y && p.isDragged) {
               p.isDragged = false;
-              // Guarantee puck is never left behind the rubber band
               if (p.y - p.radius <= OPPONENT_BAND_REST_Y) {
                 p.y = OPPONENT_BAND_REST_Y + p.radius + 1;
                 p.prevY = p.y;
@@ -327,6 +341,7 @@ export class SlingPuckGame implements GameInstance {
         }
         // Snap opponent rubber band with energetic vibration and sound
         this.engine.opponentBand.isStretched = false;
+        this.remoteTargetPuckId = null;
         this.engine.opponentBand.midX = (BAND_LEFT_X + BAND_RIGHT_X) * 0.5;
         this.engine.opponentBand.midY = OPPONENT_BAND_REST_Y;
         this.engine.opponentBand.vibrationVelocity = Math.min(Math.hypot(msg.vx, msg.vy) * 0.65, 8.5);
@@ -340,20 +355,38 @@ export class SlingPuckGame implements GameInstance {
             if (targetPuck) {
               // Only reconcile pucks on opponent half (y < CENTER_Y) that aren't being dragged locally
               if (targetPuck.y < CENTER_Y && !targetPuck.isDragged) {
-                const dist = Math.hypot(targetPuck.x - sp.x, targetPuck.y - sp.y);
-                if (dist > 35) {
-                  // Direct snap on large desync
-                  targetPuck.x = sp.x;
-                  targetPuck.y = sp.y;
-                  targetPuck.prevX = sp.x;
-                  targetPuck.prevY = sp.y;
-                } else if (dist > 1.5) {
-                  // Smooth position reconciliation
-                  targetPuck.x += (sp.x - targetPuck.x) * 0.4;
-                  targetPuck.y += (sp.y - targetPuck.y) * 0.4;
+                const localSpeed = Math.hypot(targetPuck.vx, targetPuck.vy);
+                const remoteSpeed = Math.hypot(sp.vx, sp.vy);
+
+                if (localSpeed > 2.0 || remoteSpeed > 2.0) {
+                  // Fast-moving launched puck: smooth trajectory guidance WITHOUT teleporting backwards!
+                  targetPuck.vx += (sp.vx - targetPuck.vx) * 0.35;
+                  targetPuck.vy += (sp.vy - targetPuck.vy) * 0.35;
+
+                  // Micro-nudge position only if noticeably deviating from trajectory, clamped to 3px max
+                  const dx = sp.x - targetPuck.x;
+                  const dy = sp.y - targetPuck.y;
+                  const dist = Math.hypot(dx, dy);
+                  if (dist > 3.0) {
+                    const step = Math.min(dist * 0.25, 3.0);
+                    targetPuck.x += (dx / dist) * step;
+                    targetPuck.y += (dy / dist) * step;
+                  }
+                } else {
+                  // Slow or resting puck: smooth convergence
+                  const dist = Math.hypot(targetPuck.x - sp.x, targetPuck.y - sp.y);
+                  if (dist > 40) {
+                    targetPuck.x = sp.x;
+                    targetPuck.y = sp.y;
+                    targetPuck.prevX = sp.x;
+                    targetPuck.prevY = sp.y;
+                  } else if (dist > 0.8) {
+                    targetPuck.x += (sp.x - targetPuck.x) * 0.45;
+                    targetPuck.y += (sp.y - targetPuck.y) * 0.45;
+                  }
+                  targetPuck.vx = sp.vx;
+                  targetPuck.vy = sp.vy;
                 }
-                targetPuck.vx = sp.vx;
-                targetPuck.vy = sp.vy;
                 if (sp.color) targetPuck.color = sp.color;
               }
             } else if (this.engine.pucks.length < 10) {
@@ -659,10 +692,10 @@ export class SlingPuckGame implements GameInstance {
         this.engine.playerBand.midY = PLAYER_BAND_REST_Y;
       }
 
-      // Sync stretch state with peer in online PvP
+      // Sync stretch state with peer in online PvP at 60Hz (every 16ms)
       if (this.session.mode === 'online' && this.session.peer?.isConnected) {
         const now = performance.now();
-        if (now - this.lastBandBroadcastTime > 35) {
+        if (now - this.lastBandBroadcastTime >= 16) {
           this.lastBandBroadcastTime = now;
           this.session.peer.sendMessage({
             type: 'SLING_BAND_PULL',
@@ -785,17 +818,36 @@ export class SlingPuckGame implements GameInstance {
         }
       }
 
+      // Butter-smooth frame interpolation for remote opponent dragging & rubber band
+      if (this.engine.opponentBand.isStretched) {
+        const lerpFactor = 0.55;
+        this.engine.opponentBand.midX += (this.remoteTargetBandX - this.engine.opponentBand.midX) * lerpFactor;
+        this.engine.opponentBand.midY += (this.remoteTargetBandY - this.engine.opponentBand.midY) * lerpFactor;
+
+        if (this.remoteTargetPuckId) {
+          const remotePuck = this.engine.pucks.find(p => p.id === this.remoteTargetPuckId);
+          if (remotePuck && remotePuck.isDragged) {
+            remotePuck.x += (this.remoteTargetPuckX - remotePuck.x) * lerpFactor;
+            remotePuck.y += (this.remoteTargetPuckY - remotePuck.y) * lerpFactor;
+            remotePuck.dragX = remotePuck.x;
+            remotePuck.dragY = remotePuck.y;
+            remotePuck.prevX = remotePuck.x;
+            remotePuck.prevY = remotePuck.y;
+          }
+        }
+      }
+
       // Sub-tick render interpolation factor (0.0 to 1.0)
       const alpha = Math.min(1.0, Math.max(0.0, accumulator / FIXED_TIMESTEP));
       this.renderer.render(this.engine, this.currentTheme, alpha, this.draggedPuck);
 
       this.updateHUD();
 
-      // Real-time P2P puck sync: 15Hz when moving/dragged pucks exist, 2Hz resting heartbeat
+      // Real-time P2P puck sync: 30Hz when moving/dragged pucks exist, 2.5Hz resting heartbeat
       if (this.session.mode === 'online' && this.session.peer?.isConnected) {
         const myPucks = this.engine.pucks.filter(p => p.y >= CENTER_Y || p.isDragged);
         const hasMovingPucks = myPucks.some(p => Math.hypot(p.vx, p.vy) > 0.08 || p.isDragged);
-        const syncInterval = hasMovingPucks ? 66 : 500; // 15Hz active, 2Hz idle
+        const syncInterval = hasMovingPucks ? 33 : 400; // 30Hz active, 2.5Hz idle
 
         if (currentTime - this.lastSyncBroadcastTime > syncInterval) {
           this.lastSyncBroadcastTime = currentTime;
