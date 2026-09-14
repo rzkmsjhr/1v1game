@@ -235,15 +235,17 @@ export class SlingPhysics {
         }
       }
 
-      // 5. Elastic Band Bounces for Free Pucks (Prevents free pucks from slipping behind bands)
+      // 5. Elastic Band Bounces for Free Pucks (Absorbs & deadens incoming shots)
       if (playerBand && !playerBand.isStretched) {
         for (const p of pucks) {
           if (p.isDragged) continue;
           if (p.y + p.radius >= playerBand.midY && p.y - p.radius < playerBand.midY + 16) {
             p.y = playerBand.midY - p.radius;
             if (p.vy > 0) {
-              p.vy = -p.vy * 0.82;
-              playerBand.vibrationVelocity = -Math.abs(p.vy) * 1.5;
+              // Deaden incoming puck so it settles cleanly in the player's zone
+              p.vy = -p.vy * 0.2;
+              p.vx *= 0.4;
+              playerBand.vibrationVelocity = -Math.min(Math.abs(p.vy) * 0.3, 2.5);
               if (Math.abs(p.vy) > 0.4 && onCushionBounce) onCushionBounce(p, Math.abs(p.vy));
             }
           }
@@ -256,8 +258,10 @@ export class SlingPhysics {
           if (p.y - p.radius <= opponentBand.midY && p.y + p.radius > opponentBand.midY - 16) {
             p.y = opponentBand.midY + p.radius;
             if (p.vy < 0) {
-              p.vy = -p.vy * 0.82;
-              opponentBand.vibrationVelocity = Math.abs(p.vy) * 1.5;
+              // Deaden incoming puck so it settles cleanly in the opponent's zone
+              p.vy = -p.vy * 0.2;
+              p.vx *= 0.4;
+              opponentBand.vibrationVelocity = Math.min(Math.abs(p.vy) * 0.3, 2.5);
               if (Math.abs(p.vy) > 0.4 && onCushionBounce) onCushionBounce(p, Math.abs(p.vy));
             }
           }
@@ -309,8 +313,9 @@ export class SlingPhysics {
 
     // Trigger elastic band vibration
     band.isStretched = false;
+    band.midX = (band.leftX + band.rightX) * 0.5;
     band.midY = restY;
-    band.vibrationVelocity = (isPlayer ? -1 : 1) * speed * 1.8;
+    band.vibrationVelocity = (isPlayer ? -1 : 1) * Math.min(speed * 0.7, 9);
 
     if (onSnap) onSnap(power);
     return true;
@@ -330,6 +335,7 @@ export class SlingPhysics {
     if (Math.abs(band.vibrationOffset) < 0.05 && Math.abs(band.vibrationVelocity) < 0.05) {
       band.vibrationOffset = 0;
       band.vibrationVelocity = 0;
+      band.midX = (band.leftX + band.rightX) * 0.5;
     }
 
     band.midY = band.restY + band.vibrationOffset;

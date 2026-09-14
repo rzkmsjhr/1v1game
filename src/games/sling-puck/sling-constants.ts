@@ -32,11 +32,11 @@ export const BAND_RIGHT_X = RAIL_RIGHT - 2;
 export const MAX_PULL_DISTANCE = 45;
 
 // Physics coefficients
-export const TABLE_FRICTION = 0.986;
-export const CUSHION_RESTITUTION = 0.86;
-export const PUCK_RESTITUTION = 0.88;
+export const TABLE_FRICTION = 0.966;
+export const CUSHION_RESTITUTION = 0.82;
+export const PUCK_RESTITUTION = 0.84;
 export const SLING_FORCE_FACTOR = 0.44; // Speed mapped from pull distance
-export const MAX_LAUNCH_SPEED = 24;
+export const MAX_LAUNCH_SPEED = 19;
 export const VELOCITY_STOP_THRESHOLD = 0.08;
 
 // Fixed simulation step: 60Hz
