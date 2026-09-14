@@ -37,6 +37,12 @@ export type NetworkMessage =
   | { type: 'RTC_PING'; timestamp: number }
   | { type: 'RTC_PONG'; timestamp: number }
   | { type: 'PEER_VISIBILITY'; isVisible: boolean }
+  | { type: 'FIT_ROUND_START'; seed: number; roundNumber: number }
+  | { type: 'FIT_PIECE_PLACED'; pieceId: string; trayR: number; trayC: number }
+  | { type: 'FIT_PIECE_REMOVED'; pieceId: string }
+  | { type: 'FIT_ROUND_CLAIM'; roundNumber: number; timestamp: number }
+  | { type: 'FIT_REMATCH_REQUEST' }
+  | { type: 'FIT_REMATCH_ACCEPT' }
   | { type: 'CUSTOM'; payload: any };
 
 export type NetworkQuality = 'good' | 'moderate' | 'poor' | 'stalled';

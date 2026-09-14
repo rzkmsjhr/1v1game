@@ -4,6 +4,7 @@ import { OthelloGame } from './othello/OthelloGame';
 import { PoolGame } from './pool/PoolGame';
 import { SnakeLadderGame } from './snake-ladder/SnakeLadderGame';
 import { SlingPuckGame } from './sling-puck/SlingPuckGame';
+import { BlockFitGame } from './block-fit/BlockFitGame';
 
 export const GAMES_REGISTRY: GameDefinition[] = [
   {
@@ -214,5 +215,71 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     screenshotUrl: '/screenshots/sling-puck.png',
     supportsAI: true,
     create: (container, session) => new SlingPuckGame(container, session)
+  },
+  {
+    id: 'block-fit',
+    title: 'Block Fit Duel',
+    subtitle: 'Randomized Tangram Puzzle Race',
+    description: 'Race to pack vibrant polyomino shapes into randomized non-rectangular trays with zero rotation. First to complete 3 shapes wins the Best of 5 duel!',
+    genre: 'Puzzle & Speed',
+    badge: 'Best of 5',
+    bannerGradient: 'from-violet-600 via-indigo-700 to-slate-950',
+    accentColor: '#8b5cf6',
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none">
+      <defs>
+        <linearGradient id="bf-tray-bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#312e81"/>
+          <stop offset="100%" stop-color="#1e1b4b"/>
+        </linearGradient>
+        <linearGradient id="bf-cyan" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#67e8f9"/>
+          <stop offset="100%" stop-color="#0891b2"/>
+        </linearGradient>
+        <linearGradient id="bf-gold" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#fef08a"/>
+          <stop offset="100%" stop-color="#ca8a04"/>
+        </linearGradient>
+        <linearGradient id="bf-purple" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#e9d5ff"/>
+          <stop offset="100%" stop-color="#7e22ce"/>
+        </linearGradient>
+        <linearGradient id="bf-ruby" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#fca5a5"/>
+          <stop offset="100%" stop-color="#dc2626"/>
+        </linearGradient>
+        <linearGradient id="bf-green" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#86efac"/>
+          <stop offset="100%" stop-color="#16a34a"/>
+        </linearGradient>
+        <filter id="bf-glow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="1" stdDeviation="0.8" flood-color="#000" flood-opacity="0.5"/>
+        </filter>
+      </defs>
+      <!-- Stylized Non-Rectangular Tray Silhouette (Recessed Pocket) -->
+      <path d="M 2 7 C 2 5.5 3.5 4 5 4 L 14 4 C 15 4 16 4.5 17 5.5 L 21.5 10 C 22.5 11 22.5 12.5 21.5 13.5 L 17 18.5 C 16 19.5 15 20 14 20 L 5 20 C 3.5 20 2 18.5 2 17 Z" fill="url(#bf-tray-bg)" stroke="#6366f1" stroke-width="1.2" stroke-linejoin="round"/>
+      <!-- Grid Guides inside Tray -->
+      <path d="M 7.5 5 L 7.5 19 M 13 5 L 13 19 M 3 10 L 18 10 M 3 15 L 18 15" stroke="#4338ca" stroke-width="0.7" stroke-dasharray="1 1.5" opacity="0.6"/>
+      <!-- Blocks Fitted Inside Tray -->
+      <g filter="url(#bf-glow)">
+        <!-- Green L-Piece -->
+        <rect x="3.5" y="5.5" width="4" height="4" rx="0.8" fill="url(#bf-green)" stroke="#bbf7d0" stroke-width="0.5"/>
+        <rect x="3.5" y="10.5" width="4" height="4" rx="0.8" fill="url(#bf-green)" stroke="#bbf7d0" stroke-width="0.5"/>
+        <rect x="3.5" y="15.5" width="4" height="4" rx="0.8" fill="url(#bf-green)" stroke="#bbf7d0" stroke-width="0.5"/>
+        <rect x="8.5" y="15.5" width="4" height="4" rx="0.8" fill="url(#bf-green)" stroke="#bbf7d0" stroke-width="0.5"/>
+        <!-- Gold Piece -->
+        <rect x="8.5" y="5.5" width="4" height="4" rx="0.8" fill="url(#bf-gold)" stroke="#fef08a" stroke-width="0.5"/>
+        <!-- Purple Piece -->
+        <rect x="8.5" y="10.5" width="4" height="4" rx="0.8" fill="url(#bf-purple)" stroke="#e9d5ff" stroke-width="0.5"/>
+        <rect x="13.5" y="10.5" width="4" height="4" rx="0.8" fill="url(#bf-purple)" stroke="#e9d5ff" stroke-width="0.5"/>
+        <!-- Cyan Piece Snapping In -->
+        <rect x="13.5" y="5.5" width="4" height="4" rx="0.8" fill="url(#bf-cyan)" stroke="#a5f3fc" stroke-width="0.5"/>
+        <rect x="18" y="8" width="4" height="4" rx="0.8" fill="url(#bf-cyan)" stroke="#a5f3fc" stroke-width="0.5"/>
+        <!-- Empty Target Pocket Indicator (dashed glowing amber/white) -->
+        <rect x="13.5" y="15.5" width="4" height="4" rx="0.8" fill="#4338ca" stroke="#facc15" stroke-width="0.9" stroke-dasharray="1.5 1"/>
+      </g>
+    </svg>`,
+    screenshotUrl: '/screenshots/block-fit.png',
+    supportsAI: true,
+    create: (container, session) => new BlockFitGame(container, session)
   }
 ];

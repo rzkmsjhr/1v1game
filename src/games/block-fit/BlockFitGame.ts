@@ -1,0 +1,737 @@
+// Main Game Controller for Block Fit Duel (1v1 Tangram Polyomino Puzzle Race)
+import confetti from 'canvas-confetti';
+import type { GameInstance, GameSession, AppTheme } from '../types';
+import type { NetworkMessage } from '../../network/webrtc-peer';
+import { sounds } from '../../engine/sound';
+import type { PolyominoPiece } from './block-fit-types';
+import { BlockFitEngine } from './block-fit-engine';
+import { BlockFitAI } from './block-fit-ai';
+import { BlockFitRenderer, type DragGhostState } from './renderers/BlockFitRenderer';
+
+export class BlockFitGame implements GameInstance {
+  private container: HTMLElement;
+  private session: GameSession;
+  private engine: BlockFitEngine;
+  private ai: BlockFitAI | null = null;
+  private currentTheme: AppTheme;
+
+  // DOM Elements
+  private canvasTray!: HTMLCanvasElement;
+  private canvasOppTray!: HTMLCanvasElement;
+  private dockContainer!: HTMLElement;
+  private statusTextEl!: HTMLElement;
+  private roundBadgeEl!: HTMLElement;
+  private playerStarsEl!: HTMLElement;
+  private oppStarsEl!: HTMLElement;
+  private oppStatusEl!: HTMLElement;
+  private countdownOverlayEl!: HTMLElement;
+  private countdownNumberEl!: HTMLElement;
+  private roundWinnerOverlayEl!: HTMLElement;
+  private roundWinnerTextEl!: HTMLElement;
+  private roundWinnerSubtextEl!: HTMLElement;
+  private matchOverModalEl!: HTMLElement;
+
+  // Interactive Drag & Selection State
+  private activeDragPiece: PolyominoPiece | null = null;
+  private activeDragElem: HTMLElement | null = null;
+  private dragGhost: DragGhostState | null = null;
+  private selectedDockPiece: PolyominoPiece | null = null;
+  private isPointerDown: boolean = false;
+  private pointerStartX: number = 0;
+  private pointerStartY: number = 0;
+  private hasMovedFar: boolean = false;
+
+  // Animation & Event Cleanup
+  private resizeObserver: ResizeObserver | null = null;
+  private countdownTimer: number | null = null;
+  private nextRoundTimer: number | null = null;
+  private boundOnPointerMove: (e: PointerEvent) => void;
+  private boundOnPointerUp: (e: PointerEvent) => void;
+
+  constructor(container: HTMLElement, session: GameSession) {
+    this.container = container;
+    this.session = session;
+    this.currentTheme = session.theme;
+
+    // Seed determination (host or random)
+    const seed = session.mode === 'online' && session.peer?.role === 'guest' ? 0 : Math.floor(Math.random() * 1000000);
+    this.engine = new BlockFitEngine(seed);
+
+    this.boundOnPointerMove = this.onPointerMove.bind(this);
+    this.boundOnPointerUp = this.onPointerUp.bind(this);
+
+    this.initDOM();
+    this.initAI();
+    this.initNetworking();
+
+    // Start Round 1
+    this.startRoundFlow();
+  }
+
+  // -------------------------------------------------------------
+  // DOM INITIALIZATION
+  // -------------------------------------------------------------
+
+  private initDOM() {
+    const isDark = this.currentTheme === 'dark';
+    const oppName = this.session.mode === 'ai'
+      ? `AI (${(this.session.aiDifficulty || 'medium').toUpperCase()})`
+      : 'RIVAL PEER';
+
+    this.container.innerHTML = `
+      <div id="block-fit-root" class="w-full min-h-screen flex flex-col items-center justify-between px-2 sm:px-4 py-2 select-none overflow-x-hidden ${isDark ? 'text-white' : 'text-slate-900'}">
+        
+        <!-- Header HUD -->
+        <header class="w-full max-w-2xl flex items-center justify-between px-2 py-1.5 rounded-2xl ${isDark ? 'bg-slate-900/85 border-slate-800' : 'bg-white/90 border-slate-200'} border shadow-md backdrop-blur-md shrink-0 mb-2">
+          <!-- Exit Button -->
+          <button id="btn-fit-exit" class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'} flex items-center space-x-1 cursor-pointer">
+            <span>← Exit</span>
+          </button>
+
+          <!-- Match Status / Round Title -->
+          <div class="flex flex-col items-center text-center">
+            <div class="flex items-center space-x-2">
+              <span id="fit-round-badge" class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                ROUND 1 / 5
+              </span>
+              <span class="text-[10px] font-bold text-amber-500">BEST OF 5</span>
+            </div>
+            <div id="fit-status-text" class="text-xs font-extrabold tracking-tight mt-0.5">
+              ${this.engine.currentPuzzle.tray.name}
+            </div>
+          </div>
+
+          <!-- Scoreboard (Best of 5 Stars) -->
+          <div class="flex items-center space-x-3 text-right">
+            <!-- You -->
+            <div class="flex flex-col items-end">
+              <span class="text-[9px] font-bold text-blue-400 leading-none">YOU</span>
+              <div id="fit-player-stars" class="flex items-center space-x-0.5 mt-0.5 text-xs text-amber-400">
+                ☆☆☆
+              </div>
+            </div>
+            <span class="text-xs font-bold opacity-30">vs</span>
+            <!-- Opponent -->
+            <div class="flex flex-col items-start">
+              <span class="text-[9px] font-bold text-rose-400 leading-none">RIVAL</span>
+              <div id="fit-opp-stars" class="flex items-center space-x-0.5 mt-0.5 text-xs text-amber-400">
+                ☆☆☆
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <!-- Main Duel Playground -->
+        <main class="relative flex-1 w-full max-w-2xl flex flex-col md:flex-row items-center justify-center gap-3 my-auto min-h-0">
+          
+          <!-- Primary Player Tray Area -->
+          <div class="relative flex flex-col items-center justify-center w-full md:flex-1 h-[260px] sm:h-[320px] md:h-[380px] rounded-3xl p-2 ${isDark ? 'bg-slate-900/60 border-slate-800/80 shadow-2xl' : 'bg-white/80 border-slate-200/90 shadow-xl'} border backdrop-blur-sm overflow-hidden">
+            
+            <!-- Tray Canvas -->
+            <canvas id="canvas-tray" class="block touch-none cursor-pointer w-full h-full" style="touch-action: none;"></canvas>
+
+            <!-- Floating Tap-Hint -->
+            <div id="fit-tap-hint" class="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-gray-400/80 pointer-events-none whitespace-nowrap">
+              Drag or tap blocks to fill the shape!
+            </div>
+          </div>
+
+          <!-- Opponent Mini Spectator Card (Right on desktop, top-right on mobile) -->
+          <div class="flex md:flex-col items-center justify-between w-full md:w-36 p-2 rounded-2xl ${isDark ? 'bg-slate-900/50 border-slate-800/70' : 'bg-white/70 border-slate-200/80'} border backdrop-blur-sm shrink-0">
+            <div class="flex items-center md:flex-col md:text-center space-x-2 md:space-x-0 md:space-y-1">
+              <div class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div>
+              <span class="text-[10px] font-bold tracking-tight text-gray-400">${oppName}</span>
+              <span id="fit-opp-placed-count" class="text-[10px] font-mono font-black text-rose-400">0 / ${this.engine.currentPuzzle.pieces.length}</span>
+            </div>
+            
+            <!-- Opponent Mini Canvas -->
+            <div class="w-16 h-16 sm:w-20 sm:h-20 flex items-center justify-center p-1 rounded-xl ${isDark ? 'bg-black/30' : 'bg-slate-100'} border ${isDark ? 'border-slate-800' : 'border-slate-200'}">
+              <canvas id="canvas-opp-tray" class="w-full h-full block"></canvas>
+            </div>
+          </div>
+
+        </main>
+
+        <!-- Unplaced Pieces Dock (Bottom) -->
+        <footer class="w-full max-w-2xl flex flex-col items-center justify-center shrink-0 mt-2">
+          <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">
+            Available Blocks (No Rotate Needed)
+          </div>
+          <div id="block-fit-dock" class="w-full flex items-center justify-center flex-wrap gap-2.5 sm:gap-3.5 p-2 sm:p-3 rounded-2xl ${isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white/90 border-slate-200'} border shadow-lg backdrop-blur-md min-h-[70px] sm:min-h-[85px]" style="touch-action: none;">
+            <!-- Polyomino pieces mount here dynamically -->
+          </div>
+        </footer>
+
+        <!-- Countdown Overlay (3, 2, 1, GO!) -->
+        <div id="fit-overlay-countdown" class="hidden fixed inset-0 z-40 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none">
+          <div id="fit-countdown-num" class="text-7xl sm:text-9xl font-black text-transparent bg-clip-text bg-gradient-to-tr from-amber-400 via-orange-500 to-yellow-200 transform scale-125 transition-transform duration-200 drop-shadow-2xl">
+            3
+          </div>
+          <div class="text-sm sm:text-base font-extrabold uppercase tracking-widest text-amber-300 mt-2">
+            Get Ready to Fit!
+          </div>
+        </div>
+
+        <!-- Round Cleared Overlay -->
+        <div id="fit-overlay-round-winner" class="hidden fixed inset-0 z-40 flex flex-col items-center justify-center bg-black/75 backdrop-blur-md pointer-events-none">
+          <div class="text-4xl sm:text-5xl mb-2">🎉</div>
+          <h2 id="fit-round-winner-text" class="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-300 tracking-tight text-center">
+            YOU WON ROUND 1!
+          </h2>
+          <p id="fit-round-winner-sub" class="text-xs sm:text-sm font-semibold text-gray-300 mt-1">
+            Next shape coming up...
+          </p>
+        </div>
+
+        <!-- Match Over / Game Over Modal -->
+        <div id="modal-fit-gameover" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+          <div class="w-full max-w-sm rounded-3xl p-6 sm:p-8 flex flex-col items-center text-center shadow-2xl border ${isDark ? 'border-slate-800 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-900'}">
+            <div id="fit-modal-trophy" class="text-5xl mb-2">🏆</div>
+            <h3 id="fit-modal-title" class="text-2xl sm:text-3xl font-black mb-1 tracking-tight text-amber-400">
+              MATCH VICTORY!
+            </h3>
+            <p id="fit-modal-desc" class="text-xs sm:text-sm text-gray-400 mb-6 leading-relaxed">
+              You won the Best of 5 match (3 - 1)!
+            </p>
+
+            <div class="w-full space-y-2.5">
+              <button id="btn-fit-rematch" class="w-full py-3 px-6 rounded-xl font-black tracking-wider uppercase text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-indigo-500 shadow-lg shadow-purple-600/30 active:scale-95 transition-all cursor-pointer">
+                Play Again
+              </button>
+              <button id="btn-fit-exit-modal" class="w-full py-2.5 px-6 rounded-xl text-xs font-bold ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'} cursor-pointer transition-colors">
+                Exit to Arcade Hub
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    `;
+
+    // Cache elements
+    this.canvasTray = document.getElementById('canvas-tray') as HTMLCanvasElement;
+    this.canvasOppTray = document.getElementById('canvas-opp-tray') as HTMLCanvasElement;
+    this.dockContainer = document.getElementById('block-fit-dock')!;
+    this.statusTextEl = document.getElementById('fit-status-text')!;
+    this.roundBadgeEl = document.getElementById('fit-round-badge')!;
+    this.playerStarsEl = document.getElementById('fit-player-stars')!;
+    this.oppStarsEl = document.getElementById('fit-opp-stars')!;
+    this.oppStatusEl = document.getElementById('fit-opp-placed-count')!;
+    this.countdownOverlayEl = document.getElementById('fit-overlay-countdown')!;
+    this.countdownNumberEl = document.getElementById('fit-countdown-num')!;
+    this.roundWinnerOverlayEl = document.getElementById('fit-overlay-round-winner')!;
+    this.roundWinnerTextEl = document.getElementById('fit-round-winner-text')!;
+    this.roundWinnerSubtextEl = document.getElementById('fit-round-winner-sub')!;
+    this.matchOverModalEl = document.getElementById('modal-fit-gameover')!;
+
+    // Attach Header Listeners
+    document.getElementById('btn-fit-exit')?.addEventListener('click', () => {
+      this.session.onExit();
+    });
+    document.getElementById('btn-fit-exit-modal')?.addEventListener('click', () => {
+      this.session.onExit();
+    });
+    document.getElementById('btn-fit-rematch')?.addEventListener('click', () => {
+      this.handleRematch();
+    });
+
+    // Tray interaction listeners
+    this.canvasTray.addEventListener('pointerdown', this.onTrayPointerDown.bind(this));
+    window.addEventListener('pointermove', this.boundOnPointerMove);
+    window.addEventListener('pointerup', this.boundOnPointerUp);
+
+    // Responsive Canvas Resize Observer
+    this.resizeObserver = new ResizeObserver(() => {
+      this.renderAll();
+    });
+    this.resizeObserver.observe(this.canvasTray);
+  }
+
+  // -------------------------------------------------------------
+  // AI & NETWORKING
+  // -------------------------------------------------------------
+
+  private initAI() {
+    if (this.session.mode !== 'ai') return;
+    this.ai = new BlockFitAI(this.engine, this.session.aiDifficulty || 'medium', {
+      onPiecePlaced: () => {
+        sounds.playPuckClack(0.25);
+        this.updateOpponentView();
+        this.checkRoundEnd();
+      },
+      onPieceRemoved: () => {
+        this.updateOpponentView();
+      }
+    });
+  }
+
+  private initNetworking() {
+    if (this.session.mode !== 'online' || !this.session.peer) return;
+
+    const peer = this.session.peer;
+    const origOnMessage = peer.events?.onMessage;
+
+    peer.events = {
+      ...peer.events,
+      onMessage: (raw: NetworkMessage) => {
+        origOnMessage?.(raw);
+        const msg = raw as NetworkMessage;
+        if (!msg || !msg.type) return;
+
+        switch (msg.type) {
+          case 'FIT_ROUND_START':
+            if (msg.seed !== undefined && msg.roundNumber !== undefined) {
+              this.engine.resetMatch(msg.seed);
+              this.engine.initRound(msg.roundNumber);
+              this.startRoundFlow();
+            }
+            break;
+
+          case 'FIT_PIECE_PLACED':
+            if (msg.pieceId && msg.trayR !== undefined && msg.trayC !== undefined) {
+              const piece = this.engine.currentPuzzle.pieces.find(p => p.id === msg.pieceId);
+              if (piece) {
+                this.engine.placePiece(this.engine.opponentBoard, piece, msg.trayR, msg.trayC);
+                sounds.playPuckClack(0.25);
+                this.updateOpponentView();
+                this.checkRoundEnd();
+              }
+            }
+            break;
+
+          case 'FIT_PIECE_REMOVED':
+            if (msg.pieceId) {
+              this.engine.removePiece(this.engine.opponentBoard, msg.pieceId);
+              this.updateOpponentView();
+            }
+            break;
+
+          case 'FIT_ROUND_CLAIM':
+            if (msg.roundNumber === this.engine.matchScore.currentRound) {
+              this.handleRoundWon('opponent');
+            }
+            break;
+
+          case 'FIT_REMATCH_REQUEST':
+            this.engine.resetMatch();
+            this.startRoundFlow();
+            break;
+        }
+      }
+    };
+
+    // If host in online match, broadcast initial round seed
+    if (peer.role === 'host') {
+      this.sendNetworkMsg({
+        type: 'FIT_ROUND_START',
+        seed: this.engine['matchSeed'],
+        roundNumber: 1
+      });
+    }
+  }
+
+  private sendNetworkMsg(msg: NetworkMessage) {
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage(msg);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // ROUND FLOW & BEST OF 5 STATE MACHINE
+  // -------------------------------------------------------------
+
+  private startRoundFlow() {
+    this.ai?.stop();
+    this.updateHUD();
+    this.renderDock();
+    this.renderAll();
+
+    // Show 3, 2, 1 Countdown
+    this.countdownOverlayEl.classList.remove('hidden');
+    let count = 3;
+    this.countdownNumberEl.textContent = `${count}`;
+    sounds.playMove();
+
+    if (this.countdownTimer !== null) {
+      window.clearInterval(this.countdownTimer);
+    }
+
+    this.countdownTimer = window.setInterval(() => {
+      count--;
+      if (count > 0) {
+        this.countdownNumberEl.textContent = `${count}`;
+        sounds.playMove();
+      } else if (count === 0) {
+        this.countdownNumberEl.textContent = 'GO!';
+        sounds.playRotate();
+      } else {
+        window.clearInterval(this.countdownTimer!);
+        this.countdownTimer = null;
+        this.countdownOverlayEl.classList.add('hidden');
+        this.engine.startRound();
+        this.ai?.start();
+      }
+    }, 750);
+  }
+
+  private updateHUD() {
+    const score = this.engine.matchScore;
+    this.roundBadgeEl.textContent = `ROUND ${score.currentRound} / ${score.maxRounds}`;
+    this.statusTextEl.textContent = this.engine.currentPuzzle.tray.name;
+
+    // Stars formatting (e.g. ★ ★ ☆)
+    const renderStars = (wins: number) => {
+      let s = '';
+      for (let i = 0; i < 3; i++) {
+        s += i < wins ? '★ ' : '☆ ';
+      }
+      return s.trim();
+    };
+
+    this.playerStarsEl.textContent = renderStars(score.playerWins);
+    this.oppStarsEl.textContent = renderStars(score.opponentWins);
+    this.oppStatusEl.textContent = `${this.engine.opponentBoard.placedCount} / ${this.engine.currentPuzzle.pieces.length}`;
+  }
+
+  private checkRoundEnd() {
+    if (this.engine.status !== 'playing') return;
+
+    if (this.engine.playerBoard.isComplete) {
+      this.handleRoundWon('player');
+    } else if (this.engine.opponentBoard.isComplete) {
+      this.handleRoundWon('opponent');
+    }
+  }
+
+  private handleRoundWon(winner: 'player' | 'opponent') {
+    if (this.engine.status !== 'playing') return;
+
+    this.ai?.stop();
+    const result = this.engine.claimRoundWin(winner);
+    this.updateHUD();
+    this.renderAll();
+
+    if (winner === 'player') {
+      sounds.playRoundComplete();
+      confetti({
+        particleCount: 75,
+        spread: 70,
+        origin: { y: 0.6 }
+      });
+      this.sendNetworkMsg({
+        type: 'FIT_ROUND_CLAIM',
+        roundNumber: this.engine.matchScore.currentRound,
+        timestamp: Date.now()
+      });
+    } else {
+      sounds.playInvalidBuzz();
+    }
+
+    if (result === 'match_won') {
+      // Match Complete!
+      window.setTimeout(() => {
+        this.showMatchOverModal();
+      }, 1200);
+    } else {
+      // Show Round Winner Banner and transition to next round
+      this.roundWinnerTextEl.textContent = winner === 'player' ? `YOU WON ROUND ${this.engine.matchScore.currentRound - 1}!` : `ENEMY TOOK ROUND ${this.engine.matchScore.currentRound - 1}!`;
+      this.roundWinnerTextEl.className = `text-3xl sm:text-4xl font-black tracking-tight text-center ${winner === 'player' ? 'text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-300' : 'text-rose-400'}`;
+      this.roundWinnerSubtextEl.textContent = `Score: You ${this.engine.matchScore.playerWins} - ${this.engine.matchScore.opponentWins} Enemy`;
+      this.roundWinnerOverlayEl.classList.remove('hidden');
+
+      this.nextRoundTimer = window.setTimeout(() => {
+        this.roundWinnerOverlayEl.classList.add('hidden');
+        this.engine.nextRound();
+        this.startRoundFlow();
+      }, 2200);
+    }
+  }
+
+  private showMatchOverModal() {
+    const isPlayerWin = this.engine.matchScore.matchWinner === 'player';
+    const trophy = document.getElementById('fit-modal-trophy');
+    const title = document.getElementById('fit-modal-title');
+    const desc = document.getElementById('fit-modal-desc');
+
+    if (trophy) trophy.textContent = isPlayerWin ? '🏆' : '💀';
+    if (title) {
+      title.textContent = isPlayerWin ? 'MATCH VICTORY!' : 'DEFEAT!';
+      title.className = `text-2xl sm:text-3xl font-black mb-1 tracking-tight ${isPlayerWin ? 'text-amber-400' : 'text-rose-500'}`;
+    }
+    if (desc) {
+      desc.textContent = isPlayerWin
+        ? `Incredible speed! You won the Best of 5 match (${this.engine.matchScore.playerWins} - ${this.engine.matchScore.opponentWins})!`
+        : `Enemy cleared 3 rounds first (${this.engine.matchScore.opponentWins} - ${this.engine.matchScore.playerWins}). Better luck next time!`;
+    }
+
+    this.matchOverModalEl.classList.remove('hidden');
+    if (isPlayerWin) {
+      sounds.playRoundComplete();
+      confetti({
+        particleCount: 120,
+        spread: 100,
+        origin: { y: 0.5 }
+      });
+    }
+  }
+
+  private handleRematch() {
+    this.matchOverModalEl.classList.add('hidden');
+    this.engine.resetMatch();
+    this.sendNetworkMsg({ type: 'FIT_REMATCH_REQUEST' });
+    this.startRoundFlow();
+  }
+
+  // -------------------------------------------------------------
+  // RENDERING & PIECE DOCK
+  // -------------------------------------------------------------
+
+  private renderAll() {
+    const isDark = this.currentTheme === 'dark';
+    BlockFitRenderer.renderTray(
+      this.canvasTray,
+      this.engine.currentPuzzle.tray,
+      this.engine.playerBoard,
+      this.engine.currentPuzzle.pieces,
+      isDark,
+      this.dragGhost
+    );
+
+    this.updateOpponentView();
+  }
+
+  private updateOpponentView() {
+    const isDark = this.currentTheme === 'dark';
+    BlockFitRenderer.renderMiniTray(
+      this.canvasOppTray,
+      this.engine.currentPuzzle.tray,
+      this.engine.opponentBoard,
+      this.engine.currentPuzzle.pieces,
+      isDark
+    );
+    this.oppStatusEl.textContent = `${this.engine.opponentBoard.placedCount} / ${this.engine.currentPuzzle.pieces.length}`;
+  }
+
+  private renderDock() {
+    this.dockContainer.innerHTML = '';
+    const puzzle = this.engine.currentPuzzle;
+    const isDark = this.currentTheme === 'dark';
+
+    // Filter pieces that are not yet placed on player board
+    const unplaced = puzzle.pieces.filter(p => !this.engine.playerBoard.placedPieces.has(p.id));
+
+    if (unplaced.length === 0) {
+      this.dockContainer.innerHTML = `
+        <div class="text-xs font-bold text-emerald-400 py-2">
+          ✨ All pieces placed!
+        </div>
+      `;
+      return;
+    }
+
+    for (const piece of unplaced) {
+      const pieceCard = document.createElement('div');
+      pieceCard.className = `piece-card p-1.5 sm:p-2 rounded-xl border ${isDark ? 'bg-slate-800/80 border-slate-700/80 hover:border-slate-500' : 'bg-slate-100 border-slate-300 hover:border-slate-400'} shadow-sm hover:shadow-md cursor-grab active:cursor-grabbing transition-transform transform hover:-translate-y-0.5 active:scale-95 flex items-center justify-center`;
+      pieceCard.dataset.pieceId = piece.id;
+
+      // Small static canvas for the piece
+      const miniCanvas = document.createElement('canvas');
+      const cellSize = window.innerWidth < 640 ? 22 : 28;
+      BlockFitRenderer.renderPieceToCanvas(miniCanvas, piece, cellSize);
+      pieceCard.appendChild(miniCanvas);
+
+      // Attach pointerdown for dragging & clicking
+      pieceCard.addEventListener('pointerdown', (e) => this.onDockPiecePointerDown(e, piece, pieceCard));
+
+      this.dockContainer.appendChild(pieceCard);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // INTERACTION (DRAG & DROP + TAP TO PLACE)
+  // -------------------------------------------------------------
+
+  private onDockPiecePointerDown(e: PointerEvent, piece: PolyominoPiece, elem: HTMLElement) {
+    if (this.engine.status !== 'playing') return;
+    e.preventDefault();
+
+    this.isPointerDown = true;
+    this.pointerStartX = e.clientX;
+    this.pointerStartY = e.clientY;
+    this.hasMovedFar = false;
+    this.activeDragPiece = piece;
+    this.activeDragElem = elem;
+
+    sounds.playBlockPick();
+  }
+
+  private onTrayPointerDown(e: PointerEvent) {
+    if (this.engine.status !== 'playing') return;
+
+    // Convert click coordinates to tray cell
+    const cell = BlockFitRenderer.clientToTrayCell(
+      this.canvasTray,
+      this.engine.currentPuzzle.tray,
+      e.clientX,
+      e.clientY
+    );
+    if (!cell) return;
+
+    // Check if player tapped on an already-placed piece to recall it
+    for (const [pId, placed] of this.engine.playerBoard.placedPieces) {
+      const piece = this.engine.currentPuzzle.pieces.find(p => p.id === pId);
+      if (!piece) continue;
+
+      const hasCell = piece.cells.some(c => placed.trayR + c.r === cell.r && placed.trayC + c.c === cell.c);
+      if (hasCell) {
+        // Recall piece to dock
+        this.engine.removePiece(this.engine.playerBoard, pId);
+        sounds.playBlockRecall();
+        this.sendNetworkMsg({ type: 'FIT_PIECE_REMOVED', pieceId: pId });
+        this.renderDock();
+        this.renderAll();
+        return;
+      }
+    }
+
+    // If a dock piece was previously selected via tap, place it here!
+    if (this.selectedDockPiece) {
+      const piece = this.selectedDockPiece;
+      this.selectedDockPiece = null;
+      this.tryPlacePieceAt(piece, cell.r, cell.c);
+    }
+  }
+
+  private onPointerMove(e: PointerEvent) {
+    if (!this.isPointerDown || !this.activeDragPiece) return;
+
+    const dx = e.clientX - this.pointerStartX;
+    const dy = e.clientY - this.pointerStartY;
+    if (!this.hasMovedFar && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+      this.hasMovedFar = true;
+      if (this.activeDragElem) {
+        this.activeDragElem.style.opacity = '0.35';
+      }
+    }
+
+    if (this.hasMovedFar) {
+      // Calculate hover snap target over tray canvas
+      const cell = BlockFitRenderer.clientToTrayCell(
+        this.canvasTray,
+        this.engine.currentPuzzle.tray,
+        e.clientX,
+        e.clientY
+      );
+
+      if (cell) {
+        const isValid = this.engine.canPlacePiece(
+          this.engine.playerBoard,
+          this.activeDragPiece,
+          cell.r,
+          cell.c
+        );
+        this.dragGhost = {
+          piece: this.activeDragPiece,
+          targetR: cell.r,
+          targetC: cell.c,
+          isValid
+        };
+      } else {
+        this.dragGhost = null;
+      }
+
+      this.renderAll();
+    }
+  }
+
+  private onPointerUp(e: PointerEvent) {
+    if (!this.isPointerDown) return;
+    this.isPointerDown = false;
+
+    const piece = this.activeDragPiece;
+    const elem = this.activeDragElem;
+    this.activeDragPiece = null;
+    this.activeDragElem = null;
+
+    if (elem) {
+      elem.style.opacity = '1.0';
+    }
+
+    if (!piece) return;
+
+    if (this.hasMovedFar) {
+      // Drag & Drop release
+      const cell = BlockFitRenderer.clientToTrayCell(
+        this.canvasTray,
+        this.engine.currentPuzzle.tray,
+        e.clientX,
+        e.clientY
+      );
+
+      this.dragGhost = null;
+
+      if (cell) {
+        this.tryPlacePieceAt(piece, cell.r, cell.c);
+      } else {
+        // Dropped outside tray -> spring back to dock
+        sounds.playInvalidBuzz();
+        this.renderAll();
+      }
+    } else {
+      // Simple tap without dragging: select piece for tap-to-place
+      this.selectedDockPiece = piece;
+      sounds.playBlockPick();
+    }
+  }
+
+  private tryPlacePieceAt(piece: PolyominoPiece, targetR: number, targetC: number) {
+    const success = this.engine.placePiece(
+      this.engine.playerBoard,
+      piece,
+      targetR,
+      targetC
+    );
+
+    if (success) {
+      sounds.playBlockSnap();
+      this.sendNetworkMsg({
+        type: 'FIT_PIECE_PLACED',
+        pieceId: piece.id,
+        trayR: targetR,
+        trayC: targetC
+      });
+      this.renderDock();
+      this.renderAll();
+      this.checkRoundEnd();
+    } else {
+      sounds.playInvalidBuzz();
+      this.renderAll();
+    }
+  }
+
+  // -------------------------------------------------------------
+  // LIFECYCLE & CLEANUP
+  // -------------------------------------------------------------
+
+  public setTheme(theme: AppTheme) {
+    this.currentTheme = theme;
+    this.renderAll();
+    this.renderDock();
+  }
+
+  public destroy() {
+    this.ai?.destroy();
+    if (this.countdownTimer !== null) {
+      window.clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+    if (this.nextRoundTimer !== null) {
+      window.clearTimeout(this.nextRoundTimer);
+      this.nextRoundTimer = null;
+    }
+    this.resizeObserver?.disconnect();
+    window.removeEventListener('pointermove', this.boundOnPointerMove);
+    window.removeEventListener('pointerup', this.boundOnPointerUp);
+    this.container.innerHTML = '';
+  }
+}
