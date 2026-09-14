@@ -825,7 +825,8 @@ export class SlingPuckGame implements GameInstance {
       }
 
       // Opponent drag watchdog: if dragging or stretched with no network updates for > 1200ms, auto-release to prevent sticking
-      if ((this.engine.opponentBand.isStretched || this.remoteTargetPuckId !== null) && (currentTime - this.lastOpponentBandPullTime > 1200)) {
+      // Only applies to online PvP — in AI mode the AI manages the opponent band directly
+      if (this.session.mode === 'online' && (this.engine.opponentBand.isStretched || this.remoteTargetPuckId !== null) && (currentTime - this.lastOpponentBandPullTime > 1200)) {
         this.engine.opponentBand.isStretched = false;
         this.remoteTargetPuckId = null;
         this.engine.opponentBand.midX = (BAND_LEFT_X + BAND_RIGHT_X) * 0.5;
