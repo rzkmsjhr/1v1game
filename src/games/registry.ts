@@ -15,7 +15,36 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     badge: 'Competitive 1v1',
     bannerGradient: 'from-blue-600 via-blue-700 to-indigo-900',
     accentColor: '#0070d1',
-    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14h6v6H4zM10 14h6v6h-6zM10 8h6v6h-6zM16 14h6v6h-6z"/></svg>`,
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none">
+      <defs>
+        <linearGradient id="tet-purple" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#c084fc"/>
+          <stop offset="100%" stop-color="#7e22ce"/>
+        </linearGradient>
+        <linearGradient id="tet-gold" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#fde047"/>
+          <stop offset="100%" stop-color="#d97706"/>
+        </linearGradient>
+        <linearGradient id="tet-cyan" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#38bdf8"/>
+          <stop offset="100%" stop-color="#0284c7"/>
+        </linearGradient>
+      </defs>
+      <g filter="drop-shadow(0 1.2px 1.8px rgba(0,0,0,0.35))">
+        <!-- Purple T-Piece -->
+        <rect x="3.4" y="3.4" width="5.2" height="5.2" rx="1.2" fill="url(#tet-purple)" stroke="#e9d5ff" stroke-width="0.6"/>
+        <rect x="9.4" y="3.4" width="5.2" height="5.2" rx="1.2" fill="url(#tet-purple)" stroke="#e9d5ff" stroke-width="0.6"/>
+        <rect x="15.4" y="3.4" width="5.2" height="5.2" rx="1.2" fill="url(#tet-purple)" stroke="#e9d5ff" stroke-width="0.6"/>
+        <rect x="9.4" y="9.4" width="5.2" height="5.2" rx="1.2" fill="url(#tet-purple)" stroke="#e9d5ff" stroke-width="0.6"/>
+        <!-- Golden L-Piece -->
+        <rect x="3.4" y="9.4" width="5.2" height="5.2" rx="1.2" fill="url(#tet-gold)" stroke="#fef08a" stroke-width="0.6"/>
+        <rect x="3.4" y="15.4" width="5.2" height="5.2" rx="1.2" fill="url(#tet-gold)" stroke="#fef08a" stroke-width="0.6"/>
+        <rect x="9.4" y="15.4" width="5.2" height="5.2" rx="1.2" fill="url(#tet-gold)" stroke="#fef08a" stroke-width="0.6"/>
+        <rect x="15.4" y="15.4" width="5.2" height="5.2" rx="1.2" fill="url(#tet-gold)" stroke="#fef08a" stroke-width="0.6"/>
+        <!-- Cyan Accent Block -->
+        <rect x="15.4" y="9.4" width="5.2" height="5.2" rx="1.2" fill="url(#tet-cyan)" stroke="#bae6fd" stroke-width="0.6"/>
+      </g>
+    </svg>`,
     screenshotUrl: '/screenshots/tetris.png',
     supportsAI: true,
     create: (container, session) => new TetrisGame(container, session)
@@ -29,7 +58,35 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     badge: 'Tactical 1v1',
     bannerGradient: 'from-emerald-700 via-teal-800 to-slate-950',
     accentColor: '#10b981',
-    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg>`,
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none">
+      <defs>
+        <radialGradient id="oth-white-grad" cx="35%" cy="30%" r="65%">
+          <stop offset="0%" stop-color="#ffffff"/>
+          <stop offset="70%" stop-color="#e2e8f0"/>
+          <stop offset="100%" stop-color="#94a3b8"/>
+        </radialGradient>
+        <radialGradient id="oth-black-grad" cx="35%" cy="30%" r="65%">
+          <stop offset="0%" stop-color="#475569"/>
+          <stop offset="45%" stop-color="#1e293b"/>
+          <stop offset="100%" stop-color="#020617"/>
+        </radialGradient>
+        <filter id="oth-shadow" x="-25%" y="-25%" width="150%" height="150%">
+          <feDropShadow dx="0" dy="1.4" stdDeviation="1.2" flood-color="#000" flood-opacity="0.45"/>
+        </filter>
+      </defs>
+      <!-- Background White Disc -->
+      <g filter="url(#oth-shadow)">
+        <circle cx="14.5" cy="9.5" r="6.8" fill="url(#oth-white-grad)" stroke="#f8fafc" stroke-width="0.8"/>
+        <circle cx="14.5" cy="9.5" r="4.2" fill="none" stroke="#cbd5e1" stroke-width="0.6"/>
+        <path d="M 11.5 6 A 5 5 0 0 1 17.5 6" stroke="#ffffff" stroke-width="0.9" stroke-linecap="round" opacity="0.9"/>
+      </g>
+      <!-- Foreground Black Disc -->
+      <g filter="url(#oth-shadow)">
+        <circle cx="9.5" cy="14.5" r="6.8" fill="url(#oth-black-grad)" stroke="#64748b" stroke-width="0.8"/>
+        <circle cx="9.5" cy="14.5" r="4.2" fill="none" stroke="#334155" stroke-width="0.6"/>
+        <path d="M 6.5 11 A 5 5 0 0 1 12.5 11" stroke="#94a3b8" stroke-width="0.9" stroke-linecap="round" opacity="0.6"/>
+      </g>
+    </svg>`,
     screenshotUrl: '/screenshots/othello.png',
     supportsAI: true,
     create: (container, session) => new OthelloGame(container, session)
@@ -57,7 +114,42 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     badge: 'Dice & Strategy',
     bannerGradient: 'from-amber-600 via-orange-700 to-emerald-900',
     accentColor: '#ea580c',
-    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 3L5 21M9 6h7M8 11h7M7 16h7M15 13c1.5 0 2.5 1 2.5 2s-1 2-2.5 2-2.5-1-2.5-2 1-2 2.5-2z"/></svg>`,
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none">
+      <defs>
+        <linearGradient id="snk-ladder-grad" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0%" stop-color="#d97706"/>
+          <stop offset="50%" stop-color="#fbbf24"/>
+          <stop offset="100%" stop-color="#fef08a"/>
+        </linearGradient>
+        <linearGradient id="snk-snake-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#4ade80"/>
+          <stop offset="50%" stop-color="#16a34a"/>
+          <stop offset="100%" stop-color="#14532d"/>
+        </linearGradient>
+        <filter id="snk-shadow" x="-25%" y="-25%" width="150%" height="150%">
+          <feDropShadow dx="0" dy="1.2" stdDeviation="1" flood-color="#000" flood-opacity="0.4"/>
+        </filter>
+      </defs>
+      <!-- 3D Golden Ladder -->
+      <g filter="url(#snk-shadow)">
+        <line x1="8.5" y1="21" x2="16.5" y2="3" stroke="url(#snk-ladder-grad)" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="12.5" y1="22.5" x2="20.5" y2="4.5" stroke="url(#snk-ladder-grad)" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="10" y1="17.5" x2="14" y2="19" stroke="#fef08a" stroke-width="1.2" stroke-linecap="round"/>
+        <line x1="12" y1="13" x2="16" y2="14.5" stroke="#fef08a" stroke-width="1.2" stroke-linecap="round"/>
+        <line x1="14" y1="8.5" x2="18" y2="10" stroke="#fef08a" stroke-width="1.2" stroke-linecap="round"/>
+      </g>
+      <!-- Emerald Snake Coiling Through Ladder -->
+      <g filter="url(#snk-shadow)">
+        <path d="M 18.5 3.5 C 15.5 3, 13 6, 15.5 9 C 18 12, 10 12, 8.5 15 C 7 18, 9 20.5, 7.5 21.5" stroke="url(#snk-snake-grad)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="18.8" cy="3.8" r="0.75" fill="#fef08a"/>
+        <circle cx="19" cy="3.8" r="0.35" fill="#000000"/>
+      </g>
+      <!-- Lucky 3D Ivory Die -->
+      <g filter="url(#snk-shadow)">
+        <rect x="2.5" y="11.5" width="8" height="8" rx="1.8" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.8"/>
+        <circle cx="6.5" cy="15.5" r="1.4" fill="#dc2626"/>
+      </g>
+    </svg>`,
     screenshotUrl: '/screenshots/snake-ladder.png',
     supportsAI: true,
     create: (container, session) => new SnakeLadderGame(container, session)
@@ -71,7 +163,42 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     badge: 'Real-Time 1v1',
     bannerGradient: 'from-amber-700 via-orange-800 to-stone-950',
     accentColor: '#d97706',
-    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="#d97706" stroke-width="2"/><line x1="3" y1="12" x2="9" y2="12" stroke="#d97706" stroke-width="2"/><line x1="15" y1="12" x2="21" y2="12" stroke="#d97706" stroke-width="2"/><circle cx="12" cy="12" r="2.5" fill="#f59e0b"/><path d="M5 19 Q12 16 19 19" stroke="#ffffff" stroke-width="1.8" fill="none"/></svg>`,
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none">
+      <defs>
+        <radialGradient id="slg-puck-grad" cx="35%" cy="30%" r="65%">
+          <stop offset="0%" stop-color="#fef08a"/>
+          <stop offset="30%" stop-color="#f59e0b"/>
+          <stop offset="75%" stop-color="#b45309"/>
+          <stop offset="100%" stop-color="#78350f"/>
+        </radialGradient>
+        <linearGradient id="slg-band-grad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#fde047"/>
+          <stop offset="50%" stop-color="#ffffff"/>
+          <stop offset="100%" stop-color="#fde047"/>
+        </linearGradient>
+        <filter id="slg-shadow" x="-25%" y="-25%" width="150%" height="150%">
+          <feDropShadow dx="0" dy="1.2" stdDeviation="1" flood-color="#000" flood-opacity="0.45"/>
+        </filter>
+      </defs>
+      <!-- Kinetic Speed Trails -->
+      <path d="M 12 7 L 12 2" stroke="#fde047" stroke-width="1.4" stroke-linecap="round" opacity="0.85"/>
+      <path d="M 8.5 8.5 L 6.5 4" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+      <path d="M 15.5 8.5 L 17.5 4" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+      <!-- Taut Elastic Tension Band -->
+      <g filter="url(#slg-shadow)">
+        <circle cx="3.5" cy="8.5" r="1.6" fill="#fde047" stroke="#92400e" stroke-width="0.6"/>
+        <circle cx="20.5" cy="8.5" r="1.6" fill="#fde047" stroke="#92400e" stroke-width="0.6"/>
+        <path d="M 3.5 8.5 Q 12 16.5 12 16.5 Q 12 16.5 20.5 8.5" stroke="#fbbf24" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+        <path d="M 3.5 8.5 Q 12 16.5 12 16.5 Q 12 16.5 20.5 8.5" stroke="url(#slg-band-grad)" stroke-width="0.8" stroke-linecap="round" fill="none"/>
+      </g>
+      <!-- Slingshot Wooden Puck -->
+      <g filter="url(#slg-shadow)">
+        <circle cx="12" cy="15" r="5.6" fill="url(#slg-puck-grad)" stroke="#fed7aa" stroke-width="0.8"/>
+        <circle cx="12" cy="15" r="3.4" fill="none" stroke="#78350f" stroke-width="0.6"/>
+        <circle cx="12" cy="15" r="1.2" fill="#451a03"/>
+        <path d="M 9.5 12 A 4 4 0 0 1 14.5 12" stroke="#ffffff" stroke-width="0.8" stroke-linecap="round" opacity="0.6"/>
+      </g>
+    </svg>`,
     screenshotUrl: '/screenshots/sling-puck.png',
     supportsAI: true,
     create: (container, session) => new SlingPuckGame(container, session)
