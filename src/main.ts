@@ -194,7 +194,10 @@ class ConsoleDashboard {
         ` : ''}
 
         <!-- Hero Showcase Card -->
-        <div class="relative overflow-hidden rounded-3xl p-6 sm:p-10 mb-8 ps-card shadow-2xl bg-gradient-to-br ${currentGame.bannerGradient} text-white group border border-white/10 dark:border-white/15">
+        ${(() => {
+          const isLightBanner = currentGame.bannerTheme === 'light' || currentGame.id === 'sling-puck';
+          return `
+        <div class="relative overflow-hidden rounded-3xl p-6 sm:p-10 mb-8 ps-card shadow-2xl bg-gradient-to-br ${currentGame.bannerGradient} ${isLightBanner ? 'text-stone-900 border-amber-900/15' : 'text-white border-white/10 dark:border-white/15'} group border">
           ${currentGame.id === 'pool' ? `
             <!-- Iconic Billiard 8-Ball & Stripes Decorative Overlay -->
             <div class="absolute inset-0 pointer-events-none overflow-hidden select-none z-0">
@@ -214,29 +217,48 @@ class ConsoleDashboard {
             </div>
           ` : ''}
 
+          ${currentGame.id === 'sling-puck' ? `
+            <!-- Authentic Light Wood Tabletop & Laser-Etched Court Markings Overlay -->
+            <div class="absolute inset-0 pointer-events-none overflow-hidden select-none z-0">
+              <!-- Subtle vertical wood plank grain seams -->
+              <div class="absolute inset-0 flex justify-around opacity-30">
+                <div class="w-px h-full bg-[#c99b66]"></div>
+                <div class="w-px h-full bg-[#c99b66]"></div>
+                <div class="w-px h-full bg-[#c99b66]"></div>
+                <div class="w-px h-full bg-[#c99b66]"></div>
+              </div>
+              <!-- Laser-etched center face-off ring and baseline accents -->
+              <div class="absolute -right-16 -top-24 w-96 h-96 rounded-full border-2 border-amber-950/10 pointer-events-none"></div>
+              <div class="absolute -right-6 -top-14 w-72 h-72 rounded-full border border-dashed border-amber-950/15 pointer-events-none"></div>
+              <!-- Baseline aim and cord tension accent -->
+              <div class="absolute bottom-8 left-16 w-72 h-px bg-gradient-to-r from-amber-800/25 via-amber-700/15 to-transparent"></div>
+              <div class="absolute bottom-11 left-20 w-48 h-px bg-gradient-to-r from-amber-800/15 via-amber-700/10 to-transparent"></div>
+            </div>
+          ` : ''}
+
           <div class="relative z-10 max-w-xl">
             <div class="flex items-center space-x-2 mb-3">
-              <span class="ps-badge bg-white/20 backdrop-blur-md text-white">
+              <span class="ps-badge ${isLightBanner ? 'bg-amber-950/10 text-amber-950 border border-amber-950/20 font-bold' : 'bg-white/20 backdrop-blur-md text-white'}">
                 ${currentGame.badge}
               </span>
-              <span class="text-xs text-white/80 font-medium">
+              <span class="text-xs ${isLightBanner ? 'text-stone-600 font-semibold' : 'text-white/80 font-medium'}">
                 ${currentGame.genre}
               </span>
             </div>
 
-            <h2 class="text-3xl sm:text-4xl font-extrabold tracking-tight mb-2">
+            <h2 class="text-3xl sm:text-4xl font-extrabold tracking-tight mb-2 ${isLightBanner ? 'text-amber-950' : 'text-white'}">
               ${currentGame.title}
             </h2>
-            <p class="text-base sm:text-lg font-medium text-white/90 mb-3">
+            <p class="text-base sm:text-lg font-semibold mb-3 ${isLightBanner ? 'text-amber-900' : 'text-white/90'}">
               ${currentGame.subtitle}
             </p>
-            <p class="text-sm text-white/75 mb-8 line-clamp-2 leading-relaxed">
+            <p class="text-sm mb-8 line-clamp-2 leading-relaxed ${isLightBanner ? 'text-stone-700' : 'text-white/75'}">
               ${currentGame.description}
             </p>
 
             <div class="flex items-center space-x-3">
               ${!currentGame.isComingSoon ? `
-                <button id="btn-play-hero" class="px-7 py-3 rounded-xl bg-white text-gray-950 font-bold text-sm hover:bg-gray-100 transition-all transform hover:-translate-y-0.5 shadow-lg shadow-black/20 flex items-center space-x-2">
+                <button id="btn-play-hero" class="px-7 py-3 rounded-xl ${isLightBanner ? 'bg-amber-950 text-amber-50 hover:bg-stone-900 shadow-amber-950/25' : 'bg-white text-gray-950 hover:bg-gray-100 shadow-black/20'} font-bold text-sm transition-all transform hover:-translate-y-0.5 shadow-lg flex items-center space-x-2">
                   <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                   <span>PLAY NOW</span>
                 </button>
@@ -251,19 +273,21 @@ class ConsoleDashboard {
           <!-- Screenshot / Ambient background overlay -->
           ${currentGame.screenshotUrl ? `
             <div class="absolute -right-8 sm:-right-4 md:right-2 lg:right-6 -bottom-8 sm:-bottom-6 md:-bottom-4 w-[280px] sm:w-[380px] md:w-[460px] lg:w-[520px] pointer-events-none select-none z-0 transform -rotate-6 sm:-rotate-8 group-hover:-rotate-3 group-hover:scale-105 transition-all duration-700 ease-out origin-bottom-right">
-              <div class="relative rounded-2xl sm:rounded-3xl overflow-hidden border-2 border-white/20 shadow-2xl shadow-black/80 bg-black/40 backdrop-blur-sm">
+              <div class="relative rounded-2xl sm:rounded-3xl overflow-hidden border-2 ${isLightBanner ? 'border-amber-900/20 shadow-2xl shadow-amber-950/30' : 'border-white/20 shadow-2xl shadow-black/80'} bg-black/40 backdrop-blur-sm">
                 <img src="${currentGame.screenshotUrl}" alt="${currentGame.title} Preview" class="w-full h-auto object-cover block" />
                 <div class="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-black/20 pointer-events-none"></div>
                 <div class="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none"></div>
               </div>
             </div>
-            <div class="absolute inset-0 bg-gradient-to-r from-black/65 via-black/20 to-transparent pointer-events-none z-[1]"></div>
+            <div class="absolute inset-0 ${isLightBanner ? 'bg-gradient-to-r from-[#fbf2e3]/95 via-[#f7e5c6]/60 to-transparent' : 'bg-gradient-to-r from-black/65 via-black/20 to-transparent'} pointer-events-none z-[1]"></div>
           ` : `
             <div class="absolute right-8 sm:right-16 -bottom-4 sm:-bottom-8 opacity-15 pointer-events-none transform scale-[5] sm:scale-[7] origin-bottom-right text-white">
               ${currentGame.iconSvg}
             </div>
           `}
         </div>
+        `;
+        })()}
 
         <!-- Games Selection Carousel -->
         <div>
@@ -279,9 +303,10 @@ class ConsoleDashboard {
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
             ${GAMES_REGISTRY.map((game, idx) => {
               const isSelected = idx === this.selectedGameIndex;
+              const isLightGame = game.bannerTheme === 'light' || game.id === 'sling-puck';
               return `
                 <div class="game-card ps-card rounded-2xl p-4 cursor-pointer relative overflow-hidden transition-all duration-200 ${isSelected ? 'ps-card-active -translate-y-1' : 'hover:-translate-y-0.5'}" data-index="${idx}">
-                  <div class="w-10 h-10 rounded-xl mb-3 flex items-center justify-center text-white bg-gradient-to-tr ${game.bannerGradient}">
+                  <div class="w-10 h-10 rounded-xl mb-3 flex items-center justify-center ${isLightGame ? 'text-amber-950 border border-amber-900/20 shadow-sm' : 'text-white'} bg-gradient-to-tr ${game.bannerGradient}">
                     ${game.iconSvg}
                   </div>
                   <h4 class="font-bold text-sm truncate mb-0.5">${game.title}</h4>

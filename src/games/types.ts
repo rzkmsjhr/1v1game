@@ -26,6 +26,7 @@ export interface GameDefinition {
   genre: string;
   badge: string;
   bannerGradient: string;
+  bannerTheme?: 'light' | 'dark';
   accentColor: string;
   iconSvg: string;
   screenshotUrl?: string;
