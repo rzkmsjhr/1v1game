@@ -165,38 +165,51 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     accentColor: '#d97706',
     iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none">
       <defs>
-        <radialGradient id="slg-puck-grad" cx="35%" cy="30%" r="65%">
-          <stop offset="0%" stop-color="#fef08a"/>
-          <stop offset="30%" stop-color="#f59e0b"/>
-          <stop offset="75%" stop-color="#b45309"/>
+        <radialGradient id="slg-puck-td" cx="35%" cy="30%" r="65%">
+          <stop offset="0%" stop-color="#fef3c7"/>
+          <stop offset="35%" stop-color="#f59e0b"/>
+          <stop offset="80%" stop-color="#b45309"/>
           <stop offset="100%" stop-color="#78350f"/>
         </radialGradient>
-        <linearGradient id="slg-band-grad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stop-color="#fde047"/>
-          <stop offset="50%" stop-color="#ffffff"/>
-          <stop offset="100%" stop-color="#fde047"/>
+        <linearGradient id="slg-wood-rail" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#92400e"/>
+          <stop offset="50%" stop-color="#78350f"/>
+          <stop offset="100%" stop-color="#451a03"/>
         </linearGradient>
-        <filter id="slg-shadow" x="-25%" y="-25%" width="150%" height="150%">
-          <feDropShadow dx="0" dy="1.2" stdDeviation="1" flood-color="#000" flood-opacity="0.45"/>
+        <filter id="slg-td-shadow" x="-25%" y="-25%" width="150%" height="150%">
+          <feDropShadow dx="0" dy="1.2" stdDeviation="1" flood-color="#000" flood-opacity="0.5"/>
         </filter>
       </defs>
-      <!-- Kinetic Speed Trails -->
-      <path d="M 12 7 L 12 2" stroke="#fde047" stroke-width="1.4" stroke-linecap="round" opacity="0.85"/>
-      <path d="M 8.5 8.5 L 6.5 4" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
-      <path d="M 15.5 8.5 L 17.5 4" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
-      <!-- Taut Elastic Tension Band -->
-      <g filter="url(#slg-shadow)">
-        <circle cx="3.5" cy="8.5" r="1.6" fill="#fde047" stroke="#92400e" stroke-width="0.6"/>
-        <circle cx="20.5" cy="8.5" r="1.6" fill="#fde047" stroke="#92400e" stroke-width="0.6"/>
-        <path d="M 3.5 8.5 Q 12 16.5 12 16.5 Q 12 16.5 20.5 8.5" stroke="#fbbf24" stroke-width="2.2" stroke-linecap="round" fill="none"/>
-        <path d="M 3.5 8.5 Q 12 16.5 12 16.5 Q 12 16.5 20.5 8.5" stroke="url(#slg-band-grad)" stroke-width="0.8" stroke-linecap="round" fill="none"/>
+      <!-- Top-down Tabletop Court: Center Gate & Wooden Rails -->
+      <g opacity="0.85">
+        <!-- Center Divider Wings (leaving center slot at x=8.5 to 15.5) -->
+        <rect x="2" y="2.5" width="6.5" height="2" rx="0.8" fill="url(#slg-wood-rail)" stroke="#b45309" stroke-width="0.5"/>
+        <rect x="15.5" y="2.5" width="6.5" height="2" rx="0.8" fill="url(#slg-wood-rail)" stroke="#b45309" stroke-width="0.5"/>
+        <!-- Side Rails -->
+        <rect x="1.5" y="2.5" width="2" height="19" rx="0.8" fill="url(#slg-wood-rail)"/>
+        <rect x="20.5" y="2.5" width="2" height="19" rx="0.8" fill="url(#slg-wood-rail)"/>
+        <!-- Bottom Back Rail -->
+        <rect x="1.5" y="19.5" width="21" height="2" rx="0.8" fill="url(#slg-wood-rail)"/>
       </g>
-      <!-- Slingshot Wooden Puck -->
-      <g filter="url(#slg-shadow)">
-        <circle cx="12" cy="15" r="5.6" fill="url(#slg-puck-grad)" stroke="#fed7aa" stroke-width="0.8"/>
-        <circle cx="12" cy="15" r="3.4" fill="none" stroke="#78350f" stroke-width="0.6"/>
-        <circle cx="12" cy="15" r="1.2" fill="#451a03"/>
-        <path d="M 9.5 12 A 4 4 0 0 1 14.5 12" stroke="#ffffff" stroke-width="0.8" stroke-linecap="round" opacity="0.6"/>
+      <!-- Dotted Aim Line through Center Gate -->
+      <line x1="12" y1="9.8" x2="12" y2="3.2" stroke="#fde047" stroke-width="1.1" stroke-dasharray="1 1.4" stroke-linecap="round" opacity="0.9"/>
+      <!-- Stretched Elastic Rubber Band in Deep V -->
+      <g filter="url(#slg-td-shadow)">
+        <!-- Brass Anchor Studs -->
+        <circle cx="2.5" cy="9" r="1.3" fill="#fde047" stroke="#78350f" stroke-width="0.5"/>
+        <circle cx="21.5" cy="9" r="1.3" fill="#fde047" stroke="#78350f" stroke-width="0.5"/>
+        <!-- Stretched V Band -->
+        <path d="M 2.5 9 L 12 17.2 L 21.5 9" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <path d="M 2.5 9 L 12 17.2 L 21.5 9" stroke="#ffffff" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </g>
+      <!-- Top-Down Wooden Puck on Stretched Rubber -->
+      <g filter="url(#slg-td-shadow)">
+        <circle cx="12" cy="14.2" r="3.9" fill="url(#slg-puck-td)" stroke="#fef08a" stroke-width="0.75"/>
+        <!-- Inner Lathe Ring -->
+        <circle cx="12" cy="14.2" r="2.3" fill="none" stroke="#78350f" stroke-width="0.5" opacity="0.85"/>
+        <circle cx="12" cy="14.2" r="0.75" fill="#451a03"/>
+        <!-- Top Specular Highlight Arc -->
+        <path d="M 9.8 12.5 A 2.7 2.7 0 0 1 14.2 12.5" stroke="#ffffff" stroke-width="0.65" stroke-linecap="round" opacity="0.8"/>
       </g>
     </svg>`,
     screenshotUrl: '/screenshots/sling-puck.png',
