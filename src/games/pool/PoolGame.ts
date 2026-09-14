@@ -1,6 +1,6 @@
 import confetti from 'canvas-confetti';
 import { GameInstance, GameSession, AppTheme } from '../types';
-import type { NetworkMessage } from '../../network/webrtc-peer';
+import type { NetworkMessage, NetworkHealth } from '../../network/webrtc-peer';
 import { sounds } from '../../engine/sound';
 import { TABLE_WIDTH, TABLE_HEIGHT, BALL_DEFS, HEAD_STRING_X } from './engine/pool-constants';
 import { PoolEngine, GameVariant, PlayerId } from './engine/pool-engine';
@@ -234,11 +234,70 @@ export class PoolGame implements GameInstance {
     if (!this.session.peer) return;
 
     const origOnMessage = this.session.peer.events?.onMessage;
-    this.session.peer.events.onMessage = (msg: NetworkMessage) => {
-      origOnMessage?.(msg);
-      this.handleNetworkMessage(msg);
+    const origOnStatusChange = this.session.peer.events?.onStatusChange;
+    const origOnHealthChange = this.session.peer.events?.onHealthChange;
+
+    this.session.peer.events = {
+      ...this.session.peer.events,
+      onMessage: (msg: NetworkMessage) => {
+        origOnMessage?.(msg);
+        this.handleNetworkMessage(msg);
+      },
+      onStatusChange: (status: string, message?: string) => {
+        origOnStatusChange?.(status as any, message);
+        if (status === 'disconnected') {
+          this.showGameOverModal(true, 'Opponent disconnected. You win by forfeit!');
+        }
+      },
+      onHealthChange: (health: NetworkHealth) => {
+        origOnHealthChange?.(health);
+        this.updateNetworkHealthHUD(health);
+      }
     };
+
     this.session.peer.flushEarlyMessages();
+    if (this.session.peer.isConnected) {
+      this.updateNetworkHealthHUD({
+        rtt: this.session.peer.currentRtt,
+        status: this.session.peer.networkQuality,
+        isPeerVisible: this.session.peer.isPeerVisible
+      });
+    }
+  }
+
+  private updateNetworkHealthHUD(health: NetworkHealth) {
+    const pingEl = document.getElementById('pool-net-ping');
+    const dotEl = document.getElementById('pool-net-dot');
+    const textEl = document.getElementById('pool-net-text');
+    const awayBanner = document.getElementById('pool-peer-away-banner');
+
+    if (pingEl && dotEl && textEl) {
+      if (health.status === 'stalled') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+        textEl.textContent = 'Lag ⚠️';
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+      } else if (health.status === 'poor') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+        textEl.textContent = `${health.rtt}ms`;
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+      } else if (health.status === 'moderate') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+        textEl.textContent = `${health.rtt}ms`;
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5';
+      } else {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+        textEl.textContent = `${health.rtt || 30}ms`;
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5';
+      }
+    }
+
+    if (awayBanner) {
+      if (!health.isPeerVisible) {
+        awayBanner.classList.remove('hidden');
+      } else {
+        awayBanner.classList.add('hidden');
+      }
+    }
   }
 
   private handleNetworkMessage(msg: any) {
@@ -377,6 +436,13 @@ export class PoolGame implements GameInstance {
               <span>← Exit</span>
             </button>
             <span class="text-[11px] font-bold text-gray-400 font-mono tracking-wider uppercase">${this.engine.variant === '9ball' ? '9-BALL POOL' : '8-BALL POOL'}</span>
+            <div class="flex items-center space-x-1.5">
+              <span id="pool-net-ping" class="${this.session.mode === 'online' ? 'inline-flex' : 'hidden'} items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5">
+                <span id="pool-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span id="pool-net-text">30ms</span>
+              </span>
+              <span class="text-[9px] sm:text-[10px] font-mono text-gray-400">${this.session.mode === 'ai' ? 'VS AI' : '1V1 ONLINE'}</span>
+            </div>
           </div>
 
           <!-- Row 2: Match Information & Players Score Strip -->
@@ -408,6 +474,11 @@ export class PoolGame implements GameInstance {
               </div>
               <div id="icon-opponent-ball" class="w-6 h-6 sm:w-7 sm:h-7 shrink-0 rounded-full bg-slate-200/90 dark:bg-slate-800/90 border border-slate-300/80 dark:border-slate-700/80 flex items-center justify-center shadow-xs"></div>
             </div>
+          </div>
+
+          <!-- Inactive Tab / Opponent Away Banner -->
+          <div id="pool-peer-away-banner" class="hidden w-full text-center py-0.5 px-2 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-[10px] tracking-wide animate-pulse">
+            ⚠️ Opponent is tabbed out / minimized
           </div>
         </div>
 

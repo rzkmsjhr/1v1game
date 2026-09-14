@@ -6,7 +6,7 @@ import { SlingAI } from './sling-ai';
 import { Puck, PlayerSide } from './sling-types';
 import { SlingPhysics } from './sling-physics';
 import { sounds } from '../../engine/sound';
-import { NetworkMessage } from '../../network/webrtc-peer';
+import { NetworkMessage, NetworkHealth } from '../../network/webrtc-peer';
 import {
   TABLE_WIDTH,
   TABLE_HEIGHT,
@@ -166,6 +166,7 @@ export class SlingPuckGame implements GameInstance {
 
     const origOnMessage = this.session.peer.events?.onMessage;
     const origOnStatusChange = this.session.peer.events?.onStatusChange;
+    const origOnHealthChange = this.session.peer.events?.onHealthChange;
 
     this.session.peer = Object.assign(this.session.peer, {
       events: {
@@ -179,11 +180,57 @@ export class SlingPuckGame implements GameInstance {
           if (status === 'disconnected') {
             this.showGameOverModal(true, 'Opponent disconnected. You win by forfeit!');
           }
+        },
+        onHealthChange: (health: NetworkHealth) => {
+          origOnHealthChange?.(health);
+          this.updateNetworkHealthHUD(health);
         }
       }
     });
 
     this.session.peer.flushEarlyMessages();
+    if (this.session.peer.isConnected) {
+      this.updateNetworkHealthHUD({
+        rtt: this.session.peer.currentRtt,
+        status: this.session.peer.networkQuality,
+        isPeerVisible: this.session.peer.isPeerVisible
+      });
+    }
+  }
+
+  private updateNetworkHealthHUD(health: NetworkHealth) {
+    const pingEl = document.getElementById('sling-net-ping');
+    const dotEl = document.getElementById('sling-net-dot');
+    const textEl = document.getElementById('sling-net-text');
+    const awayBanner = document.getElementById('sling-peer-away-banner');
+
+    if (pingEl && dotEl && textEl) {
+      if (health.status === 'stalled') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+        textEl.textContent = 'Lag ⚠️';
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+      } else if (health.status === 'poor') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+        textEl.textContent = `${health.rtt}ms`;
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+      } else if (health.status === 'moderate') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+        textEl.textContent = `${health.rtt}ms`;
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5';
+      } else {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+        textEl.textContent = `${health.rtt || 30}ms`;
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5';
+      }
+    }
+
+    if (awayBanner) {
+      if (!health.isPeerVisible) {
+        awayBanner.classList.remove('hidden');
+      } else {
+        awayBanner.classList.add('hidden');
+      }
+    }
   }
 
   private handleNetworkMessage(msg: any) {
@@ -364,13 +411,19 @@ export class SlingPuckGame implements GameInstance {
         
         <!-- Top HUD Header -->
         <div class="w-full max-w-md flex flex-col shrink-0 border-b ${isDark ? 'border-stone-800' : 'border-amber-200'} pb-1 gap-1">
-          <!-- Row 1: Exit, Title, Mode -->
+          <!-- Row 1: Exit, Title, Mode & Net Ping -->
           <div class="w-full flex items-center justify-between px-1 text-xs">
             <button id="btn-sling-exit" class="ps-btn-secondary px-2.5 py-0.5 rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer active:scale-95" title="Exit to Arcade Hub">
               <span>← Exit</span>
             </button>
             <span class="text-[10px] sm:text-[11px] font-bold text-amber-500 font-mono tracking-wider uppercase">SLING PUCK • 10 PUCKS</span>
-            <span class="text-[9px] sm:text-[10px] font-mono text-gray-400">${this.session.mode === 'ai' ? 'VS AI' : '1V1 ONLINE'}</span>
+            <div class="flex items-center space-x-1.5">
+              <span id="sling-net-ping" class="${this.session.mode === 'online' ? 'inline-flex' : 'hidden'} items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5">
+                <span id="sling-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span id="sling-net-text">30ms</span>
+              </span>
+              <span class="text-[9px] sm:text-[10px] font-mono text-gray-400">${this.session.mode === 'ai' ? 'VS AI' : '1V1 ONLINE'}</span>
+            </div>
           </div>
 
           <!-- Row 2: Live Puck Score Banner -->
@@ -398,6 +451,11 @@ export class SlingPuckGame implements GameInstance {
               </div>
               <div class="w-5 h-5 rounded-full ${oppTheme.bg} border flex items-center justify-center font-black text-[10px] shrink-0">${oppTheme.letter}</div>
             </div>
+          </div>
+
+          <!-- Inactive Tab / Opponent Away Banner -->
+          <div id="sling-peer-away-banner" class="hidden w-full text-center py-0.5 px-2 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-[10px] tracking-wide animate-pulse">
+            ⚠️ Opponent is tabbed out / minimized
           </div>
         </div>
 

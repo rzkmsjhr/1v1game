@@ -34,12 +34,24 @@ export type NetworkMessage =
   | { type: 'PLAYER_LEAVE' }
   | { type: 'REMATCH_REQUEST' }
   | { type: 'REMATCH_ACCEPT'; seed?: number }
+  | { type: 'RTC_PING'; timestamp: number }
+  | { type: 'RTC_PONG'; timestamp: number }
+  | { type: 'PEER_VISIBILITY'; isVisible: boolean }
   | { type: 'CUSTOM'; payload: any };
+
+export type NetworkQuality = 'good' | 'moderate' | 'poor' | 'stalled';
+
+export interface NetworkHealth {
+  rtt: number; // in milliseconds
+  status: NetworkQuality;
+  isPeerVisible: boolean;
+}
 
 export interface WebRTCEvents {
   onStatusChange?: (status: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error', message?: string) => void;
   onRoomCreated?: (roomCode: string) => void;
   onMessage?: (msg: NetworkMessage) => void;
+  onHealthChange?: (health: NetworkHealth) => void;
 }
 
 const RTC_CONFIG: RTCConfiguration = {
@@ -60,6 +72,14 @@ export class WebRTCPeer {
   public gameId: string | null = null;
   public gameVariant: string | null = null;
   public isConnected: boolean = false;
+  public currentRtt: number = 0;
+  public networkQuality: NetworkQuality = 'good';
+  public isPeerVisible: boolean = true;
+  private lastPingSentTime: number = 0;
+  private lastPongReceivedTime: number = 0;
+  private heartbeatInterval: number | null = null;
+  private watchdogInterval: number | null = null;
+  private boundVisibilityHandler: (() => void) | null = null;
   private pollingInterval: number | null = null;
   private earlyMessageQueue: NetworkMessage[] = [];
   private _events: WebRTCEvents;
@@ -245,11 +265,80 @@ export class WebRTCPeer {
     }, 250);
   }
 
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    this.lastPongReceivedTime = performance.now();
+
+    // 1. Regular ping every 1500ms
+    this.heartbeatInterval = window.setInterval(() => {
+      if (!this.isConnected || !this.dataChannel || this.dataChannel.readyState !== 'open') return;
+      this.lastPingSentTime = performance.now();
+      this.sendMessage({ type: 'RTC_PING', timestamp: this.lastPingSentTime });
+    }, 1500);
+
+    // 2. Watchdog every 1000ms checking for connection stalling & timeout
+    this.watchdogInterval = window.setInterval(() => {
+      if (!this.isConnected) return;
+      const elapsedSincePong = performance.now() - this.lastPongReceivedTime;
+
+      if (elapsedSincePong > 8000) {
+        // Heartbeat timeout: connection silently dropped
+        console.warn('[WebRTC] Heartbeat timeout (>8s). Disconnecting.');
+        this.isConnected = false;
+        this.stopHeartbeat();
+        this.events.onStatusChange?.('disconnected', 'Connection lost (timeout).');
+      } else if (elapsedSincePong > 3500) {
+        if (this.networkQuality !== 'stalled') {
+          this.networkQuality = 'stalled';
+          this.notifyHealth();
+        }
+      }
+    }, 1000);
+
+    // 3. Tab visibility listener
+    this.boundVisibilityHandler = () => {
+      const isVisible = typeof document !== 'undefined' ? !document.hidden : true;
+      if (this.isConnected) {
+        this.sendMessage({ type: 'PEER_VISIBILITY', isVisible });
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.boundVisibilityHandler);
+      // Immediately notify peer of current visibility
+      this.sendMessage({ type: 'PEER_VISIBILITY', isVisible: !document.hidden });
+    }
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatInterval !== null) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+    if (this.watchdogInterval !== null) {
+      clearInterval(this.watchdogInterval);
+      this.watchdogInterval = null;
+    }
+    if (this.boundVisibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
+      this.boundVisibilityHandler = null;
+    }
+  }
+
+  public notifyHealth() {
+    this.events.onHealthChange?.({
+      rtt: this.currentRtt,
+      status: this.networkQuality,
+      isPeerVisible: this.isPeerVisible
+    });
+  }
+
   private setupDataChannel(dc: RTCDataChannel) {
     const handleOpen = () => {
       this.isConnected = true;
       this.stopPolling();
       this.flushEarlyMessages();
+      this.startHeartbeat();
+      this.notifyHealth();
       this.events.onStatusChange?.('connected', 'Opponent connected! Match starting.');
     };
 
@@ -261,6 +350,7 @@ export class WebRTCPeer {
 
     dc.onclose = () => {
       this.isConnected = false;
+      this.stopHeartbeat();
       this.events.onStatusChange?.('disconnected', 'Opponent disconnected.');
     };
 
@@ -272,6 +362,42 @@ export class WebRTCPeer {
     dc.onmessage = (event) => {
       try {
         const msg: NetworkMessage = JSON.parse(event.data);
+
+        // Core heartbeat & ping/pong protocol handling
+        if (msg.type === 'RTC_PING') {
+          this.sendMessage({ type: 'RTC_PONG', timestamp: msg.timestamp });
+          return;
+        }
+        if (msg.type === 'RTC_PONG') {
+          const now = performance.now();
+          const rtt = Math.max(1, Math.round(now - msg.timestamp));
+          // Exponential moving average for smooth display
+          this.currentRtt = this.currentRtt === 0 ? rtt : Math.round(this.currentRtt * 0.6 + rtt * 0.4);
+          this.lastPongReceivedTime = now;
+
+          if (this.currentRtt < 120) {
+            this.networkQuality = 'good';
+          } else if (this.currentRtt < 260) {
+            this.networkQuality = 'moderate';
+          } else {
+            this.networkQuality = 'poor';
+          }
+          this.notifyHealth();
+          return;
+        }
+        if (msg.type === 'PEER_VISIBILITY') {
+          this.isPeerVisible = msg.isVisible;
+          this.notifyHealth();
+          return;
+        }
+
+        // Any game packet is also confirmation of peer liveness
+        this.lastPongReceivedTime = performance.now();
+        if (this.networkQuality === 'stalled') {
+          this.networkQuality = this.currentRtt < 120 ? 'good' : (this.currentRtt < 260 ? 'moderate' : 'poor');
+          this.notifyHealth();
+        }
+
         if (this.events.onMessage) {
           this.events.onMessage(msg);
         } else {
@@ -312,6 +438,7 @@ export class WebRTCPeer {
 
   public cleanup() {
     this.stopPolling();
+    this.stopHeartbeat();
     this.earlyMessageQueue = [];
     if (this.dataChannel) {
       this.dataChannel.close();
@@ -326,5 +453,8 @@ export class WebRTCPeer {
     this.role = null;
     this.gameVariant = null;
     this.processedIceKeys.clear();
+    this.currentRtt = 0;
+    this.networkQuality = 'good';
+    this.isPeerVisible = true;
   }
 }
