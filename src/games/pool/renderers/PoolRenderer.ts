@@ -29,12 +29,10 @@ export class PoolRenderer {
 
   public updateScale(displayScale: number = 1) {
     const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
-    // On desktop, displayScale is often > 1.0 (e.g. 1.4 - 2.0x).
-    // On high-DPI screens, dpr is 1.25 - 2.0+.
-    // To ensure crystal clear HD rendering without blurry upscaling on desktop,
-    // the backing resolution should match the effective physical scale (displayScale * dpr),
-    // with a high-definition minimum of 2.0 and capped at 3.5 for optimal performance.
-    const targetScale = Math.max(2.0, Math.min(3.5, displayScale * dpr));
+    // On mobile devices, displayScale is often 0.35 - 0.5x.
+    // Matching effective physical scale (displayScale * dpr) capped at 3.0 provides
+    // razor-sharp retina resolution without GPU fill-rate exhaustion on mobile.
+    const targetScale = Math.max(1.0, Math.min(3.0, displayScale * dpr));
 
     if (Math.abs(this.renderScale - targetScale) > 0.05) {
       this.renderScale = targetScale;

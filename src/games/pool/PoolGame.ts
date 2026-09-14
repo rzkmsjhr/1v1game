@@ -113,11 +113,36 @@ export class PoolGame implements GameInstance {
   private handleWindowPointerUp: ((e: PointerEvent) => void) | null = null;
   private lastMoveBroadcastTime: number = 0;
   private opponentCue: { angle: number; power: number } | null = null;
+  private targetOpponentCue: { angle: number; power: number } | null = null;
+  private targetOpponentBallPos: { x: number; y: number } | null = null;
   private lastAimBroadcastTime: number = 0;
   private isLocalShooter: boolean = false;
   private pendingSyncTable: any = null;
   private pendingSyncTimer: number | null = null;
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
+
+  // Cached DOM elements & dirty-checking fields to eliminate layout thrashing
+  private statusBannerEl: HTMLElement | null = null;
+  private statusTextEl: HTMLElement | null = null;
+  private hintTextEl: HTMLElement | null = null;
+  private btnActionShootEl: HTMLElement | null = null;
+  private btnShootLabelEl: HTMLElement | null = null;
+  private badgePlayerGroupEl: HTMLElement | null = null;
+  private badgeOpponentGroupEl: HTMLElement | null = null;
+  private iconPlayerBallEl: HTMLElement | null = null;
+  private iconOpponentBallEl: HTMLElement | null = null;
+  private cachedPlayerGroupText: string = '';
+  private cachedOpponentGroupText: string = '';
+  private cachedIconPlayerKey: string = '';
+  private cachedIconOpponentKey: string = '';
+  private cachedStatusText: string = '';
+  private cachedHintText: string = '';
+  private cachedBtnShootLabel: string = '';
+  private cachedCanShootState: boolean | null = null;
+  private cachedStatusBannerClass: string = '';
+  private cachedStatusTextClass: string = '';
+  private cachedHintTextClass: string = '';
+  private lastHUDUpdateTime: number = 0;
 
   // Mobile & Auto-Rotation State
   private isMobileView: boolean = false;
@@ -180,6 +205,15 @@ export class PoolGame implements GameInstance {
       window.removeEventListener('pointercancel', this.handleWindowPointerUp);
       this.handleWindowPointerUp = null;
     }
+    this.statusBannerEl = null;
+    this.statusTextEl = null;
+    this.hintTextEl = null;
+    this.btnActionShootEl = null;
+    this.btnShootLabelEl = null;
+    this.badgePlayerGroupEl = null;
+    this.badgeOpponentGroupEl = null;
+    this.iconPlayerBallEl = null;
+    this.iconOpponentBallEl = null;
     this.container.style.height = '';
     this.container.style.maxHeight = '';
     this.container.style.padding = '';
@@ -333,20 +367,21 @@ export class PoolGame implements GameInstance {
           };
           this.engine.phase = 'LAG_RESULT';
           this.handleLagResultTransition();
-          this.updateHUD();
+          this.updateHUD(true);
         }
         break;
       case 'POOL_DECIDE_BREAK':
         this.hideLagModal();
         this.engine.setupMatchTable(msg.breaker);
         this.engine.isAuthoritative = true;
-        this.updateHUD();
+        this.updateHUD(true);
         break;
       case 'POOL_AIM_MOVE':
-        this.opponentCue = { angle: msg.angle, power: msg.power };
+        this.targetOpponentCue = { angle: msg.angle, power: msg.power };
         break;
       case 'POOL_SYNC_TABLE':
         this.opponentCue = null;
+        this.targetOpponentCue = null;
         const resolvedTurn: PlayerId | undefined = msg.currentTurn
           ? (msg.currentTurn === 'player' ? 'opponent' : 'player')
           : undefined;
@@ -372,7 +407,7 @@ export class PoolGame implements GameInstance {
           this.engine.syncTableState(syncPayload);
           this.pendingSyncTable = null;
           this.engine.isAuthoritative = true;
-          this.updateHUD();
+          this.updateHUD(true);
         } else {
           // Ball motion is still decelerating locally; buffer sync so balls decelerate naturally
           this.pendingSyncTable = syncPayload;
@@ -382,25 +417,28 @@ export class PoolGame implements GameInstance {
               this.engine.syncTableState(this.pendingSyncTable);
               this.pendingSyncTable = null;
               this.engine.isAuthoritative = true;
-              this.updateHUD();
+              this.updateHUD(true);
             }
           }, 400);
         }
         break;
       case 'POOL_SHOT':
         this.opponentCue = null;
+        this.targetOpponentCue = null;
         this.isLocalShooter = false;
         this.engine.isAuthoritative = false; // Non-shooter purely predicts visually
         this.engine.shoot(msg.angle, msg.power);
         sounds.playCueHit(msg.power);
+        this.updateHUD(true);
         break;
       case 'POOL_MOVE_BALL':
-        this.engine.placeCueBall(msg.x, msg.y);
+        this.targetOpponentBallPos = { x: msg.x, y: msg.y };
         break;
       case 'POOL_PLACE_BALL':
+        this.targetOpponentBallPos = null;
         this.engine.placeCueBall(msg.x, msg.y);
         this.engine.confirmBallInHand();
-        this.updateHUD();
+        this.updateHUD(true);
         break;
       case 'REMATCH_REQUEST':
         this.showRematchOffer();
@@ -638,12 +676,22 @@ export class PoolGame implements GameInstance {
     `;
 
     this.canvas = document.getElementById('canvas-pool') as HTMLCanvasElement;
+    this.statusBannerEl = document.getElementById('pool-status-banner');
+    this.statusTextEl = document.getElementById('pool-status-text');
+    this.hintTextEl = document.getElementById('pool-hint-text');
+    this.btnActionShootEl = document.getElementById('btn-action-shoot');
+    this.btnShootLabelEl = document.getElementById('btn-shoot-label');
+    this.badgePlayerGroupEl = document.getElementById('badge-player-group');
+    this.badgeOpponentGroupEl = document.getElementById('badge-opponent-group');
+    this.iconPlayerBallEl = document.getElementById('icon-player-ball');
+    this.iconOpponentBallEl = document.getElementById('icon-opponent-ball');
+
     this.renderer = new PoolRenderer(this.canvas);
 
     this.attachEventListeners();
     this.setupResizeObserver();
     this.updateContainerOrientation();
-    this.updateHUD();
+    this.updateHUD(true);
   }
 
   // -------------------------------------------------------------
@@ -798,7 +846,7 @@ export class PoolGame implements GameInstance {
               y: cue.y
             });
           }
-          this.updateHUD();
+          this.updateHUD(true);
           this.isAiming = true;
           this.isDraggingCueStick = true;
           this.canvas.style.cursor = 'grabbing';
@@ -816,7 +864,7 @@ export class PoolGame implements GameInstance {
               y: cue.y
             });
           }
-          this.updateHUD();
+          this.updateHUD(true);
           this.isAiming = true;
           this.updateAimAngle(coords.x, coords.y);
           return;
@@ -850,7 +898,7 @@ export class PoolGame implements GameInstance {
         if (dist < cue.radius + 18) {
           this.engine.phase = 'BALL_IN_HAND';
           this.isDraggingCueBall = true;
-          this.updateHUD();
+          this.updateHUD(true);
           return;
         }
       }
@@ -877,7 +925,7 @@ export class PoolGame implements GameInstance {
         const cue = this.engine.getCueBall();
         if (cue && this.session.mode === 'online' && this.session.peer?.isConnected) {
           const now = Date.now();
-          if (now - this.lastMoveBroadcastTime > 40) {
+          if (now - this.lastMoveBroadcastTime >= 16) {
             this.lastMoveBroadcastTime = now;
             this.session.peer.sendMessage({
               type: 'POOL_MOVE_BALL',
@@ -993,7 +1041,7 @@ export class PoolGame implements GameInstance {
   private broadcastAim() {
     if (this.session.mode !== 'online' || !this.session.peer?.isConnected || !this.isHumanTurn()) return;
     const now = performance.now();
-    if (now - this.lastAimBroadcastTime > 40) {
+    if (now - this.lastAimBroadcastTime >= 16) {
       this.lastAimBroadcastTime = now;
       this.session.peer.sendMessage({
         type: 'POOL_AIM_MOVE',
@@ -1384,7 +1432,7 @@ export class PoolGame implements GameInstance {
           this.pendingSyncTable = null;
           this.engine.isAuthoritative = true;
         }
-        this.updateHUD();
+        this.updateHUD(true);
 
         // In online PvP, broadcast authoritative table snapshot when balls settle ONLY if we were the shooter
         if (this.session.mode === 'online' && this.session.peer?.isConnected && this.isLocalShooter) {
@@ -1444,6 +1492,29 @@ export class PoolGame implements GameInstance {
 
       // Sub-tick render interpolation alpha for high-refresh 120Hz/144Hz displays
       const alpha = Math.min(1.0, Math.max(0.0, accumulator / FIXED_TIMESTEP));
+
+      // Smooth 60Hz/120Hz frame interpolation for opponent cue aiming
+      if (this.targetOpponentCue) {
+        if (!this.opponentCue) {
+          this.opponentCue = { ...this.targetOpponentCue };
+        } else {
+          // Shortest-arc angular lerp (prevents 360-degree spin around +/- PI boundary)
+          let dAngle = this.targetOpponentCue.angle - this.opponentCue.angle;
+          while (dAngle > Math.PI) dAngle -= Math.PI * 2;
+          while (dAngle < -Math.PI) dAngle += Math.PI * 2;
+          this.opponentCue.angle += dAngle * 0.45;
+          this.opponentCue.power += (this.targetOpponentCue.power - this.opponentCue.power) * 0.45;
+        }
+      }
+
+      // Smooth 60Hz/120Hz frame interpolation for opponent ball-in-hand dragging
+      if (this.targetOpponentBallPos && this.engine.phase === 'BALL_IN_HAND') {
+        const cue = this.engine.getCueBall();
+        if (cue) {
+          cue.x += (this.targetOpponentBallPos.x - cue.x) * 0.45;
+          cue.y += (this.targetOpponentBallPos.y - cue.y) * 0.45;
+        }
+      }
 
       // Render frame with opponent cue if applicable
       this.renderer.render(
@@ -1589,7 +1660,7 @@ export class PoolGame implements GameInstance {
       this.engine.isAuthoritative = true;
     }
     this.engine.setupLagging();
-    this.updateHUD();
+    this.updateHUD(true);
   }
 
   private showRematchOffer() {
@@ -1603,9 +1674,11 @@ export class PoolGame implements GameInstance {
   }
 
   private updateActionButtonState(isMyTurn: boolean) {
-    const btn = document.getElementById('btn-action-shoot');
     const canInteract = isMyTurn && !this.engine.isSimulating && this.engine.phase !== 'GAME_OVER';
+    if (this.cachedCanShootState === canInteract) return;
+    this.cachedCanShootState = canInteract;
 
+    const btn = this.btnActionShootEl;
     if (btn) {
       if (canInteract) {
         btn.classList.remove('opacity-40', 'cursor-not-allowed', 'pointer-events-none');
@@ -1617,31 +1690,33 @@ export class PoolGame implements GameInstance {
     }
   }
 
-  private updateHUD() {
-    const statusBanner = document.getElementById('pool-status-banner');
-    const statusText = document.getElementById('pool-status-text');
-    const hintText = document.getElementById('pool-hint-text');
-    const btnShootLabel = document.getElementById('btn-shoot-label');
-    const badgePlayerGroup = document.getElementById('badge-player-group');
-    const badgeOpponentGroup = document.getElementById('badge-opponent-group');
-    const iconPlayerBall = document.getElementById('icon-player-ball');
-    const iconOpponentBall = document.getElementById('icon-opponent-ball');
+  private updateHUD(force: boolean = false) {
+    const now = performance.now();
+    // Throttle frame-driven DOM updates to max 15Hz unless forced (state/turn changes)
+    if (!force && now - this.lastHUDUpdateTime < 66) {
+      return;
+    }
+    this.lastHUDUpdateTime = now;
 
     // Update Player & Opponent Group Badges and Ball Icons
     if (this.engine.phase === 'LAGGING') {
-      if (badgePlayerGroup && badgePlayerGroup.textContent !== 'LAG') {
-        badgePlayerGroup.textContent = 'LAG';
+      if (this.badgePlayerGroupEl && this.cachedPlayerGroupText !== 'LAG') {
+        this.cachedPlayerGroupText = 'LAG';
+        this.badgePlayerGroupEl.textContent = 'LAG';
       }
-      if (badgeOpponentGroup && badgeOpponentGroup.textContent !== 'LAG') {
-        badgeOpponentGroup.textContent = 'LAG';
+      if (this.badgeOpponentGroupEl && this.cachedOpponentGroupText !== 'LAG') {
+        this.cachedOpponentGroupText = 'LAG';
+        this.badgeOpponentGroupEl.textContent = 'LAG';
       }
-      if (iconPlayerBall && iconPlayerBall.dataset.iconKey !== 'lag-p') {
-        iconPlayerBall.dataset.iconKey = 'lag-p';
-        iconPlayerBall.innerHTML = getPoolBallIconSVG(this.engine.variant, 'open', '#3b82f6', undefined, 'clip-lag-p');
+      if (this.iconPlayerBallEl && this.cachedIconPlayerKey !== 'lag-p') {
+        this.cachedIconPlayerKey = 'lag-p';
+        this.iconPlayerBallEl.dataset.iconKey = 'lag-p';
+        this.iconPlayerBallEl.innerHTML = getPoolBallIconSVG(this.engine.variant, 'open', '#3b82f6', undefined, 'clip-lag-p');
       }
-      if (iconOpponentBall && iconOpponentBall.dataset.iconKey !== 'lag-o') {
-        iconOpponentBall.dataset.iconKey = 'lag-o';
-        iconOpponentBall.innerHTML = getPoolBallIconSVG(this.engine.variant, 'open', '#f43f5e', undefined, 'clip-lag-o');
+      if (this.iconOpponentBallEl && this.cachedIconOpponentKey !== 'lag-o') {
+        this.cachedIconOpponentKey = 'lag-o';
+        this.iconOpponentBallEl.dataset.iconKey = 'lag-o';
+        this.iconOpponentBallEl.innerHTML = getPoolBallIconSVG(this.engine.variant, 'open', '#f43f5e', undefined, 'clip-lag-o');
       }
     } else if (this.engine.variant === '8ball') {
       const pGrp = this.engine.playerGroup;
@@ -1650,63 +1725,90 @@ export class PoolGame implements GameInstance {
       const pText = pGrp ? pGrp.toUpperCase() : 'OPEN';
       const oText = oGrp ? oGrp.toUpperCase() : 'OPEN';
 
-      if (badgePlayerGroup && badgePlayerGroup.textContent !== pText) {
-        badgePlayerGroup.textContent = pText;
+      if (this.badgePlayerGroupEl && this.cachedPlayerGroupText !== pText) {
+        this.cachedPlayerGroupText = pText;
+        this.badgePlayerGroupEl.textContent = pText;
       }
-      if (badgeOpponentGroup && badgeOpponentGroup.textContent !== oText) {
-        badgeOpponentGroup.textContent = oText;
+      if (this.badgeOpponentGroupEl && this.cachedOpponentGroupText !== oText) {
+        this.cachedOpponentGroupText = oText;
+        this.badgeOpponentGroupEl.textContent = oText;
       }
 
       const pKey = `8ball-${pGrp || 'open'}`;
-      if (iconPlayerBall && iconPlayerBall.dataset.iconKey !== pKey) {
-        iconPlayerBall.dataset.iconKey = pKey;
-        iconPlayerBall.innerHTML = getPoolBallIconSVG('8ball', pGrp || 'open', '#3b82f6', undefined, 'clip-p');
+      if (this.iconPlayerBallEl && this.cachedIconPlayerKey !== pKey) {
+        this.cachedIconPlayerKey = pKey;
+        this.iconPlayerBallEl.dataset.iconKey = pKey;
+        this.iconPlayerBallEl.innerHTML = getPoolBallIconSVG('8ball', pGrp || 'open', '#3b82f6', undefined, 'clip-p');
       }
 
       const oKey = `8ball-${oGrp || 'open'}`;
-      if (iconOpponentBall && iconOpponentBall.dataset.iconKey !== oKey) {
-        iconOpponentBall.dataset.iconKey = oKey;
-        iconOpponentBall.innerHTML = getPoolBallIconSVG('8ball', oGrp || 'open', '#f43f5e', undefined, 'clip-o');
+      if (this.iconOpponentBallEl && this.cachedIconOpponentKey !== oKey) {
+        this.cachedIconOpponentKey = oKey;
+        this.iconOpponentBallEl.dataset.iconKey = oKey;
+        this.iconOpponentBallEl.innerHTML = getPoolBallIconSVG('8ball', oGrp || 'open', '#f43f5e', undefined, 'clip-o');
       }
     } else {
       // 9-Ball: Target is the lowest numbered ball on the table
       const lowest = this.engine.getLowestBallOnTable();
       const targetText = `BALL #${lowest}`;
 
-      if (badgePlayerGroup && badgePlayerGroup.textContent !== targetText) {
-        badgePlayerGroup.textContent = targetText;
+      if (this.badgePlayerGroupEl && this.cachedPlayerGroupText !== targetText) {
+        this.cachedPlayerGroupText = targetText;
+        this.badgePlayerGroupEl.textContent = targetText;
       }
-      if (badgeOpponentGroup && badgeOpponentGroup.textContent !== targetText) {
-        badgeOpponentGroup.textContent = targetText;
+      if (this.badgeOpponentGroupEl && this.cachedOpponentGroupText !== targetText) {
+        this.cachedOpponentGroupText = targetText;
+        this.badgeOpponentGroupEl.textContent = targetText;
       }
 
       const ballKey = `9ball-${lowest}`;
-      if (iconPlayerBall && iconPlayerBall.dataset.iconKey !== ballKey) {
-        iconPlayerBall.dataset.iconKey = ballKey;
-        iconPlayerBall.innerHTML = getPoolBallIconSVG('9ball', null, '#3b82f6', lowest, 'clip-9-p');
+      if (this.iconPlayerBallEl && this.cachedIconPlayerKey !== ballKey) {
+        this.cachedIconPlayerKey = ballKey;
+        this.iconPlayerBallEl.dataset.iconKey = ballKey;
+        this.iconPlayerBallEl.innerHTML = getPoolBallIconSVG('9ball', null, '#3b82f6', lowest, 'clip-9-p');
       }
-      if (iconOpponentBall && iconOpponentBall.dataset.iconKey !== ballKey) {
-        iconOpponentBall.dataset.iconKey = ballKey;
-        iconOpponentBall.innerHTML = getPoolBallIconSVG('9ball', null, '#f43f5e', lowest, 'clip-9-o');
+      if (this.iconOpponentBallEl && this.cachedIconOpponentKey !== ballKey) {
+        this.cachedIconOpponentKey = ballKey;
+        this.iconOpponentBallEl.dataset.iconKey = ballKey;
+        this.iconOpponentBallEl.innerHTML = getPoolBallIconSVG('9ball', null, '#f43f5e', lowest, 'clip-9-o');
       }
     }
 
     if (this.engine.phase === 'LAGGING') {
       const canShootLag = !this.engine.playerLagShotDone;
-      if (statusBanner) {
-        statusBanner.className = 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-cyan-600/15 border border-cyan-500/30 text-center mx-auto';
+      const bannerClass = 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-cyan-600/15 border border-cyan-500/30 text-center mx-auto';
+      if (this.statusBannerEl && this.cachedStatusBannerClass !== bannerClass) {
+        this.cachedStatusBannerClass = bannerClass;
+        this.statusBannerEl.className = bannerClass;
       }
-      if (statusText) {
-        statusText.textContent = 'LAG FOR BREAK';
-        statusText.className = 'text-[11px] sm:text-xs font-black tracking-wide text-cyan-600 dark:text-cyan-400 uppercase truncate w-full';
+      const statusClass = 'text-[11px] sm:text-xs font-black tracking-wide text-cyan-600 dark:text-cyan-400 uppercase truncate w-full';
+      if (this.statusTextEl) {
+        if (this.cachedStatusText !== 'LAG FOR BREAK') {
+          this.cachedStatusText = 'LAG FOR BREAK';
+          this.statusTextEl.textContent = 'LAG FOR BREAK';
+        }
+        if (this.cachedStatusTextClass !== statusClass) {
+          this.cachedStatusTextClass = statusClass;
+          this.statusTextEl.className = statusClass;
+        }
       }
-      if (hintText) {
-        hintText.textContent = canShootLag
-          ? 'Bounce ball off far cushion to head rail'
-          : 'Waiting for balls to settle...';
-        hintText.className = 'text-[9px] sm:text-[11px] md:text-xs font-medium text-gray-500 dark:text-gray-400 truncate w-full';
+      const hintMsg = canShootLag ? 'Bounce ball off far cushion to head rail' : 'Waiting for balls to settle...';
+      const hintClass = 'text-[9px] sm:text-[11px] md:text-xs font-medium text-gray-500 dark:text-gray-400 truncate w-full';
+      if (this.hintTextEl) {
+        if (this.cachedHintText !== hintMsg) {
+          this.cachedHintText = hintMsg;
+          this.hintTextEl.textContent = hintMsg;
+        }
+        if (this.cachedHintTextClass !== hintClass) {
+          this.cachedHintTextClass = hintClass;
+          this.hintTextEl.className = hintClass;
+        }
       }
-      if (btnShootLabel) btnShootLabel.textContent = canShootLag ? 'SHOOT LAG' : 'SETTLING...';
+      const btnLabel = canShootLag ? 'SHOOT LAG' : 'SETTLING...';
+      if (this.btnShootLabelEl && this.cachedBtnShootLabel !== btnLabel) {
+        this.cachedBtnShootLabel = btnLabel;
+        this.btnShootLabelEl.textContent = btnLabel;
+      }
       this.updateActionButtonState(canShootLag);
       return;
     }
@@ -1715,37 +1817,55 @@ export class PoolGame implements GameInstance {
 
     if (this.engine.phase === 'BALL_IN_HAND') {
       const isBreak = this.engine.isBreakShot;
-      if (statusBanner) {
-        statusBanner.className = isMyTurn
-          ? 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-amber-600/15 border border-amber-500/30 text-center mx-auto'
-          : 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-gray-200/60 dark:bg-gray-800/40 border border-gray-300/60 dark:border-gray-700/40 text-center mx-auto';
+      const bannerClass = isMyTurn
+        ? 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-amber-600/15 border border-amber-500/30 text-center mx-auto'
+        : 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-gray-200/60 dark:bg-gray-800/40 border border-gray-300/60 dark:border-gray-700/40 text-center mx-auto';
+      if (this.statusBannerEl && this.cachedStatusBannerClass !== bannerClass) {
+        this.cachedStatusBannerClass = bannerClass;
+        this.statusBannerEl.className = bannerClass;
       }
-      if (statusText) {
-        if (isBreak) {
-          statusText.textContent = isMyTurn ? 'BREAK IN HAND (YOU)' : `BREAK IN HAND (${this.opponentName.toUpperCase()})`;
-        } else {
-          statusText.textContent = isMyTurn ? 'BALL IN HAND (YOU)' : `BALL IN HAND (${this.opponentName.toUpperCase()})`;
+      let statusMsg = '';
+      if (isBreak) {
+        statusMsg = isMyTurn ? 'BREAK IN HAND (YOU)' : `BREAK IN HAND (${this.opponentName.toUpperCase()})`;
+      } else {
+        statusMsg = isMyTurn ? 'BALL IN HAND (YOU)' : `BALL IN HAND (${this.opponentName.toUpperCase()})`;
+      }
+      const statusClass = isMyTurn
+        ? 'text-[11px] sm:text-xs font-black tracking-wide text-amber-600 dark:text-amber-400 uppercase truncate w-full'
+        : 'text-[11px] sm:text-xs font-black tracking-wide text-gray-600 dark:text-gray-400 uppercase truncate w-full';
+      if (this.statusTextEl) {
+        if (this.cachedStatusText !== statusMsg) {
+          this.cachedStatusText = statusMsg;
+          this.statusTextEl.textContent = statusMsg;
         }
-        statusText.className = isMyTurn
-          ? 'text-[11px] sm:text-xs font-black tracking-wide text-amber-600 dark:text-amber-400 uppercase truncate w-full'
-          : 'text-[11px] sm:text-xs font-black tracking-wide text-gray-600 dark:text-gray-400 uppercase truncate w-full';
-      }
-      if (hintText) {
-        if (isBreak) {
-          hintText.textContent = isMyTurn
-            ? 'Place cue ball behind striped line to break'
-            : `${this.opponentName} is placing cue ball...`;
-        } else {
-          hintText.textContent = isMyTurn
-            ? 'Drag ball or tap table to place'
-            : `${this.opponentName} is placing cue ball...`;
+        if (this.cachedStatusTextClass !== statusClass) {
+          this.cachedStatusTextClass = statusClass;
+          this.statusTextEl.className = statusClass;
         }
-        hintText.className = 'text-[9px] sm:text-[11px] md:text-xs font-medium text-gray-500 dark:text-gray-400 truncate w-full';
       }
-      if (btnShootLabel) {
-        btnShootLabel.textContent = isMyTurn
-          ? (isBreak ? 'CONFIRM BREAK' : 'CONFIRM / AIM')
-          : 'OPPONENT PLACING...';
+      let hintMsg = '';
+      if (isBreak) {
+        hintMsg = isMyTurn ? 'Place cue ball behind striped line to break' : `${this.opponentName} is placing cue ball...`;
+      } else {
+        hintMsg = isMyTurn ? 'Drag ball or tap table to place' : `${this.opponentName} is placing cue ball...`;
+      }
+      const hintClass = 'text-[9px] sm:text-[11px] md:text-xs font-medium text-gray-500 dark:text-gray-400 truncate w-full';
+      if (this.hintTextEl) {
+        if (this.cachedHintText !== hintMsg) {
+          this.cachedHintText = hintMsg;
+          this.hintTextEl.textContent = hintMsg;
+        }
+        if (this.cachedHintTextClass !== hintClass) {
+          this.cachedHintTextClass = hintClass;
+          this.hintTextEl.className = hintClass;
+        }
+      }
+      const btnLabel = isMyTurn
+        ? (isBreak ? 'CONFIRM BREAK' : 'CONFIRM / AIM')
+        : 'OPPONENT PLACING...';
+      if (this.btnShootLabelEl && this.cachedBtnShootLabel !== btnLabel) {
+        this.cachedBtnShootLabel = btnLabel;
+        this.btnShootLabelEl.textContent = btnLabel;
       }
       this.updateActionButtonState(isMyTurn);
       return;
@@ -1753,58 +1873,79 @@ export class PoolGame implements GameInstance {
 
     if (this.engine.phase === 'PLAYING') {
       const turnContinued = !!(isMyTurn && this.engine.lastShotResult?.turnContinues && this.engine.lastShotResult.pottedCount > 0);
-      if (statusBanner) {
-        statusBanner.className = isMyTurn
-          ? 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-emerald-600/15 border border-emerald-500/30 text-center mx-auto'
-          : 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-rose-600/15 border border-rose-500/30 text-center mx-auto';
+      const bannerClass = isMyTurn
+        ? 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-emerald-600/15 border border-emerald-500/30 text-center mx-auto'
+        : 'flex-1 max-w-[170px] sm:max-w-[240px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-rose-600/15 border border-rose-500/30 text-center mx-auto';
+      if (this.statusBannerEl && this.cachedStatusBannerClass !== bannerClass) {
+        this.cachedStatusBannerClass = bannerClass;
+        this.statusBannerEl.className = bannerClass;
       }
-      if (statusText) {
-        if (turnContinued) {
-          statusText.textContent = 'YOUR TURN (CONTINUES)';
-        } else {
-          statusText.textContent = isMyTurn ? 'YOUR TURN' : `${this.opponentName.toUpperCase()}'S TURN`;
+      let statusMsg = '';
+      if (turnContinued) {
+        statusMsg = 'YOUR TURN (CONTINUES)';
+      } else {
+        statusMsg = isMyTurn ? 'YOUR TURN' : `${this.opponentName.toUpperCase()}'S TURN`;
+      }
+      const statusClass = isMyTurn
+        ? 'text-[11px] sm:text-xs font-black tracking-wide text-emerald-600 dark:text-emerald-400 uppercase truncate w-full'
+        : 'text-[11px] sm:text-xs font-black tracking-wide text-rose-600 dark:text-rose-400 uppercase truncate w-full';
+      if (this.statusTextEl) {
+        if (this.cachedStatusText !== statusMsg) {
+          this.cachedStatusText = statusMsg;
+          this.statusTextEl.textContent = statusMsg;
         }
-        statusText.className = isMyTurn
-          ? 'text-[11px] sm:text-xs font-black tracking-wide text-emerald-600 dark:text-emerald-400 uppercase truncate w-full'
-          : 'text-[11px] sm:text-xs font-black tracking-wide text-rose-600 dark:text-rose-400 uppercase truncate w-full';
+        if (this.cachedStatusTextClass !== statusClass) {
+          this.cachedStatusTextClass = statusClass;
+          this.statusTextEl.className = statusClass;
+        }
       }
-      if (btnShootLabel) {
-        btnShootLabel.textContent = isMyTurn ? 'STRIKE' : (this.session.mode === 'ai' ? 'AI AIMING...' : 'OPPONENT TURN');
+      const btnLabel = isMyTurn ? 'STRIKE' : (this.session.mode === 'ai' ? 'AI AIMING...' : 'OPPONENT TURN');
+      if (this.btnShootLabelEl && this.cachedBtnShootLabel !== btnLabel) {
+        this.cachedBtnShootLabel = btnLabel;
+        this.btnShootLabelEl.textContent = btnLabel;
       }
       this.updateActionButtonState(isMyTurn);
 
+      let hintMsg = '';
       if (this.engine.variant === '8ball') {
         const pGrp = this.engine.playerGroup;
-        if (hintText) {
-          if (this.engine.isBreakShot) {
-            hintText.textContent = isMyTurn
-              ? 'Tap cue ball to adjust, or aim & strike to break!'
-              : `${this.opponentName} is breaking!`;
-          } else if (turnContinued) {
-            hintText.textContent = 'Ball pocketed! Turn continues — take your next shot!';
-          } else if (isMyTurn) {
-            if (!pGrp) hintText.textContent = 'Open table: Sink any ball to claim group';
-            else {
-              const rem = this.engine.getRemainingGroupBalls(pGrp).length;
-              hintText.textContent = rem > 0 ? `Sink your ${pGrp} balls` : 'Sink the 8-Ball to WIN!';
-            }
-          } else {
-            hintText.textContent = `${this.opponentName} is taking shot...`;
+        if (this.engine.isBreakShot) {
+          hintMsg = isMyTurn
+            ? 'Tap cue ball to adjust, or aim & strike to break!'
+            : `${this.opponentName} is breaking!`;
+        } else if (turnContinued) {
+          hintMsg = 'Ball pocketed! Turn continues — take your next shot!';
+        } else if (isMyTurn) {
+          if (!pGrp) hintMsg = 'Open table: Sink any ball to claim group';
+          else {
+            const rem = this.engine.getRemainingGroupBalls(pGrp).length;
+            hintMsg = rem > 0 ? `Sink your ${pGrp} balls` : 'Sink the 8-Ball to WIN!';
           }
+        } else {
+          hintMsg = `${this.opponentName} is taking shot...`;
         }
       } else {
         // 9-Ball
         const lowest = this.engine.getLowestBallOnTable();
-        if (hintText) {
-          if (this.engine.isBreakShot) {
-            hintText.textContent = isMyTurn
-              ? 'Aim & strike to break rack!'
-              : `${this.opponentName} is breaking!`;
-          } else {
-            hintText.textContent = isMyTurn
-              ? `Must strike #${lowest} first!`
-              : `${this.opponentName} is aiming...`;
-          }
+        if (this.engine.isBreakShot) {
+          hintMsg = isMyTurn
+            ? 'Aim & strike to break rack!'
+            : `${this.opponentName} is breaking!`;
+        } else {
+          hintMsg = isMyTurn
+            ? `Must strike #${lowest} first!`
+            : `${this.opponentName} is aiming...`;
+        }
+      }
+      const hintClass = 'text-[9px] sm:text-[11px] md:text-xs font-medium text-gray-500 dark:text-gray-400 truncate w-full';
+      if (this.hintTextEl) {
+        if (this.cachedHintText !== hintMsg) {
+          this.cachedHintText = hintMsg;
+          this.hintTextEl.textContent = hintMsg;
+        }
+        if (this.cachedHintTextClass !== hintClass) {
+          this.cachedHintTextClass = hintClass;
+          this.hintTextEl.className = hintClass;
         }
       }
     }
