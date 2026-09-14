@@ -46,6 +46,7 @@ export class SlingPuckGame implements GameInstance {
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
   private lastSyncBroadcastTime: number = 0;
   private lastBandBroadcastTime: number = 0;
+  private lastOpponentBandPullTime: number = 0;
   private resizeObserver: ResizeObserver | null = null;
 
   constructor(container: HTMLElement, session: GameSession) {
@@ -62,6 +63,7 @@ export class SlingPuckGame implements GameInstance {
     }
 
     this.engine = new SlingEngine();
+    this.engine.setupRound(12345, this.session.peer?.role);
     this.render();
     this.setupEngineHooks();
     this.setupNetwork();
@@ -190,7 +192,7 @@ export class SlingPuckGame implements GameInstance {
         this.showGameOverModal(true, 'Opponent forfeited the match.');
         break;
       case 'SLING_START':
-        this.engine.setupRound(msg.seed);
+        this.engine.setupRound(msg.seed, this.session.peer?.role);
         this.updateHUD();
         break;
       case 'SLING_PUCK_CROSSED':
@@ -214,6 +216,11 @@ export class SlingPuckGame implements GameInstance {
         } else {
           targetPuck.x = msg.x;
           targetPuck.y = msg.y;
+          targetPuck.prevX = msg.x;
+          targetPuck.prevY = msg.y;
+          targetPuck.dragX = msg.x;
+          targetPuck.dragY = msg.y;
+          targetPuck.isDragged = false;
           targetPuck.vx = msg.vx;
           targetPuck.vy = msg.vy;
           targetPuck.owner = 'player';
@@ -224,6 +231,7 @@ export class SlingPuckGame implements GameInstance {
         this.updateHUD();
         break;
       case 'SLING_BAND_PULL':
+        this.lastOpponentBandPullTime = performance.now();
         this.engine.opponentBand.isStretched = msg.isStretched;
         if (msg.isStretched && msg.x !== undefined && msg.y !== undefined) {
           const oppY = TABLE_HEIGHT - msg.y;
@@ -301,6 +309,23 @@ export class SlingPuckGame implements GameInstance {
                 targetPuck.vy = sp.vy;
                 if (sp.color) targetPuck.color = sp.color;
               }
+            } else if (this.engine.pucks.length < 10) {
+              // Self-healing: restore missing puck if dropped during connection
+              this.engine.pucks.push({
+                id: sp.id,
+                x: sp.x,
+                y: sp.y,
+                prevX: sp.x,
+                prevY: sp.y,
+                dragX: sp.x,
+                dragY: sp.y,
+                isDragged: false,
+                vx: sp.vx,
+                vy: sp.vy,
+                radius: PUCK_RADIUS,
+                owner: 'opponent',
+                color: sp.color || 'red'
+              });
             }
           }
         }
@@ -326,6 +351,13 @@ export class SlingPuckGame implements GameInstance {
   // -------------------------------------------------------------
   private render() {
     const isDark = this.currentTheme === 'dark';
+    const isGuest = this.session.peer?.role === 'guest';
+    const playerTheme = isGuest
+      ? { letter: 'P', label: 'YOU', bg: 'bg-rose-500/20 border-rose-500/40 text-rose-400', badge: 'bg-rose-600/20 text-rose-300', text: 'text-rose-400' }
+      : { letter: 'P', label: 'YOU', bg: 'bg-blue-500/20 border-blue-500/40 text-blue-400', badge: 'bg-blue-600/20 text-blue-300', text: 'text-blue-400' };
+    const oppTheme = isGuest
+      ? { letter: 'O', label: this.opponentName, bg: 'bg-blue-500/20 border-blue-500/40 text-blue-400', badge: 'bg-blue-600/20 text-blue-300', text: 'text-blue-400' }
+      : { letter: 'O', label: this.opponentName, bg: 'bg-rose-500/20 border-rose-500/40 text-rose-400', badge: 'bg-rose-600/20 text-rose-300', text: 'text-rose-400' };
 
     this.container.innerHTML = `
       <div id="sling-outer-wrapper" class="w-full h-full min-h-[100dvh] max-h-[100dvh] overflow-hidden flex flex-col items-center justify-between p-1.5 sm:p-2.5 lg:p-3 select-none ${isDark ? 'bg-stone-950 text-white' : 'bg-amber-50 text-gray-900'}">
@@ -345,10 +377,10 @@ export class SlingPuckGame implements GameInstance {
           <div class="w-full grid grid-cols-3 items-center px-1 text-xs gap-1">
             <!-- Player Count -->
             <div class="flex items-center space-x-1 justify-self-start">
-              <div class="w-5 h-5 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center font-black text-blue-400 text-[10px] shrink-0">P</div>
+              <div class="w-5 h-5 rounded-full ${playerTheme.bg} border flex items-center justify-center font-black text-[10px] shrink-0">${playerTheme.letter}</div>
               <div class="flex flex-col">
-                <span class="text-[9px] font-bold text-blue-400 leading-none">YOU</span>
-                <span id="badge-player-pucks" class="px-1 py-0.5 rounded bg-blue-600/20 text-blue-300 font-mono text-[10px] font-black leading-none mt-0.5">5 PUCKS</span>
+                <span class="text-[9px] font-bold ${playerTheme.text} leading-none">${playerTheme.label}</span>
+                <span id="badge-player-pucks" class="px-1 py-0.5 rounded ${playerTheme.badge} font-mono text-[10px] font-black leading-none mt-0.5">5 PUCKS</span>
               </div>
             </div>
 
@@ -361,10 +393,10 @@ export class SlingPuckGame implements GameInstance {
             <!-- Opponent Count -->
             <div class="flex items-center space-x-1 justify-self-end text-right">
               <div class="flex flex-col items-end">
-                <span class="text-[9px] font-bold text-rose-400 leading-none truncate max-w-[65px]">${this.opponentName}</span>
-                <span id="badge-opp-pucks" class="px-1 py-0.5 rounded bg-rose-600/20 text-rose-300 font-mono text-[10px] font-black leading-none mt-0.5">5 PUCKS</span>
+                <span class="text-[9px] font-bold ${oppTheme.text} leading-none truncate max-w-[65px]">${oppTheme.label}</span>
+                <span id="badge-opp-pucks" class="px-1 py-0.5 rounded ${oppTheme.badge} font-mono text-[10px] font-black leading-none mt-0.5">5 PUCKS</span>
               </div>
-              <div class="w-5 h-5 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center font-black text-rose-400 text-[10px] shrink-0">O</div>
+              <div class="w-5 h-5 rounded-full ${oppTheme.bg} border flex items-center justify-center font-black text-[10px] shrink-0">${oppTheme.letter}</div>
             </div>
           </div>
         </div>
@@ -678,6 +710,23 @@ export class SlingPuckGame implements GameInstance {
         accumulator -= FIXED_TIMESTEP;
       }
 
+      // Opponent rubber band watchdog: if stretched with no network updates for > 1200ms, auto-release to prevent sticking
+      if (this.engine.opponentBand.isStretched && (currentTime - this.lastOpponentBandPullTime > 1200)) {
+        this.engine.opponentBand.isStretched = false;
+        this.engine.opponentBand.midX = (BAND_LEFT_X + BAND_RIGHT_X) * 0.5;
+        this.engine.opponentBand.midY = OPPONENT_BAND_REST_Y;
+        for (const p of this.engine.pucks) {
+          if (p.y < CENTER_Y && p.isDragged) {
+            p.isDragged = false;
+            if (p.y - p.radius <= OPPONENT_BAND_REST_Y) {
+              p.y = OPPONENT_BAND_REST_Y + p.radius + 1;
+              p.prevY = p.y;
+              p.dragY = p.y;
+            }
+          }
+        }
+      }
+
       // Sub-tick render interpolation factor (0.0 to 1.0)
       const alpha = Math.min(1.0, Math.max(0.0, accumulator / FIXED_TIMESTEP));
       this.renderer.render(this.engine, this.currentTheme, alpha, this.draggedPuck);
@@ -789,8 +838,9 @@ export class SlingPuckGame implements GameInstance {
     }
 
     if (this.rematchState === 'offer_received') {
-      this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT' });
-      this.startNewMatch();
+      const seed = Date.now();
+      this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT', seed });
+      this.startNewMatch(seed);
     } else if (this.rematchState === 'idle') {
       this.rematchState = 'requested';
       btn.textContent = 'Waiting for Opponent...';
@@ -820,8 +870,8 @@ export class SlingPuckGame implements GameInstance {
       btn.className = 'w-full py-3 px-6 rounded-xl font-black tracking-wider uppercase text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 shadow-lg shadow-orange-500/30 active:scale-95 transition-all cursor-pointer';
     }
 
-    this.engine.resetMatch();
-    if (seed) this.engine.setupRound(seed);
+    this.engine.resetMatch(this.session.peer?.role);
+    if (seed) this.engine.setupRound(seed, this.session.peer?.role);
     this.updateHUD();
   }
 }

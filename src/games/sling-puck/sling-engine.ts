@@ -65,17 +65,15 @@ export class SlingEngine {
   }
 
   // Setup pucks symmetrically for a new round
-  public setupRound(_seed: number = Date.now()) {
+  public setupRound(_seed: number = Date.now(), role: 'host' | 'guest' | null = 'host') {
     this.pucks = [];
     this.phase = 'COUNTDOWN';
     this.countdown = 3;
     this.countdownTimer = 0;
     this.roundWinner = null;
 
-    let nextId = 1;
-
     // Fixed symmetrical layout for 5 pucks per side
-    // Player puck positions (Y: 460 - 580)
+    // Player puck positions (bottom half, Y: 460 - 580)
     const playerPositions = [
       { x: CENTER_X - 90, y: 460 },
       { x: CENTER_X + 90, y: 460 },
@@ -84,16 +82,26 @@ export class SlingEngine {
       { x: CENTER_X + 60, y: 560 }
     ];
 
-    // Opponent puck positions (mirrored across CENTER_Y = 360)
+    // Opponent puck positions (top half, mirrored across CENTER_Y = 360)
     const opponentPositions = playerPositions.map(pos => ({
       x: pos.x,
       y: TABLE_HEIGHT - pos.y
     }));
 
-    // Add Player pucks
-    for (const pos of playerPositions) {
+    // In online PvP:
+    // Host starting pucks are IDs 1-5 (Black).
+    // Guest starting pucks are IDs 6-10 (Red).
+    const isGuest = role === 'guest';
+    const playerIds = isGuest ? [6, 7, 8, 9, 10] : [1, 2, 3, 4, 5];
+    const playerColor: 'black' | 'red' = isGuest ? 'red' : 'black';
+    const opponentIds = isGuest ? [1, 2, 3, 4, 5] : [6, 7, 8, 9, 10];
+    const opponentColor: 'black' | 'red' = isGuest ? 'black' : 'red';
+
+    // Add Player pucks (bottom)
+    for (let i = 0; i < playerPositions.length; i++) {
+      const pos = playerPositions[i];
       this.pucks.push({
-        id: nextId++,
+        id: playerIds[i],
         x: pos.x,
         y: pos.y,
         prevX: pos.x,
@@ -102,14 +110,15 @@ export class SlingEngine {
         vy: 0,
         radius: PUCK_RADIUS,
         owner: 'player',
-        color: 'black'
+        color: playerColor
       });
     }
 
-    // Add Opponent pucks
-    for (const pos of opponentPositions) {
+    // Add Opponent pucks (top)
+    for (let i = 0; i < opponentPositions.length; i++) {
+      const pos = opponentPositions[i];
       this.pucks.push({
-        id: nextId++,
+        id: opponentIds[i],
         x: pos.x,
         y: pos.y,
         prevX: pos.x,
@@ -118,7 +127,7 @@ export class SlingEngine {
         vy: 0,
         radius: PUCK_RADIUS,
         owner: 'opponent',
-        color: 'red'
+        color: opponentColor
       });
     }
   }
@@ -208,10 +217,10 @@ export class SlingEngine {
     }
   }
 
-  public resetMatch() {
+  public resetMatch(role: 'host' | 'guest' | null = 'host') {
     this.playerScore = 0;
     this.opponentScore = 0;
     this.matchWinner = null;
-    this.setupRound(Date.now());
+    this.setupRound(Date.now(), role);
   }
 }
