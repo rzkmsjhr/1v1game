@@ -170,7 +170,9 @@ export class SlingEngine {
         if (this.onPuckCrossedGate) {
           this.onPuckCrossedGate(puck, puck.owner);
         }
-      }
+      },
+      this.playerBand,
+      this.opponentBand
     );
 
     // 3. Elastic band vibrations

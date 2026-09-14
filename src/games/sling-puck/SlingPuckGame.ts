@@ -32,6 +32,11 @@ export class SlingPuckGame implements GameInstance {
   private animationFrameId: number | null = null;
   private draggedPuck: Puck | null = null;
   private activePointerId: number | null = null;
+  private dragOffsetX: number = 0;
+  private dragOffsetY: number = 0;
+  private wasBandStretched: boolean = false;
+  private boundPointerMove?: (e: PointerEvent) => void;
+  private boundPointerUp?: (e: PointerEvent) => void;
 
   private opponentName: string = 'Opponent';
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
@@ -71,6 +76,14 @@ export class SlingPuckGame implements GameInstance {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+    if (this.boundPointerMove) {
+      window.removeEventListener('pointermove', this.boundPointerMove);
+    }
+    if (this.boundPointerUp) {
+      window.removeEventListener('pointerup', this.boundPointerUp);
+      window.removeEventListener('pointercancel', this.boundPointerUp);
+    }
+    window.removeEventListener('resize', this.handleResize);
     this.container.innerHTML = '';
   }
 
@@ -341,6 +354,9 @@ export class SlingPuckGame implements GameInstance {
     // Canvas Pointer Events
     this.canvas.addEventListener('pointerdown', (e: PointerEvent) => {
       if (this.engine.phase !== 'PLAYING') return;
+      if (this.draggedPuck) return; // Prevent multi-touch conflict
+
+      if (e.cancelable) e.preventDefault();
       try {
         this.canvas.setPointerCapture(e.pointerId);
       } catch {}
@@ -351,7 +367,7 @@ export class SlingPuckGame implements GameInstance {
 
       // Find closest puck within touch reach
       let closestPuck: Puck | null = null;
-      let minDist = 32; // Touch tolerance
+      let minDist = 38; // Generous touch tolerance
 
       for (const p of candidatePucks) {
         const d = Math.hypot(coords.x - p.x, coords.y - p.y);
@@ -361,24 +377,63 @@ export class SlingPuckGame implements GameInstance {
         }
       }
 
+      // If tapped near the band, check if a puck is resting against the band
+      if (!closestPuck && coords.y >= PLAYER_BAND_REST_Y - 32) {
+        let bandMinDist = 65;
+        for (const p of candidatePucks) {
+          const d = Math.hypot(coords.x - p.x, coords.y - p.y);
+          if (d < bandMinDist) {
+            bandMinDist = d;
+            closestPuck = p;
+          }
+        }
+      }
+
       if (closestPuck) {
         this.draggedPuck = closestPuck;
         this.activePointerId = e.pointerId;
         this.draggedPuck.isDragged = true;
-        this.draggedPuck.dragX = coords.x;
-        this.draggedPuck.dragY = coords.y;
+
+        // Smooth offset to prevent jump upon touch down
+        this.dragOffsetX = coords.x - closestPuck.x;
+        this.dragOffsetY = coords.y - closestPuck.y;
+        if (Math.hypot(this.dragOffsetX, this.dragOffsetY) > 22) {
+          const angle = Math.atan2(this.dragOffsetY, this.dragOffsetX);
+          this.dragOffsetX = Math.cos(angle) * 22;
+          this.dragOffsetY = Math.sin(angle) * 22;
+        }
+
+        this.draggedPuck.dragX = this.draggedPuck.x;
+        this.draggedPuck.dragY = this.draggedPuck.y;
+        this.draggedPuck.prevX = this.draggedPuck.x;
+        this.draggedPuck.prevY = this.draggedPuck.y;
+        this.wasBandStretched = false;
       }
     });
 
-    this.canvas.addEventListener('pointermove', (e: PointerEvent) => {
+    const onPointerMove = (e: PointerEvent) => {
       if (!this.draggedPuck || e.pointerId !== this.activePointerId) return;
+      if (e.cancelable) e.preventDefault();
 
       const coords = this.getTableCoords(e.clientX, e.clientY);
+      const targetX = coords.x - this.dragOffsetX;
+      const targetY = coords.y - this.dragOffsetY;
 
-      // Clamp puck coordinates inside player zone
-      const clampedX = Math.max(RAIL_LEFT + this.draggedPuck.radius, Math.min(coords.x, RAIL_RIGHT - this.draggedPuck.radius));
-      const clampedY = Math.max(CENTER_Y + 15, Math.min(coords.y, RAIL_BOTTOM - this.draggedPuck.radius));
+      // Clamp puck coordinates inside player zone (cannot penetrate rails)
+      const clampedX = Math.max(
+        RAIL_LEFT + this.draggedPuck.radius,
+        Math.min(targetX, RAIL_RIGHT - this.draggedPuck.radius)
+      );
+      const clampedY = Math.max(
+        CENTER_Y + 15,
+        Math.min(targetY, RAIL_BOTTOM - this.draggedPuck.radius)
+      );
 
+      // Immediately sync puck coordinates to eliminate any render or physics lag
+      this.draggedPuck.x = clampedX;
+      this.draggedPuck.y = clampedY;
+      this.draggedPuck.prevX = clampedX;
+      this.draggedPuck.prevY = clampedY;
       this.draggedPuck.dragX = clampedX;
       this.draggedPuck.dragY = clampedY;
 
@@ -387,11 +442,12 @@ export class SlingPuckGame implements GameInstance {
         this.engine.playerBand.isStretched = true;
         this.engine.playerBand.midX = clampedX;
         this.engine.playerBand.midY = clampedY;
+        this.wasBandStretched = true;
       } else {
         this.engine.playerBand.isStretched = false;
         this.engine.playerBand.midY = PLAYER_BAND_REST_Y;
       }
-    });
+    };
 
     const releaseDrag = (e: PointerEvent) => {
       if (!this.draggedPuck || e.pointerId !== this.activePointerId) return;
@@ -400,7 +456,12 @@ export class SlingPuckGame implements GameInstance {
         this.canvas.releasePointerCapture(e.pointerId);
       } catch {}
 
-      if (this.engine.playerBand.isStretched) {
+      const shouldLaunch =
+        this.engine.playerBand.isStretched ||
+        this.wasBandStretched ||
+        this.draggedPuck.y > PLAYER_BAND_REST_Y + 3;
+
+      if (shouldLaunch) {
         // Launch puck using elastic band physics!
         SlingPhysics.launchFromBand(this.draggedPuck, this.engine.playerBand, power => {
           sounds.playSlingSnap(power);
@@ -411,10 +472,18 @@ export class SlingPuckGame implements GameInstance {
       this.draggedPuck = null;
       this.activePointerId = null;
       this.engine.playerBand.isStretched = false;
+      this.wasBandStretched = false;
     };
 
+    this.boundPointerMove = onPointerMove;
+    this.boundPointerUp = releaseDrag;
+
+    this.canvas.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointermove', onPointerMove);
     this.canvas.addEventListener('pointerup', releaseDrag);
+    window.addEventListener('pointerup', releaseDrag);
     this.canvas.addEventListener('pointercancel', releaseDrag);
+    window.addEventListener('pointercancel', releaseDrag);
   }
 
   // -------------------------------------------------------------

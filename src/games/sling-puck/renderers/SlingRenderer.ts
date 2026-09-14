@@ -56,8 +56,8 @@ export class SlingRenderer {
 
     // 5. Pucks with Sub-tick Interpolation
     for (const p of engine.pucks) {
-      const x = p.isDragged ? p.x : p.prevX + (p.x - p.prevX) * alpha;
-      const y = p.isDragged ? p.y : p.prevY + (p.y - p.prevY) * alpha;
+      const x = p.isDragged ? (p.dragX ?? p.x) : p.prevX + (p.x - p.prevX) * alpha;
+      const y = p.isDragged ? (p.dragY ?? p.y) : p.prevY + (p.y - p.prevY) * alpha;
       this.renderPuck(ctx, p, x, y);
     }
 

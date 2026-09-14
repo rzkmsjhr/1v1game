@@ -25,11 +25,11 @@ export const PUCK_MASS = 1.0;
 export const PUCKS_PER_PLAYER = 5;
 
 // Elastic Cord positions
-export const PLAYER_BAND_REST_Y = 648;
-export const OPPONENT_BAND_REST_Y = 72;
+export const PLAYER_BAND_REST_Y = 636;
+export const OPPONENT_BAND_REST_Y = 84;
 export const BAND_LEFT_X = RAIL_LEFT + 2;
 export const BAND_RIGHT_X = RAIL_RIGHT - 2;
-export const MAX_PULL_DISTANCE = 46;
+export const MAX_PULL_DISTANCE = 45;
 
 // Physics coefficients
 export const TABLE_FRICTION = 0.986;

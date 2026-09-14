@@ -24,7 +24,9 @@ export class SlingPhysics {
     subSteps: number = 4,
     onPuckCollision?: (p1: Puck, p2: Puck, speed: number) => void,
     onCushionBounce?: (puck: Puck, speed: number) => void,
-    onGatePass?: (puck: Puck) => void
+    onGatePass?: (puck: Puck) => void,
+    playerBand?: ElasticBand,
+    opponentBand?: ElasticBand
   ) {
     const subDt = dt / subSteps;
     const friction = Math.pow(TABLE_FRICTION, 1 / subSteps);
@@ -59,39 +61,47 @@ export class SlingPhysics {
         }
       }
 
-      // 2. Outer boundary rail bounces
+      // 2. Outer boundary rail bounces (unconditional clamping keeps pucks inside table)
       for (const p of pucks) {
         if (p.isDragged) continue;
         const r = p.radius;
 
         // Left rail
-        if (p.x - r < RAIL_LEFT && p.vx < 0) {
+        if (p.x - r < RAIL_LEFT) {
           p.x = RAIL_LEFT + r;
-          const bounceSpeed = Math.abs(p.vx);
-          p.vx = -p.vx * CUSHION_RESTITUTION;
-          if (bounceSpeed > 0.4 && onCushionBounce) onCushionBounce(p, bounceSpeed);
+          if (p.vx < 0) {
+            const bounceSpeed = Math.abs(p.vx);
+            p.vx = -p.vx * CUSHION_RESTITUTION;
+            if (bounceSpeed > 0.4 && onCushionBounce) onCushionBounce(p, bounceSpeed);
+          }
         }
         // Right rail
-        else if (p.x + r > RAIL_RIGHT && p.vx > 0) {
+        else if (p.x + r > RAIL_RIGHT) {
           p.x = RAIL_RIGHT - r;
-          const bounceSpeed = Math.abs(p.vx);
-          p.vx = -p.vx * CUSHION_RESTITUTION;
-          if (bounceSpeed > 0.4 && onCushionBounce) onCushionBounce(p, bounceSpeed);
+          if (p.vx > 0) {
+            const bounceSpeed = Math.abs(p.vx);
+            p.vx = -p.vx * CUSHION_RESTITUTION;
+            if (bounceSpeed > 0.4 && onCushionBounce) onCushionBounce(p, bounceSpeed);
+          }
         }
 
         // Top rail
-        if (p.y - r < RAIL_TOP && p.vy < 0) {
+        if (p.y - r < RAIL_TOP) {
           p.y = RAIL_TOP + r;
-          const bounceSpeed = Math.abs(p.vy);
-          p.vy = -p.vy * CUSHION_RESTITUTION;
-          if (bounceSpeed > 0.4 && onCushionBounce) onCushionBounce(p, bounceSpeed);
+          if (p.vy < 0) {
+            const bounceSpeed = Math.abs(p.vy);
+            p.vy = -p.vy * CUSHION_RESTITUTION;
+            if (bounceSpeed > 0.4 && onCushionBounce) onCushionBounce(p, bounceSpeed);
+          }
         }
         // Bottom rail
-        else if (p.y + r > RAIL_BOTTOM && p.vy > 0) {
+        else if (p.y + r > RAIL_BOTTOM) {
           p.y = RAIL_BOTTOM - r;
-          const bounceSpeed = Math.abs(p.vy);
-          p.vy = -p.vy * CUSHION_RESTITUTION;
-          if (bounceSpeed > 0.4 && onCushionBounce) onCushionBounce(p, bounceSpeed);
+          if (p.vy > 0) {
+            const bounceSpeed = Math.abs(p.vy);
+            p.vy = -p.vy * CUSHION_RESTITUTION;
+            if (bounceSpeed > 0.4 && onCushionBounce) onCushionBounce(p, bounceSpeed);
+          }
         }
       }
 
@@ -191,6 +201,16 @@ export class SlingPhysics {
               p1.y -= ny * overlap;
             }
 
+            // Keep non-dragged pucks safely inside table rails
+            if (!p1.isDragged) {
+              p1.x = Math.max(RAIL_LEFT + p1.radius, Math.min(p1.x, RAIL_RIGHT - p1.radius));
+              p1.y = Math.max(RAIL_TOP + p1.radius, Math.min(p1.y, RAIL_BOTTOM - p1.radius));
+            }
+            if (!p2.isDragged) {
+              p2.x = Math.max(RAIL_LEFT + p2.radius, Math.min(p2.x, RAIL_RIGHT - p2.radius));
+              p2.y = Math.max(RAIL_TOP + p2.radius, Math.min(p2.y, RAIL_BOTTOM - p2.radius));
+            }
+
             // Velocity impulse
             const kx = p1.vx - p2.vx;
             const ky = p1.vy - p2.vy;
@@ -214,6 +234,35 @@ export class SlingPhysics {
           }
         }
       }
+
+      // 5. Elastic Band Bounces for Free Pucks (Prevents free pucks from slipping behind bands)
+      if (playerBand && !playerBand.isStretched) {
+        for (const p of pucks) {
+          if (p.isDragged) continue;
+          if (p.y + p.radius >= playerBand.midY && p.y - p.radius < playerBand.midY + 16) {
+            p.y = playerBand.midY - p.radius;
+            if (p.vy > 0) {
+              p.vy = -p.vy * 0.82;
+              playerBand.vibrationVelocity = -Math.abs(p.vy) * 1.5;
+              if (Math.abs(p.vy) > 0.4 && onCushionBounce) onCushionBounce(p, Math.abs(p.vy));
+            }
+          }
+        }
+      }
+
+      if (opponentBand && !opponentBand.isStretched) {
+        for (const p of pucks) {
+          if (p.isDragged) continue;
+          if (p.y - p.radius <= opponentBand.midY && p.y + p.radius > opponentBand.midY - 16) {
+            p.y = opponentBand.midY + p.radius;
+            if (p.vy < 0) {
+              p.vy = -p.vy * 0.82;
+              opponentBand.vibrationVelocity = Math.abs(p.vy) * 1.5;
+              if (Math.abs(p.vy) > 0.4 && onCushionBounce) onCushionBounce(p, Math.abs(p.vy));
+            }
+          }
+        }
+      }
     }
   }
 
@@ -225,9 +274,11 @@ export class SlingPhysics {
   ): boolean {
     const isPlayer = band.side === 'player';
     const restY = band.restY;
-    const dy = isPlayer ? (puck.y - restY) : (restY - puck.y);
+    const dyFromPuck = isPlayer ? (puck.y - restY) : (restY - puck.y);
+    const dyFromBand = isPlayer ? (band.midY - restY) : (restY - band.midY);
+    const dy = Math.max(dyFromPuck, dyFromBand);
 
-    if (dy < 6) {
+    if (dy < 4) {
       // Not pulled enough to trigger launch
       band.isStretched = false;
       band.midY = restY;
@@ -235,19 +286,26 @@ export class SlingPhysics {
     }
 
     const pullDistance = Math.min(MAX_PULL_DISTANCE, dy);
-    const power = pullDistance / MAX_PULL_DISTANCE;
+    const power = Math.max(0.12, pullDistance / MAX_PULL_DISTANCE);
 
     // Launch trajectory: mostly forward (towards gate) with steer based on puck pull X offset
     const midAnchorX = (band.leftX + band.rightX) * 0.5;
     const pullOffsetX = (puck.x - midAnchorX) / (PLAY_WIDTH * 0.5);
 
-    const speed = 8 + power * (MAX_LAUNCH_SPEED - 8);
+    const speed = 10 + power * (MAX_LAUNCH_SPEED - 10);
     const dirY = isPlayer ? -1 : 1;
     const dirX = -pullOffsetX * 0.45; // Pulling right aims left, pulling left aims right
 
     const len = Math.hypot(dirX, dirY);
     puck.vx = (dirX / len) * speed;
     puck.vy = (dirY / len) * speed;
+
+    // Immediately position puck just in front of the band so it launches cleanly into the field
+    puck.y = isPlayer ? restY - puck.radius - 2 : restY + puck.radius + 2;
+    puck.prevX = puck.x;
+    puck.prevY = puck.y;
+    puck.dragX = puck.x;
+    puck.dragY = puck.y;
 
     // Trigger elastic band vibration
     band.isStretched = false;
