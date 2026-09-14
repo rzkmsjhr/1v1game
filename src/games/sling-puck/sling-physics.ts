@@ -239,15 +239,12 @@ export class SlingPhysics {
       if (playerBand && !playerBand.isStretched) {
         for (const p of pucks) {
           if (p.isDragged) continue;
-          if (p.y + p.radius >= playerBand.midY && p.y - p.radius < playerBand.midY + 16) {
-            p.y = playerBand.midY - p.radius;
-            if (p.vy > 0) {
-              // Deaden incoming puck so it settles cleanly in the player's zone
-              p.vy = -p.vy * 0.2;
-              p.vx *= 0.4;
-              playerBand.vibrationVelocity = -Math.min(Math.abs(p.vy) * 0.3, 2.5);
-              if (Math.abs(p.vy) > 0.4 && onCushionBounce) onCushionBounce(p, Math.abs(p.vy));
-            }
+          if (p.vy > 0 && p.y + p.radius >= playerBand.restY && p.y - p.radius < playerBand.restY + 16) {
+            p.y = playerBand.restY - p.radius;
+            p.vy = -p.vy * 0.2;
+            p.vx *= 0.4;
+            playerBand.vibrationVelocity = -Math.min(Math.abs(p.vy) * 0.3, 2.5);
+            if (Math.abs(p.vy) > 0.4 && onCushionBounce) onCushionBounce(p, Math.abs(p.vy));
           }
         }
       }
@@ -255,15 +252,12 @@ export class SlingPhysics {
       if (opponentBand && !opponentBand.isStretched) {
         for (const p of pucks) {
           if (p.isDragged) continue;
-          if (p.y - p.radius <= opponentBand.midY && p.y + p.radius > opponentBand.midY - 16) {
-            p.y = opponentBand.midY + p.radius;
-            if (p.vy < 0) {
-              // Deaden incoming puck so it settles cleanly in the opponent's zone
-              p.vy = -p.vy * 0.2;
-              p.vx *= 0.4;
-              opponentBand.vibrationVelocity = Math.min(Math.abs(p.vy) * 0.3, 2.5);
-              if (Math.abs(p.vy) > 0.4 && onCushionBounce) onCushionBounce(p, Math.abs(p.vy));
-            }
+          if (p.vy < 0 && p.y - p.radius <= opponentBand.restY && p.y + p.radius > opponentBand.restY - 16) {
+            p.y = opponentBand.restY + p.radius;
+            p.vy = -p.vy * 0.2;
+            p.vx *= 0.4;
+            opponentBand.vibrationVelocity = Math.min(Math.abs(p.vy) * 0.3, 2.5);
+            if (Math.abs(p.vy) > 0.4 && onCushionBounce) onCushionBounce(p, Math.abs(p.vy));
           }
         }
       }

@@ -12,6 +12,9 @@ import {
   TABLE_HEIGHT,
   CENTER_Y,
   PLAYER_BAND_REST_Y,
+  OPPONENT_BAND_REST_Y,
+  BAND_LEFT_X,
+  BAND_RIGHT_X,
   RAIL_LEFT,
   RAIL_RIGHT,
   RAIL_BOTTOM,
@@ -41,6 +44,7 @@ export class SlingPuckGame implements GameInstance {
   private opponentName: string = 'Opponent';
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
   private lastSyncBroadcastTime: number = 0;
+  private lastBandBroadcastTime: number = 0;
 
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
@@ -205,6 +209,33 @@ export class SlingPuckGame implements GameInstance {
         }
         this.updateHUD();
         break;
+      case 'SLING_BAND_PULL':
+        this.engine.opponentBand.isStretched = msg.isStretched;
+        if (msg.isStretched && msg.x !== undefined && msg.y !== undefined) {
+          const oppY = TABLE_HEIGHT - msg.y;
+          this.engine.opponentBand.midX = msg.x;
+          this.engine.opponentBand.midY = oppY;
+          let targetPuck = this.engine.pucks.find(p => p.id === msg.puckId);
+          if (targetPuck) {
+            targetPuck.isDragged = true;
+            targetPuck.x = msg.x;
+            targetPuck.y = oppY;
+            targetPuck.dragX = msg.x;
+            targetPuck.dragY = oppY;
+            targetPuck.prevX = msg.x;
+            targetPuck.prevY = oppY;
+          }
+        } else {
+          this.engine.opponentBand.isStretched = false;
+          this.engine.opponentBand.midX = (BAND_LEFT_X + BAND_RIGHT_X) * 0.5;
+          this.engine.opponentBand.midY = OPPONENT_BAND_REST_Y;
+          for (const p of this.engine.pucks) {
+            if (p.y < CENTER_Y && p.isDragged) {
+              p.isDragged = false;
+            }
+          }
+        }
+        break;
       case 'SLING_SYNC_PUCKS':
         // Lightweight sync validation
         this.updateHUD();
@@ -231,55 +262,55 @@ export class SlingPuckGame implements GameInstance {
       <div id="sling-outer-wrapper" class="w-full h-full min-h-[100dvh] max-h-[100dvh] overflow-hidden flex flex-col items-center justify-between p-1.5 sm:p-2.5 lg:p-3 select-none ${isDark ? 'bg-stone-950 text-white' : 'bg-amber-50 text-gray-900'}">
         
         <!-- Top HUD Header -->
-        <div class="w-full max-w-lg flex flex-col shrink-0 border-b ${isDark ? 'border-stone-800' : 'border-amber-200'} pb-1.5 gap-1">
+        <div class="w-full max-w-md flex flex-col shrink-0 border-b ${isDark ? 'border-stone-800' : 'border-amber-200'} pb-1 gap-1">
           <!-- Row 1: Exit, Title, Mode -->
           <div class="w-full flex items-center justify-between px-1 text-xs">
-            <button id="btn-sling-exit" class="ps-btn-secondary px-3 py-1 rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer active:scale-95" title="Exit to Arcade Hub">
+            <button id="btn-sling-exit" class="ps-btn-secondary px-2.5 py-0.5 rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer active:scale-95" title="Exit to Arcade Hub">
               <span>← Exit</span>
             </button>
-            <span class="text-[11px] font-bold text-amber-500 font-mono tracking-wider uppercase">SLING PUCK • 10 PUCKS</span>
-            <span class="text-[10px] font-mono text-gray-400">${this.session.mode === 'ai' ? 'VS AI' : '1V1 ONLINE'}</span>
+            <span class="text-[10px] sm:text-[11px] font-bold text-amber-500 font-mono tracking-wider uppercase">SLING PUCK • 10 PUCKS</span>
+            <span class="text-[9px] sm:text-[10px] font-mono text-gray-400">${this.session.mode === 'ai' ? 'VS AI' : '1V1 ONLINE'}</span>
           </div>
 
           <!-- Row 2: Live Puck Score Banner -->
-          <div class="w-full flex items-center justify-between px-1 text-xs gap-2">
+          <div class="w-full grid grid-cols-3 items-center px-1 text-xs gap-1">
             <!-- Player Count -->
-            <div class="flex items-center space-x-1.5 min-w-[90px]">
-              <div class="w-6 h-6 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center font-black text-blue-400 text-xs">P</div>
+            <div class="flex items-center space-x-1 justify-self-start">
+              <div class="w-5 h-5 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center font-black text-blue-400 text-[10px] shrink-0">P</div>
               <div class="flex flex-col">
-                <span class="text-[10px] font-bold text-blue-400 leading-tight">YOU</span>
-                <span id="badge-player-pucks" class="px-1.5 py-0.2 rounded bg-blue-600/20 text-blue-300 font-mono text-xs font-black">5 PUCKS</span>
+                <span class="text-[9px] font-bold text-blue-400 leading-none">YOU</span>
+                <span id="badge-player-pucks" class="px-1 py-0.5 rounded bg-blue-600/20 text-blue-300 font-mono text-[10px] font-black leading-none mt-0.5">5 PUCKS</span>
               </div>
             </div>
 
             <!-- Match Status / Rounds Center -->
-            <div id="sling-status-banner" class="flex-1 max-w-[170px] sm:max-w-[220px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-amber-600/15 border border-amber-500/30 text-center mx-auto">
-              <span id="sling-status-text" class="text-[11px] sm:text-xs font-black tracking-wide text-amber-500 uppercase truncate">RACE TO CLEAR!</span>
-              <span id="sling-hint-text" class="text-[9px] font-medium text-gray-400 truncate">Sling all pucks through gate</span>
+            <div id="sling-status-banner" class="flex flex-col items-center px-1.5 py-0.5 rounded-lg bg-amber-600/15 border border-amber-500/30 text-center mx-auto w-full max-w-[130px]">
+              <span id="sling-status-text" class="text-[9px] sm:text-[10px] font-black tracking-wide text-amber-500 uppercase truncate max-w-[115px]">RACE TO CLEAR!</span>
+              <span id="sling-hint-text" class="text-[8px] font-medium text-gray-400 truncate max-w-[115px]">Sling all pucks</span>
             </div>
 
             <!-- Opponent Count -->
-            <div class="flex items-center justify-end space-x-1.5 min-w-[90px] text-right">
+            <div class="flex items-center space-x-1 justify-self-end text-right">
               <div class="flex flex-col items-end">
-                <span class="text-[10px] font-bold text-rose-400 leading-tight truncate max-w-[85px]">${this.opponentName}</span>
-                <span id="badge-opp-pucks" class="px-1.5 py-0.2 rounded bg-rose-600/20 text-rose-300 font-mono text-xs font-black">5 PUCKS</span>
+                <span class="text-[9px] font-bold text-rose-400 leading-none truncate max-w-[65px]">${this.opponentName}</span>
+                <span id="badge-opp-pucks" class="px-1 py-0.5 rounded bg-rose-600/20 text-rose-300 font-mono text-[10px] font-black leading-none mt-0.5">5 PUCKS</span>
               </div>
-              <div class="w-6 h-6 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center font-black text-rose-400 text-xs">O</div>
+              <div class="w-5 h-5 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center font-black text-rose-400 text-[10px] shrink-0">O</div>
             </div>
           </div>
         </div>
 
         <!-- Main Playing Area: Scaled Board Viewport -->
-        <div id="sling-board-viewport" class="relative flex-1 w-full min-h-0 flex items-center justify-center overflow-hidden my-auto p-0.5" style="touch-action: none;">
+        <div id="sling-board-viewport" class="relative flex-1 w-full min-h-0 flex items-center justify-center overflow-hidden my-auto p-0" style="touch-action: none;">
           <div id="sling-canvas-wrapper" class="relative rounded-2xl shadow-2xl overflow-hidden border-4 ${isDark ? 'border-stone-800 bg-[#1c1510]' : 'border-amber-900/60 bg-[#faebd7]'}" style="touch-action: none; width: ${TABLE_WIDTH}px; height: ${TABLE_HEIGHT}px;">
             <canvas id="canvas-sling" width="${TABLE_WIDTH}" height="${TABLE_HEIGHT}" class="block cursor-grab active:cursor-grabbing" style="width: ${TABLE_WIDTH}px; height: ${TABLE_HEIGHT}px; touch-action: none; display: block;"></canvas>
           </div>
         </div>
 
         <!-- Bottom Controls Bar / Tips -->
-        <div class="w-full max-w-sm flex items-center justify-between px-3 py-1 shrink-0 text-center text-xs font-medium text-gray-500">
-          <span class="text-[10px]">👉 Drag puck down against cord & release to sling!</span>
-          <span id="sling-score-tracker" class="text-[11px] font-black font-mono text-amber-500">SCORE: 0 - 0</span>
+        <div class="w-full max-w-md flex items-center justify-between px-2 py-0.5 shrink-0 text-center text-xs font-medium text-gray-500">
+          <span class="text-[9px] sm:text-[10px] truncate">👉 Pull cord back & release to sling!</span>
+          <span id="sling-score-tracker" class="text-[10px] sm:text-[11px] font-black font-mono text-amber-500 shrink-0 ml-1.5">SCORE: 0 - 0</span>
         </div>
 
         <!-- Game Over Modal -->
@@ -447,6 +478,21 @@ export class SlingPuckGame implements GameInstance {
         this.engine.playerBand.isStretched = false;
         this.engine.playerBand.midY = PLAYER_BAND_REST_Y;
       }
+
+      // Sync stretch state with peer in online PvP
+      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        const now = performance.now();
+        if (now - this.lastBandBroadcastTime > 35) {
+          this.lastBandBroadcastTime = now;
+          this.session.peer.sendMessage({
+            type: 'SLING_BAND_PULL',
+            isStretched: this.engine.playerBand.isStretched,
+            puckId: this.draggedPuck.id,
+            x: clampedX,
+            y: clampedY
+          });
+        }
+      }
     };
 
     const releaseDrag = (e: PointerEvent) => {
@@ -465,6 +511,13 @@ export class SlingPuckGame implements GameInstance {
         // Launch puck using elastic band physics!
         SlingPhysics.launchFromBand(this.draggedPuck, this.engine.playerBand, power => {
           sounds.playSlingSnap(power);
+        });
+      }
+
+      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        this.session.peer.sendMessage({
+          type: 'SLING_BAND_PULL',
+          isStretched: false
         });
       }
 

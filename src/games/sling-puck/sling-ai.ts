@@ -17,6 +17,8 @@ export class SlingAI {
   private isPulling: boolean = false;
   private activePuck: Puck | null = null;
   private pullStartTime: number = 0;
+  private pullStartX: number = CENTER_X;
+  private pullStartY: number = OPPONENT_BAND_REST_Y;
   private targetPullX: number = CENTER_X;
   private targetPullY: number = OPPONENT_BAND_REST_Y - 32;
 
@@ -37,21 +39,30 @@ export class SlingAI {
       const pullDuration = this.getPullDuration();
 
       if (elapsed < pullDuration) {
-        // Interpolate puck position smoothly into elastic band
+        // Cubic ease-out interpolation for clearly visible, natural pull animation
         const t = Math.min(1.0, elapsed / pullDuration);
-        this.activePuck.x = this.activePuck.x + (this.targetPullX - this.activePuck.x) * (0.25 + t * 0.2);
-        this.activePuck.y = this.activePuck.y + (this.targetPullY - this.activePuck.y) * (0.25 + t * 0.2);
+        const ease = 1 - Math.pow(1 - t, 3);
+        const curX = this.pullStartX + (this.targetPullX - this.pullStartX) * ease;
+        const curY = this.pullStartY + (this.targetPullY - this.pullStartY) * ease;
+
+        this.activePuck.x = curX;
+        this.activePuck.y = curY;
+        this.activePuck.dragX = curX;
+        this.activePuck.dragY = curY;
+        this.activePuck.prevX = curX;
+        this.activePuck.prevY = curY;
 
         // Stretch opponent band to follow puck
         engine.opponentBand.isStretched = true;
-        engine.opponentBand.midX = this.activePuck.x;
-        engine.opponentBand.midY = this.activePuck.y;
+        engine.opponentBand.midX = curX;
+        engine.opponentBand.midY = curY;
       } else {
         // Launch puck!
         this.activePuck.isDragged = false;
         SlingPhysics.launchFromBand(this.activePuck, engine.opponentBand, onSnap);
         this.isPulling = false;
         this.activePuck = null;
+        engine.opponentBand.isStretched = false;
         this.nextActionTime = currentTimeMs + this.getCooldown();
       }
       return;
@@ -82,14 +93,16 @@ export class SlingAI {
     this.activePuck = chosenPuck;
     this.activePuck.isDragged = true;
     this.pullStartTime = currentTimeMs;
+    this.pullStartX = chosenPuck.x;
+    this.pullStartY = chosenPuck.y;
   }
 
   private getPullDuration(): number {
     switch (this.difficulty) {
-      case 'easy': return 260;
-      case 'medium': return 190;
-      case 'hard': return 130;
-      case 'extreme': return 85;
+      case 'easy': return 620;
+      case 'medium': return 460;
+      case 'hard': return 350;
+      case 'extreme': return 260;
     }
   }
 

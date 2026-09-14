@@ -53,6 +53,12 @@ export class SlingRenderer {
     if (draggedPuck && engine.playerBand.isStretched) {
       this.renderAimGuide(ctx, draggedPuck, engine.playerBand);
     }
+    if (engine.opponentBand.isStretched) {
+      const oppPuck = engine.pucks.find(p => p.isDragged && p.y < CENTER_Y);
+      if (oppPuck) {
+        this.renderAimGuide(ctx, oppPuck, engine.opponentBand);
+      }
+    }
 
     // 5. Pucks with Sub-tick Interpolation
     for (const p of engine.pucks) {
@@ -203,10 +209,11 @@ export class SlingRenderer {
   }
 
   private renderAimGuide(ctx: CanvasRenderingContext2D, puck: Puck, band: ElasticBand) {
+    const isPlayer = band.side === 'player';
     const midAnchorX = (band.leftX + band.rightX) * 0.5;
     const pullOffsetX = (puck.x - midAnchorX) / (TABLE_WIDTH * 0.5);
     const dirX = -pullOffsetX * 0.45;
-    const dirY = -1;
+    const dirY = isPlayer ? -1 : 1;
     const len = Math.hypot(dirX, dirY);
 
     const normDirX = dirX / len;
@@ -214,11 +221,11 @@ export class SlingRenderer {
 
     ctx.save();
     ctx.setLineDash([5, 5]);
-    ctx.strokeStyle = 'rgba(245, 158, 11, 0.65)'; // Amber trajectory
+    ctx.strokeStyle = isPlayer ? 'rgba(245, 158, 11, 0.65)' : 'rgba(239, 68, 68, 0.65)'; // Amber for player, Crimson for opponent
     ctx.lineWidth = 2.5;
 
     ctx.beginPath();
-    ctx.moveTo(puck.x, puck.y - PUCK_RADIUS);
+    ctx.moveTo(puck.x, puck.y + (isPlayer ? -PUCK_RADIUS : PUCK_RADIUS));
     ctx.lineTo(puck.x + normDirX * 220, puck.y + normDirY * 220);
     ctx.stroke();
     ctx.setLineDash([]);
