@@ -1,0 +1,122 @@
+import { SlingEngine } from './sling-engine';
+import { Puck } from './sling-types';
+import { SlingPhysics } from './sling-physics';
+import { AIDifficulty } from '../types';
+import {
+  CENTER_X,
+  CENTER_Y,
+  OPPONENT_BAND_REST_Y,
+  MAX_PULL_DISTANCE,
+  RAIL_LEFT,
+  RAIL_RIGHT
+} from './sling-constants';
+
+export class SlingAI {
+  private difficulty: AIDifficulty;
+  private nextActionTime: number = 0;
+  private isPulling: boolean = false;
+  private activePuck: Puck | null = null;
+  private pullStartTime: number = 0;
+  private targetPullX: number = CENTER_X;
+  private targetPullY: number = OPPONENT_BAND_REST_Y - 32;
+
+  constructor(difficulty: AIDifficulty = 'medium') {
+    this.difficulty = difficulty;
+  }
+
+  public update(engine: SlingEngine, currentTimeMs: number, onSnap?: (power: number) => void) {
+    if (engine.phase !== 'PLAYING') {
+      this.isPulling = false;
+      this.activePuck = null;
+      return;
+    }
+
+    // 1. If currently pulling a puck, complete the pull and release
+    if (this.isPulling && this.activePuck) {
+      const elapsed = currentTimeMs - this.pullStartTime;
+      const pullDuration = this.getPullDuration();
+
+      if (elapsed < pullDuration) {
+        // Interpolate puck position smoothly into elastic band
+        const t = Math.min(1.0, elapsed / pullDuration);
+        this.activePuck.x = this.activePuck.x + (this.targetPullX - this.activePuck.x) * (0.25 + t * 0.2);
+        this.activePuck.y = this.activePuck.y + (this.targetPullY - this.activePuck.y) * (0.25 + t * 0.2);
+
+        // Stretch opponent band to follow puck
+        engine.opponentBand.isStretched = true;
+        engine.opponentBand.midX = this.activePuck.x;
+        engine.opponentBand.midY = this.activePuck.y;
+      } else {
+        // Launch puck!
+        this.activePuck.isDragged = false;
+        SlingPhysics.launchFromBand(this.activePuck, engine.opponentBand, onSnap);
+        this.isPulling = false;
+        this.activePuck = null;
+        this.nextActionTime = currentTimeMs + this.getCooldown();
+      }
+      return;
+    }
+
+    // 2. Wait until next action cooldown expires
+    if (currentTimeMs < this.nextActionTime) return;
+
+    // 3. Find candidate puck on opponent side (y < CENTER_Y)
+    const opponentPucks = engine.pucks.filter(p => p.y < CENTER_Y && !p.isDragged);
+    if (opponentPucks.length === 0) return;
+
+    // Pick closest puck to the top band or best situated
+    opponentPucks.sort((a, b) => a.y - b.y);
+    const chosenPuck = opponentPucks[0];
+
+    // Calculate aim: Direct shot towards center gate with difficulty variance
+    const gateTargetX = CENTER_X + this.getAimVariance();
+
+    // To shoot towards gateTargetX from band, the pull X offset is opposite
+    // DirX = -pullOffsetX * 0.45 => pullX = CENTER_X - (targetX - CENTER_X) * 0.7
+    const aimOffset = gateTargetX - CENTER_X;
+    this.targetPullX = Math.max(RAIL_LEFT + 30, Math.min(RAIL_RIGHT - 30, CENTER_X - aimOffset * 0.8));
+    this.targetPullY = OPPONENT_BAND_REST_Y - this.getPullPower();
+
+    // Begin pull
+    this.isPulling = true;
+    this.activePuck = chosenPuck;
+    this.activePuck.isDragged = true;
+    this.pullStartTime = currentTimeMs;
+  }
+
+  private getPullDuration(): number {
+    switch (this.difficulty) {
+      case 'easy': return 260;
+      case 'medium': return 190;
+      case 'hard': return 130;
+      case 'extreme': return 85;
+    }
+  }
+
+  private getCooldown(): number {
+    switch (this.difficulty) {
+      case 'easy': return 1400 + Math.random() * 500;
+      case 'medium': return 950 + Math.random() * 350;
+      case 'hard': return 620 + Math.random() * 220;
+      case 'extreme': return 380 + Math.random() * 160;
+    }
+  }
+
+  private getAimVariance(): number {
+    switch (this.difficulty) {
+      case 'easy': return (Math.random() - 0.5) * 44;     // occasionally hits divider
+      case 'medium': return (Math.random() - 0.5) * 22;   // mostly in gate
+      case 'hard': return (Math.random() - 0.5) * 10;     // high precision
+      case 'extreme': return (Math.random() - 0.5) * 4;   // dead center laser aim
+    }
+  }
+
+  private getPullPower(): number {
+    switch (this.difficulty) {
+      case 'easy': return 28 + Math.random() * 8;
+      case 'medium': return 34 + Math.random() * 8;
+      case 'hard': return 38 + Math.random() * 7;
+      case 'extreme': return MAX_PULL_DISTANCE - Math.random() * 2;
+    }
+  }
+}

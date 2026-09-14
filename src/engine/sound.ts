@@ -434,6 +434,77 @@ class SoundManager {
       osc.stop(startTime + n.d);
     });
   }
+
+  public playSlingSnap(power: number = 0.5) {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'triangle';
+    const startFreq = 220 + Math.min(1.0, power) * 200;
+    osc.frequency.setValueAtTime(startFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(50, now + 0.09);
+
+    const volume = 0.12 + Math.min(1.0, power) * 0.15;
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.09);
+  }
+
+  public playPuckClack(speed: number = 0.5) {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    const freq = 450 + Math.random() * 120;
+    osc.frequency.setValueAtTime(freq, now);
+    osc.frequency.exponentialRampToValueAtTime(120, now + 0.04);
+
+    const volume = Math.min(0.25, 0.05 + Math.min(1.0, speed) * 0.15);
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.04);
+  }
+
+  public playGatePass() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const notes = [
+      { f: 659.25, t: 0.00, d: 0.08 }, // E5
+      { f: 987.77, t: 0.07, d: 0.15 }, // B5
+    ];
+
+    notes.forEach(n => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const startTime = now + n.t;
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(n.f, startTime);
+
+      gain.gain.setValueAtTime(0.18, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + n.d);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(startTime);
+      osc.stop(startTime + n.d);
+    });
+  }
 }
 
 export const sounds = new SoundManager();

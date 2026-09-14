@@ -3,6 +3,7 @@ import { TetrisGame } from './tetris/TetrisGame';
 import { OthelloGame } from './othello/OthelloGame';
 import { PoolGame } from './pool/PoolGame';
 import { SnakeLadderGame } from './snake-ladder/SnakeLadderGame';
+import { SlingPuckGame } from './sling-puck/SlingPuckGame';
 
 export const GAMES_REGISTRY: GameDefinition[] = [
   {
@@ -60,5 +61,19 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     screenshotUrl: '/screenshots/snake-ladder.png',
     supportsAI: true,
     create: (container, session) => new SnakeLadderGame(container, session)
+  },
+  {
+    id: 'sling-puck',
+    title: 'Fast Sling Puck',
+    subtitle: 'High-Speed Wooden Tabletop Battle',
+    description: 'Slingshot all your wooden pucks through the narrow center gate onto your opponent\'s side using elastic tension cords. Real-time, simultaneous, zero turns!',
+    genre: 'Tabletop & Dexterity',
+    badge: 'Real-Time 1v1',
+    bannerGradient: 'from-amber-700 via-orange-800 to-stone-950',
+    accentColor: '#d97706',
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="#d97706" stroke-width="2"/><line x1="3" y1="12" x2="9" y2="12" stroke="#d97706" stroke-width="2"/><line x1="15" y1="12" x2="21" y2="12" stroke="#d97706" stroke-width="2"/><circle cx="12" cy="12" r="2.5" fill="#f59e0b"/><path d="M5 19 Q12 16 19 19" stroke="#ffffff" stroke-width="1.8" fill="none"/></svg>`,
+    screenshotUrl: '/screenshots/sling-puck.png',
+    supportsAI: true,
+    create: (container, session) => new SlingPuckGame(container, session)
   }
 ];
