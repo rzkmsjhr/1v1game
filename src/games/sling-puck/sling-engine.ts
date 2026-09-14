@@ -22,7 +22,7 @@ export class SlingEngine {
 
   public playerScore: number = 0;
   public opponentScore: number = 0;
-  public roundsToWin: number = 2; // Best of 3
+  public roundsToWin: number = 1; // Direct race to clear table
   public roundWinner: PlayerSide | null = null;
   public matchWinner: PlayerSide | null = null;
 
@@ -148,7 +148,7 @@ export class SlingEngine {
       return;
     }
 
-    if (this.phase !== 'PLAYING') return;
+    if (this.phase !== 'PLAYING' && this.phase !== 'MATCH_OVER') return;
 
     // Store previous coordinates for sub-tick render interpolation
     for (const p of this.pucks) {
@@ -175,20 +175,23 @@ export class SlingEngine {
     SlingPhysics.updateBandVibration(this.playerBand, dtSec);
     SlingPhysics.updateBandVibration(this.opponentBand, dtSec);
 
-    // 4. Win condition check
-    const playerPucks = this.getPlayerPuckCount();
-    const opponentPucks = this.getOpponentPuckCount();
+    // 4. Win condition check (only while active playing)
+    if (this.phase === 'PLAYING') {
+      const playerPucks = this.getPlayerPuckCount();
+      const opponentPucks = this.getOpponentPuckCount();
 
-    if (playerPucks === 0 && opponentPucks > 0) {
-      this.handleRoundVictory('player');
-    } else if (opponentPucks === 0 && playerPucks > 0) {
-      this.handleRoundVictory('opponent');
+      if (playerPucks === 0 && opponentPucks > 0) {
+        this.handleRoundVictory('player');
+      } else if (opponentPucks === 0 && playerPucks > 0) {
+        this.handleRoundVictory('opponent');
+      }
     }
   }
 
   private handleRoundVictory(winner: PlayerSide) {
-    this.phase = 'ROUND_OVER';
+    this.phase = 'MATCH_OVER';
     this.roundWinner = winner;
+    this.matchWinner = winner;
 
     if (winner === 'player') {
       this.playerScore += 1;
@@ -196,12 +199,8 @@ export class SlingEngine {
       this.opponentScore += 1;
     }
 
-    if (this.playerScore >= this.roundsToWin || this.opponentScore >= this.roundsToWin) {
-      this.phase = 'MATCH_OVER';
-      this.matchWinner = this.playerScore >= this.roundsToWin ? 'player' : 'opponent';
-      if (this.onMatchOver) this.onMatchOver(this.matchWinner);
-    } else {
-      if (this.onRoundOver) this.onRoundOver(winner);
+    if (this.onMatchOver) {
+      this.onMatchOver(winner);
     }
   }
 

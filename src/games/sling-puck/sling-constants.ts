@@ -15,9 +15,9 @@ export const DIVIDER_THICKNESS = 14;
 export const DIVIDER_TOP = CENTER_Y - DIVIDER_THICKNESS * 0.5; // 353
 export const DIVIDER_BOTTOM = CENTER_Y + DIVIDER_THICKNESS * 0.5; // 367
 
-export const GATE_WIDTH = 58;
-export const GATE_LEFT = CENTER_X - GATE_WIDTH * 0.5; // 171
-export const GATE_RIGHT = CENTER_X + GATE_WIDTH * 0.5; // 229
+export const GATE_WIDTH = 38; // Snug fit matching puck diameter (34px) with 2px clearance on each side
+export const GATE_LEFT = CENTER_X - GATE_WIDTH * 0.5;
+export const GATE_RIGHT = CENTER_X + GATE_WIDTH * 0.5;
 
 export const PUCK_RADIUS = 17;
 export const PUCK_DIAMETER = PUCK_RADIUS * 2; // 34

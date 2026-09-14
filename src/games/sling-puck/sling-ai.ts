@@ -104,10 +104,10 @@ export class SlingAI {
 
   private getAimVariance(): number {
     switch (this.difficulty) {
-      case 'easy': return (Math.random() - 0.5) * 44;     // occasionally hits divider
-      case 'medium': return (Math.random() - 0.5) * 22;   // mostly in gate
-      case 'hard': return (Math.random() - 0.5) * 10;     // high precision
-      case 'extreme': return (Math.random() - 0.5) * 4;   // dead center laser aim
+      case 'easy': return (Math.random() - 0.5) * 50;     // frequently deflects off wings
+      case 'medium': return (Math.random() - 0.5) * 24;   // balanced accuracy
+      case 'hard': return (Math.random() - 0.5) * 10;     // sharp aim
+      case 'extreme': return (Math.random() - 0.5) * 3;   // laser accuracy
     }
   }
 

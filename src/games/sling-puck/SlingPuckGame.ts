@@ -52,6 +52,7 @@ export class SlingPuckGame implements GameInstance {
 
     this.engine = new SlingEngine();
     this.render();
+    this.setupEngineHooks();
     this.setupNetwork();
     this.startGameLoop();
 
@@ -89,32 +90,9 @@ export class SlingPuckGame implements GameInstance {
   }
 
   // -------------------------------------------------------------
-  // NETWORK HANDLING (PVP)
+  // ENGINE HOOKS (Both AI and PvP)
   // -------------------------------------------------------------
-  private setupNetwork() {
-    if (!this.session.peer) return;
-
-    const origOnMessage = this.session.peer.events?.onMessage;
-    const origOnStatusChange = this.session.peer.events?.onStatusChange;
-
-    this.session.peer = Object.assign(this.session.peer, {
-      events: {
-        ...this.session.peer.events,
-        onMessage: (msg: NetworkMessage) => {
-          origOnMessage?.(msg);
-          this.handleNetworkMessage(msg);
-        },
-        onStatusChange: (status: string, message?: string) => {
-          origOnStatusChange?.(status as any, message);
-          if (status === 'disconnected') {
-            this.showGameOverModal(true, 'Opponent disconnected. You win by forfeit!');
-          }
-        }
-      }
-    });
-
-    this.session.peer.flushEarlyMessages();
-
+  private setupEngineHooks() {
     // Hook engine gate crossing: when a puck crosses into opponent's territory, notify peer!
     this.engine.onPuckCrossedGate = (puck: Puck, toSide: PlayerSide) => {
       if (toSide === 'opponent') {
@@ -142,8 +120,36 @@ export class SlingPuckGame implements GameInstance {
           winner: 'opponent' // From opponent perspective, opponent lost
         });
       }
-      this.showGameOverModal(didIWin, didIWin ? 'You cleared all pucks!' : `${this.opponentName} cleared all pucks!`);
+      this.showGameOverModal(didIWin, didIWin ? 'You cleared all pucks from your side!' : `${this.opponentName} cleared all pucks first!`);
     };
+  }
+
+  // -------------------------------------------------------------
+  // NETWORK HANDLING (PVP)
+  // -------------------------------------------------------------
+  private setupNetwork() {
+    if (!this.session.peer) return;
+
+    const origOnMessage = this.session.peer.events?.onMessage;
+    const origOnStatusChange = this.session.peer.events?.onStatusChange;
+
+    this.session.peer = Object.assign(this.session.peer, {
+      events: {
+        ...this.session.peer.events,
+        onMessage: (msg: NetworkMessage) => {
+          origOnMessage?.(msg);
+          this.handleNetworkMessage(msg);
+        },
+        onStatusChange: (status: string, message?: string) => {
+          origOnStatusChange?.(status as any, message);
+          if (status === 'disconnected') {
+            this.showGameOverModal(true, 'Opponent disconnected. You win by forfeit!');
+          }
+        }
+      }
+    });
+
+    this.session.peer.flushEarlyMessages();
   }
 
   private handleNetworkMessage(msg: any) {
@@ -491,6 +497,10 @@ export class SlingPuckGame implements GameInstance {
           statusText.textContent = 'TIED BATTLE!';
           hintText.textContent = 'Sling pucks through the gate!';
         }
+      } else if (this.engine.phase === 'MATCH_OVER') {
+        const didIWin = this.engine.matchWinner === 'player';
+        statusText.textContent = didIWin ? 'VICTORY!' : 'DEFEAT!';
+        hintText.textContent = didIWin ? 'You cleared all pucks!' : `${this.opponentName} cleared all pucks!`;
       }
     }
   }
