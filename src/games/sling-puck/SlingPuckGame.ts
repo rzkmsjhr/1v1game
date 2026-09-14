@@ -45,6 +45,7 @@ export class SlingPuckGame implements GameInstance {
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
   private lastSyncBroadcastTime: number = 0;
   private lastBandBroadcastTime: number = 0;
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
@@ -80,6 +81,10 @@ export class SlingPuckGame implements GameInstance {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
     if (this.boundPointerMove) {
       window.removeEventListener('pointermove', this.boundPointerMove);
     }
@@ -101,6 +106,14 @@ export class SlingPuckGame implements GameInstance {
       } else {
         wrapper.classList.remove('bg-stone-950', 'text-white');
         wrapper.classList.add('bg-amber-50', 'text-gray-900');
+      }
+    }
+    const canvasWrapper = document.getElementById('sling-canvas-wrapper');
+    if (canvasWrapper) {
+      if (theme === 'dark') {
+        canvasWrapper.className = 'rounded-3xl shadow-2xl overflow-hidden border-4 border-[#3b1c0b] shadow-[0_20px_50px_rgba(0,0,0,0.85)] bg-[#2b1408]';
+      } else {
+        canvasWrapper.className = 'rounded-3xl shadow-2xl overflow-hidden border-4 border-[#5c3016] shadow-2xl bg-[#5c3016]';
       }
     }
     this.updateHUD();
@@ -301,8 +314,9 @@ export class SlingPuckGame implements GameInstance {
         </div>
 
         <!-- Main Playing Area: Scaled Board Viewport -->
-        <div id="sling-board-viewport" class="relative flex-1 w-full min-h-0 flex items-center justify-center overflow-hidden my-auto p-0" style="touch-action: none;">
-          <div id="sling-canvas-wrapper" class="relative rounded-2xl shadow-2xl overflow-hidden border-4 ${isDark ? 'border-stone-800 bg-[#1c1510]' : 'border-amber-900/60 bg-[#faebd7]'}" style="touch-action: none; width: ${TABLE_WIDTH}px; height: ${TABLE_HEIGHT}px;">
+        <div id="sling-board-viewport" class="relative flex-1 w-full min-h-0 overflow-hidden my-auto select-none" style="touch-action: none;">
+          <!-- Absolutely centered, unconstrained 400x720 container immune to flexbox squashing -->
+          <div id="sling-canvas-wrapper" class="rounded-3xl shadow-2xl overflow-hidden border-4 ${isDark ? 'border-[#3b1c0b] shadow-[0_20px_50px_rgba(0,0,0,0.85)] bg-[#2b1408]' : 'border-[#5c3016] shadow-2xl bg-[#5c3016]'}" style="position: absolute; width: ${TABLE_WIDTH}px; height: ${TABLE_HEIGHT}px; left: 50%; top: 50%; margin-left: -${TABLE_WIDTH / 2}px; margin-top: -${TABLE_HEIGHT / 2}px; transform-origin: center center; touch-action: none; flex-shrink: 0; box-sizing: content-box;">
             <canvas id="canvas-sling" width="${TABLE_WIDTH}" height="${TABLE_HEIGHT}" class="block cursor-grab active:cursor-grabbing" style="width: ${TABLE_WIDTH}px; height: ${TABLE_HEIGHT}px; touch-action: none; display: block;"></canvas>
           </div>
         </div>
@@ -338,8 +352,20 @@ export class SlingPuckGame implements GameInstance {
     this.renderer = new SlingRenderer(this.canvas);
 
     this.setupEventListeners();
+    this.setupResizeObserver();
     this.handleResize();
+    requestAnimationFrame(() => this.handleResize());
     window.addEventListener('resize', this.handleResize);
+  }
+
+  private setupResizeObserver() {
+    const viewport = document.getElementById('sling-board-viewport');
+    if (viewport && typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.handleResize();
+      });
+      this.resizeObserver.observe(viewport);
+    }
   }
 
   // Responsive Board Scaling (immune to squashing, perfectly centers on mobile and desktop)
@@ -348,12 +374,20 @@ export class SlingPuckGame implements GameInstance {
     const wrapper = document.getElementById('sling-canvas-wrapper');
     if (!viewport || !wrapper) return;
 
-    const availW = Math.max(10, viewport.clientWidth - 8);
-    const availH = Math.max(10, viewport.clientHeight - 8);
+    // Available viewport space with safety margin so the scaled board never touches viewport edges
+    const availW = Math.max(10, viewport.clientWidth - 16);
+    const availH = Math.max(10, viewport.clientHeight - 16);
 
-    const scale = Math.min(availW / TABLE_WIDTH, availH / TABLE_HEIGHT);
+    // Include the 4px border on each side (8px total)
+    const TOTAL_WIDTH = TABLE_WIDTH + 8;
+    const TOTAL_HEIGHT = TABLE_HEIGHT + 8;
+
+    const scale = Math.min(availW / TOTAL_WIDTH, availH / TOTAL_HEIGHT);
     wrapper.style.transform = `scale(${scale})`;
-    wrapper.style.transformOrigin = 'center center';
+
+    if (this.renderer) {
+      this.renderer.updateScale(scale);
+    }
   };
 
   private getTableCoords(clientX: number, clientY: number): { x: number; y: number } {
