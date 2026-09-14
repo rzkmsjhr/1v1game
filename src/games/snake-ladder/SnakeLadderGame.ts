@@ -2,10 +2,10 @@ import confetti from 'canvas-confetti';
 import { GameInstance, GameSession, AppTheme } from '../types';
 import type { NetworkMessage } from '../../network/webrtc-peer';
 import { sounds } from '../../engine/sound';
-import { SnakeLadderEngine, generateBoard } from './snake-ladder-engine';
-import { SnakeLadderRenderer } from './renderers/SnakeLadderRenderer';
+import { SnakeLadderEngine, generateBoard, getTileCoord } from './snake-ladder-engine';
+import { SnakeLadderRenderer, getSnakeBezier, evaluateCubicBezier, getTokenCoord } from './renderers/SnakeLadderRenderer';
 import { SnakeLadderAI } from './ai/snake-ladder-ai';
-import { DiceRoll, PlayerId, BoardConfig } from './snake-ladder-types';
+import { DiceRoll, PlayerId, BoardConfig, Ladder, Snake } from './snake-ladder-types';
 
 interface PipDef {
   x: number;
@@ -149,6 +149,36 @@ export class SnakeLadderGame implements GameInstance {
   private pendingOpponentPos: number | null = null;
   private isRollingDiceAnimation: boolean = false;
   private isAIThinking: boolean = false;
+  private isGameOver: boolean = false;
+
+  // Cached DOM elements
+  private badgePlayerEl: HTMLElement | null = null;
+  private badgeOpponentEl: HTMLElement | null = null;
+  private statusBannerEl: HTMLElement | null = null;
+  private statusTextEl: HTMLElement | null = null;
+  private hintTextEl: HTMLElement | null = null;
+  private btnRollEl: HTMLButtonElement | null = null;
+  private diceFace1El: HTMLElement | null = null;
+  private diceFace2El: HTMLElement | null = null;
+  private diceTotalTextEl: HTMLElement | null = null;
+  private diceDoublesTagEl: HTMLElement | null = null;
+  private boardViewportEl: HTMLElement | null = null;
+  private tokenPlayerEl: SVGGraphicsElement | null = null;
+  private tokenOpponentEl: SVGGraphicsElement | null = null;
+  private tokenPlayerBodyEl: SVGGraphicsElement | null = null;
+  private tokenOpponentBodyEl: SVGGraphicsElement | null = null;
+
+  // Active animation handles
+  private activeHopRaf: number | null = null;
+  private activeDiceInterval: number | null = null;
+
+  // Cached state for zero thrashing
+  private cachedPlayerPos: number = -1;
+  private cachedOpponentPos: number = -1;
+  private cachedStatusText: string = '';
+  private cachedHintText: string = '';
+  private cachedBannerClass: string = '';
+  private cachedBtnDisabled: boolean | null = null;
 
   // Initial Roll Duel state
   private playerDuelD1: number | null = null;
@@ -178,7 +208,7 @@ export class SnakeLadderGame implements GameInstance {
 
     this.render();
     this.setupNetwork();
-    this.updateHUD();
+    this.updateHUD(true);
 
     // If host in online PvP, generate and sync board config
     if (this.session.mode === 'online' && this.session.peer?.role === 'host') {
@@ -195,7 +225,7 @@ export class SnakeLadderGame implements GameInstance {
       this.engine.playerPos = 24;
       this.engine.opponentPos = 18;
       this.lastDice = { d1: 4, d2: 2, total: 6, isDouble: false };
-      this.updateHUD();
+      this.updateHUD(true);
       this.renderBoard();
     }
   }
@@ -203,6 +233,31 @@ export class SnakeLadderGame implements GameInstance {
   public destroy() {
     this.isProcessingMove = false;
     this.isAIThinking = false;
+    this.isRollingDiceAnimation = false;
+    if (this.activeHopRaf !== null) {
+      cancelAnimationFrame(this.activeHopRaf);
+      this.activeHopRaf = null;
+    }
+    if (this.activeDiceInterval !== null) {
+      clearInterval(this.activeDiceInterval);
+      this.activeDiceInterval = null;
+    }
+    window.removeEventListener('beforeunload', this.handleBeforeUnload);
+    this.badgePlayerEl = null;
+    this.badgeOpponentEl = null;
+    this.statusBannerEl = null;
+    this.statusTextEl = null;
+    this.hintTextEl = null;
+    this.btnRollEl = null;
+    this.diceFace1El = null;
+    this.diceFace2El = null;
+    this.diceTotalTextEl = null;
+    this.diceDoublesTagEl = null;
+    this.boardViewportEl = null;
+    this.tokenPlayerEl = null;
+    this.tokenOpponentEl = null;
+    this.tokenPlayerBodyEl = null;
+    this.tokenOpponentBodyEl = null;
     this.container.innerHTML = '';
   }
 
@@ -219,8 +274,8 @@ export class SnakeLadderGame implements GameInstance {
       }
     }
     this.renderBoard();
-    this.updateDiceDisplay(this.lastDice);
-    this.updateHUD();
+    this.updateDiceDisplay(this.lastDice, true);
+    this.updateHUD(true);
   }
 
   // -------------------------------------------------------------
@@ -253,6 +308,9 @@ export class SnakeLadderGame implements GameInstance {
               });
             }
           }
+          if (status === 'disconnected') {
+            this.handleOpponentDisconnected();
+          }
         }
       }
     });
@@ -272,7 +330,21 @@ export class SnakeLadderGame implements GameInstance {
         });
       }
     }
+
+    window.addEventListener('beforeunload', this.handleBeforeUnload);
   }
+
+  private handleOpponentDisconnected() {
+    if (this.session.mode === 'online' && !this.isGameOver) {
+      this.showGameOverModal(true, `${this.opponentName} lost connection or left the match.`);
+    }
+  }
+
+  private handleBeforeUnload = () => {
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+    }
+  };
 
   private handleNetworkMessage(msg: any) {
     switch (msg.type) {
@@ -291,35 +363,58 @@ export class SnakeLadderGame implements GameInstance {
         // Guest receives host's randomized board config without wiping duel state
         this.engine.setBoard(msg.board);
         this.renderBoard();
-        this.updateHUD();
+        this.updateHUD(true);
         break;
       case 'SNAKE_MOVE_COMPLETE':
         if (this.isProcessingMove) {
           this.pendingOpponentPos = msg.finalPos;
         } else {
           this.engine.opponentPos = msg.finalPos;
-          this.renderBoard();
+          this.snapTokensToTiles(this.engine.playerPos, this.engine.opponentPos);
           this.updateHUD();
         }
         break;
-      case 'SNAKE_INITIAL_ROLL':
+      case 'SNAKE_INITIAL_ROLL': {
         this.oppDuelD1 = msg.d1;
         this.oppDuelD2 = msg.d2;
         this.engine.rollInitial('opponent', { d1: msg.d1, d2: msg.d2 });
         sounds.playDiceRoll();
-        this.updateDuelModal();
+        const o1El = document.getElementById('duel-opp-d1');
+        const o2El = document.getElementById('duel-opp-d2');
+        o1El?.classList.add('animate-bounce');
+        o2El?.classList.add('animate-bounce');
+        const oppStart = performance.now();
+        const isDark = this.currentTheme === 'dark';
+        const oppInterval = window.setInterval(() => {
+          const r1 = Math.floor(Math.random() * 6) + 1;
+          const r2 = Math.floor(Math.random() * 6) + 1;
+          if (o1El) o1El.innerHTML = renderDiceFace(r1, isDark);
+          if (o2El) o2El.innerHTML = renderDiceFace(r2, isDark);
+          if (performance.now() - oppStart >= 380) {
+            clearInterval(oppInterval);
+            o1El?.classList.remove('animate-bounce');
+            o2El?.classList.remove('animate-bounce');
+            this.updateDuelModal();
+          }
+        }, 55);
         break;
+      }
       case 'SNAKE_INITIAL_CHOICE':
         this.engine.chooseStartTurn(msg.choice);
         this.hideDuelModal();
-        this.updateHUD();
+        this.updateHUD(true);
         break;
       case 'SNAKE_DICE_ROLL':
-        this.animateAndExecuteMove('opponent', {
-          d1: msg.d1,
-          d2: msg.d2,
-          total: msg.total,
-          isDouble: msg.isDouble
+        this.isRollingDiceAnimation = true;
+        this.updateHUD();
+        this.triggerDiceRollAnimation(msg.d1, msg.d2, this.currentTheme === 'dark', () => {
+          this.isRollingDiceAnimation = false;
+          this.animateAndExecuteMove('opponent', {
+            d1: msg.d1,
+            d2: msg.d2,
+            total: msg.total,
+            isDouble: msg.isDouble
+          });
         });
         break;
       case 'REMATCH_REQUEST':
@@ -483,7 +578,44 @@ export class SnakeLadderGame implements GameInstance {
     `;
 
     this.bindEvents();
+    this.cacheElements();
     this.renderBoard();
+  }
+
+  private cacheElements() {
+    this.boardViewportEl = document.getElementById('sl-board-viewport');
+    this.badgePlayerEl = document.getElementById('badge-player-tile');
+    this.badgeOpponentEl = document.getElementById('badge-opponent-tile');
+    this.statusBannerEl = document.getElementById('sl-status-banner');
+    this.statusTextEl = document.getElementById('sl-status-text');
+    this.hintTextEl = document.getElementById('sl-hint-text');
+    this.btnRollEl = document.getElementById('btn-roll-dice') as HTMLButtonElement | null;
+    this.diceFace1El = document.getElementById('dice-face-1');
+    this.diceFace2El = document.getElementById('dice-face-2');
+    this.diceTotalTextEl = document.getElementById('dice-total-text');
+    this.diceDoublesTagEl = document.getElementById('dice-doubles-tag');
+  }
+
+  private cacheTokenElements() {
+    this.tokenPlayerEl = document.getElementById('token-player-group') as SVGGraphicsElement | null;
+    this.tokenOpponentEl = document.getElementById('token-opponent-group') as SVGGraphicsElement | null;
+    this.tokenPlayerBodyEl = document.getElementById('token-player-body') as SVGGraphicsElement | null;
+    this.tokenOpponentBodyEl = document.getElementById('token-opponent-body') as SVGGraphicsElement | null;
+  }
+
+  private snapTokensToTiles(playerPos: number, opponentPos: number) {
+    if (!this.tokenPlayerEl || !this.tokenOpponentEl) {
+      this.cacheTokenElements();
+    }
+    const pCoord = getTokenCoord('player', playerPos, opponentPos);
+    const oCoord = getTokenCoord('opponent', playerPos, opponentPos);
+
+    if (this.tokenPlayerEl) {
+      this.tokenPlayerEl.setAttribute('transform', `translate(${pCoord.x.toFixed(1)}, ${pCoord.y.toFixed(1)}) scale(1, 1)`);
+    }
+    if (this.tokenOpponentEl) {
+      this.tokenOpponentEl.setAttribute('transform', `translate(${oCoord.x.toFixed(1)}, ${oCoord.y.toFixed(1)}) scale(1, 1)`);
+    }
   }
 
   private bindEvents() {
@@ -509,9 +641,11 @@ export class SnakeLadderGame implements GameInstance {
   }
 
   private renderBoard(highlightTile?: number) {
-    const viewport = document.getElementById('sl-board-viewport');
-    if (!viewport) return;
-    viewport.innerHTML = this.renderer.renderSVG(
+    if (!this.boardViewportEl) {
+      this.boardViewportEl = document.getElementById('sl-board-viewport');
+    }
+    if (!this.boardViewportEl) return;
+    this.boardViewportEl.innerHTML = this.renderer.renderSVG(
       this.engine.board,
       this.engine.playerPos,
       this.engine.opponentPos,
@@ -519,6 +653,195 @@ export class SnakeLadderGame implements GameInstance {
       this.currentTheme,
       highlightTile
     );
+    this.cacheTokenElements();
+  }
+
+  private animateHop(
+    playerId: PlayerId,
+    fromCoord: { x: number; y: number },
+    toCoord: { x: number; y: number },
+    durationMs: number = 120
+  ): Promise<void> {
+    return new Promise(resolve => {
+      if (!this.tokenPlayerEl || !this.tokenOpponentEl) {
+        this.cacheTokenElements();
+      }
+      const el = playerId === 'player' ? this.tokenPlayerEl : this.tokenOpponentEl;
+      if (!el) {
+        resolve();
+        return;
+      }
+
+      const startTime = performance.now();
+      const hopHeight = 24;
+
+      const step = (now: number) => {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / durationMs);
+
+        const currentX = fromCoord.x + (toCoord.x - fromCoord.x) * progress;
+        // Parabolic vertical arc: 4 * p * (1 - p) is 0 at start/end, 1 at midpoint
+        const arc = hopHeight * 4 * progress * (1 - progress);
+        const currentY = fromCoord.y + (toCoord.y - fromCoord.y) * progress - arc;
+
+        // Dynamic squash and stretch:
+        let sx = 1;
+        let sy = 1;
+        if (progress < 0.25) {
+          const t = progress / 0.25;
+          sx = 1 + 0.08 * (1 - t);
+          sy = 1 - 0.08 * (1 - t);
+        } else if (progress >= 0.75) {
+          const t = (progress - 0.75) / 0.25;
+          const squish = Math.sin(t * Math.PI) * 0.12;
+          sx = 1 + squish;
+          sy = 1 - squish;
+        }
+
+        el.setAttribute('transform', `translate(${currentX.toFixed(1)}, ${currentY.toFixed(1)}) scale(${sx.toFixed(2)}, ${sy.toFixed(2)})`);
+
+        if (progress < 1) {
+          this.activeHopRaf = requestAnimationFrame(step);
+        } else {
+          el.setAttribute('transform', `translate(${toCoord.x.toFixed(1)}, ${toCoord.y.toFixed(1)}) scale(1, 1)`);
+          this.activeHopRaf = null;
+          resolve();
+        }
+      };
+
+      this.activeHopRaf = requestAnimationFrame(step);
+    });
+  }
+
+  private animateLadderClimb(
+    playerId: PlayerId,
+    ladder: Ladder,
+    durationMs: number = 550
+  ): Promise<void> {
+    return new Promise(resolve => {
+      if (!this.tokenPlayerEl || !this.tokenOpponentEl) {
+        this.cacheTokenElements();
+      }
+      const el = playerId === 'player' ? this.tokenPlayerEl : this.tokenOpponentEl;
+      if (!el) {
+        resolve();
+        return;
+      }
+      const c1 = getTileCoord(ladder.from);
+      const c2 = getTileCoord(ladder.to);
+      const startTime = performance.now();
+
+      const step = (now: number) => {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / durationMs);
+        const ease = progress < 0.5
+          ? 2 * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+        const currentX = c1.x + (c2.x - c1.x) * ease;
+        const currentY = c1.y + (c2.y - c1.y) * ease;
+        const sway = Math.sin(progress * Math.PI * 6) * 3;
+
+        el.setAttribute('transform', `translate(${(currentX + sway).toFixed(1)}, ${currentY.toFixed(1)}) scale(1.06, 1.06)`);
+
+        if (progress < 1) {
+          this.activeHopRaf = requestAnimationFrame(step);
+        } else {
+          el.setAttribute('transform', `translate(${c2.x.toFixed(1)}, ${c2.y.toFixed(1)}) scale(1, 1)`);
+          this.activeHopRaf = null;
+          resolve();
+        }
+      };
+
+      this.activeHopRaf = requestAnimationFrame(step);
+    });
+  }
+
+  private animateSnakeSlide(
+    playerId: PlayerId,
+    snake: Snake,
+    durationMs: number = 650
+  ): Promise<void> {
+    return new Promise(resolve => {
+      if (!this.tokenPlayerEl || !this.tokenOpponentEl) {
+        this.cacheTokenElements();
+      }
+      const el = playerId === 'player' ? this.tokenPlayerEl : this.tokenOpponentEl;
+      if (!el) {
+        resolve();
+        return;
+      }
+      const bezier = getSnakeBezier(snake);
+      const startTime = performance.now();
+
+      const step = (now: number) => {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / durationMs);
+        const ease = progress < 0.5
+          ? 2 * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+        const pos = evaluateCubicBezier(bezier, ease);
+        const wiggle = Math.sin(progress * Math.PI * 8) * 3;
+
+        el.setAttribute('transform', `translate(${(pos.x + wiggle).toFixed(1)}, ${pos.y.toFixed(1)}) scale(0.95, 0.95)`);
+
+        if (progress < 1) {
+          this.activeHopRaf = requestAnimationFrame(step);
+        } else {
+          el.setAttribute('transform', `translate(${bezier.p3.x.toFixed(1)}, ${bezier.p3.y.toFixed(1)}) scale(1, 1)`);
+          this.activeHopRaf = null;
+          resolve();
+        }
+      };
+
+      this.activeHopRaf = requestAnimationFrame(step);
+    });
+  }
+
+  private triggerDiceRollAnimation(
+    d1Final: number,
+    d2Final: number,
+    isDark: boolean,
+    onComplete: () => void
+  ) {
+    const d1El = this.diceFace1El || document.getElementById('dice-face-1');
+    const d2El = this.diceFace2El || document.getElementById('dice-face-2');
+    if (!d1El || !d2El) {
+      onComplete();
+      return;
+    }
+
+    sounds.playDiceRoll();
+    d1El.classList.add('animate-bounce');
+    d2El.classList.add('animate-bounce');
+
+    if (this.activeDiceInterval !== null) {
+      clearInterval(this.activeDiceInterval);
+      this.activeDiceInterval = null;
+    }
+
+    const startTime = performance.now();
+    const duration = 380; // ms
+
+    this.activeDiceInterval = window.setInterval(() => {
+      const r1 = Math.floor(Math.random() * 6) + 1;
+      const r2 = Math.floor(Math.random() * 6) + 1;
+      d1El.innerHTML = renderDiceFace(r1, isDark);
+      d2El.innerHTML = renderDiceFace(r2, isDark);
+
+      if (performance.now() - startTime >= duration) {
+        if (this.activeDiceInterval !== null) {
+          clearInterval(this.activeDiceInterval);
+          this.activeDiceInterval = null;
+        }
+        d1El.classList.remove('animate-bounce');
+        d2El.classList.remove('animate-bounce');
+        d1El.innerHTML = renderDiceFace(d1Final, isDark);
+        d2El.innerHTML = renderDiceFace(d2Final, isDark);
+        onComplete();
+      }
+    }, 55);
   }
 
   // -------------------------------------------------------------
@@ -535,39 +858,66 @@ export class SnakeLadderGame implements GameInstance {
     d1El?.classList.add('animate-bounce');
     d2El?.classList.add('animate-bounce');
 
-    setTimeout(() => {
-      d1El?.classList.remove('animate-bounce');
-      d2El?.classList.remove('animate-bounce');
+    const roll = this.engine.rollInitial('player');
+    this.playerDuelD1 = roll.d1;
+    this.playerDuelD2 = roll.d2;
 
-      const roll = this.engine.rollInitial('player');
-      this.playerDuelD1 = roll.d1;
-      this.playerDuelD2 = roll.d2;
-      this.isDuelRolling = false;
+    // Sync to peer immediately
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({
+        type: 'SNAKE_INITIAL_ROLL',
+        d1: roll.d1,
+        d2: roll.d2,
+        total: roll.total
+      });
+    }
 
-      // Sync to peer if online
-      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
-        this.session.peer.sendMessage({
-          type: 'SNAKE_INITIAL_ROLL',
-          d1: roll.d1,
-          d2: roll.d2,
-          total: roll.total
-        });
+    const isDark = this.currentTheme === 'dark';
+    const startTime = performance.now();
+    const duration = 380;
+
+    const intervalId = window.setInterval(() => {
+      const r1 = Math.floor(Math.random() * 6) + 1;
+      const r2 = Math.floor(Math.random() * 6) + 1;
+      if (d1El) d1El.innerHTML = renderDiceFace(r1, isDark);
+      if (d2El) d2El.innerHTML = renderDiceFace(r2, isDark);
+
+      if (performance.now() - startTime >= duration) {
+        clearInterval(intervalId);
+        d1El?.classList.remove('animate-bounce');
+        d2El?.classList.remove('animate-bounce');
+        this.isDuelRolling = false;
+        this.updateDuelModal();
+
+        // If AI, AI rolls its dice after delay
+        if (this.session.mode === 'ai') {
+          const delay = this.ai?.getThinkingDelay() || 700;
+          setTimeout(() => {
+            const aiRoll = this.engine.rollInitial('opponent');
+            this.oppDuelD1 = aiRoll.d1;
+            this.oppDuelD2 = aiRoll.d2;
+            sounds.playDiceRoll();
+            const o1El = document.getElementById('duel-opp-d1');
+            const o2El = document.getElementById('duel-opp-d2');
+            o1El?.classList.add('animate-bounce');
+            o2El?.classList.add('animate-bounce');
+            const aiStart = performance.now();
+            const aiInterval = window.setInterval(() => {
+              const ar1 = Math.floor(Math.random() * 6) + 1;
+              const ar2 = Math.floor(Math.random() * 6) + 1;
+              if (o1El) o1El.innerHTML = renderDiceFace(ar1, isDark);
+              if (o2El) o2El.innerHTML = renderDiceFace(ar2, isDark);
+              if (performance.now() - aiStart >= 380) {
+                clearInterval(aiInterval);
+                o1El?.classList.remove('animate-bounce');
+                o2El?.classList.remove('animate-bounce');
+                this.updateDuelModal();
+              }
+            }, 55);
+          }, delay);
+        }
       }
-
-      // If AI, AI rolls its dice after delay
-      if (this.session.mode === 'ai') {
-        const delay = this.ai?.getThinkingDelay() || 700;
-        setTimeout(() => {
-          const aiRoll = this.engine.rollInitial('opponent');
-          this.oppDuelD1 = aiRoll.d1;
-          this.oppDuelD2 = aiRoll.d2;
-          sounds.playDiceRoll();
-          this.updateDuelModal();
-        }, delay);
-      }
-
-      this.updateDuelModal();
-    }, 450);
+    }, 55);
   }
 
   private updateDuelModal() {
@@ -729,35 +1079,25 @@ export class SnakeLadderGame implements GameInstance {
       return;
     }
 
+    const roll = this.engine.rollDice();
     this.isRollingDiceAnimation = true;
     this.updateHUD();
-    sounds.playDiceRoll();
 
-    const d1El = document.getElementById('dice-face-1');
-    const d2El = document.getElementById('dice-face-2');
-    d1El?.classList.add('animate-bounce');
-    d2El?.classList.add('animate-bounce');
+    // Broadcast immediately so peer receives roll while dice are tumbling
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({
+        type: 'SNAKE_DICE_ROLL',
+        d1: roll.d1,
+        d2: roll.d2,
+        total: roll.total,
+        isDouble: roll.isDouble
+      });
+    }
 
-    const roll = this.engine.rollDice();
-
-    setTimeout(() => {
-      d1El?.classList.remove('animate-bounce');
-      d2El?.classList.remove('animate-bounce');
+    this.triggerDiceRollAnimation(roll.d1, roll.d2, this.currentTheme === 'dark', () => {
       this.isRollingDiceAnimation = false;
-
-      // Broadcast to peer if online
-      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
-        this.session.peer.sendMessage({
-          type: 'SNAKE_DICE_ROLL',
-          d1: roll.d1,
-          d2: roll.d2,
-          total: roll.total,
-          isDouble: roll.isDouble
-        });
-      }
-
       this.animateAndExecuteMove('player', roll);
-    }, 450);
+    });
   }
 
   private processAITurn() {
@@ -781,25 +1121,15 @@ export class SnakeLadderGame implements GameInstance {
         return;
       }
 
+      const roll = this.engine.rollDice();
+      this.isAIThinking = false;
       this.isRollingDiceAnimation = true;
       this.updateHUD();
-      sounds.playDiceRoll();
 
-      const d1El = document.getElementById('dice-face-1');
-      const d2El = document.getElementById('dice-face-2');
-      d1El?.classList.add('animate-bounce');
-      d2El?.classList.add('animate-bounce');
-
-      const roll = this.engine.rollDice();
-
-      setTimeout(() => {
-        d1El?.classList.remove('animate-bounce');
-        d2El?.classList.remove('animate-bounce');
+      this.triggerDiceRollAnimation(roll.d1, roll.d2, this.currentTheme === 'dark', () => {
         this.isRollingDiceAnimation = false;
-        this.isAIThinking = false;
-
         this.animateAndExecuteMove('opponent', roll);
-      }, 450);
+      });
     }, delay);
   }
 
@@ -810,47 +1140,55 @@ export class SnakeLadderGame implements GameInstance {
 
     const result = this.engine.executeMove(playerId, dice);
 
-    // Animate step-by-step hopping
+    // Animate step-by-step 60fps hopping
     const startTile = result.from;
     const normalSteps = result.steps.filter(s => s.type === 'step' || s.type === 'bounce');
 
     let runningPos = startTile;
+    const otherPos = playerId === 'player' ? this.engine.opponentPos : this.engine.playerPos;
+
     for (const st of normalSteps) {
-      runningPos = st.tile;
+      const nextTile = st.tile;
+      const fromCoord = runningPos === startTile
+        ? getTokenCoord(playerId, runningPos, otherPos)
+        : getTileCoord(runningPos);
+      const toCoord = getTileCoord(nextTile);
+
+      await this.animateHop(playerId, fromCoord, toCoord, 120);
+      sounds.playStep();
+      runningPos = nextTile;
+
       if (playerId === 'player') {
         this.engine.playerPos = runningPos;
       } else {
         this.engine.opponentPos = runningPos;
       }
-      sounds.playStep();
-      this.renderBoard(runningPos);
       this.updateHUD();
-      await this.sleep(130);
     }
 
     // Check ladder or snake climax
     if (result.hitLadder) {
-      await this.sleep(250);
+      await this.sleep(180);
       sounds.playLadderClimb();
+      await this.animateLadderClimb(playerId, result.hitLadder, 550);
       if (playerId === 'player') {
         this.engine.playerPos = result.hitLadder.to;
       } else {
         this.engine.opponentPos = result.hitLadder.to;
       }
-      this.renderBoard(result.hitLadder.to);
       this.updateHUD();
-      await this.sleep(400);
+      await this.sleep(180);
     } else if (result.hitSnake) {
-      await this.sleep(250);
+      await this.sleep(180);
       sounds.playSnakeSlide();
+      await this.animateSnakeSlide(playerId, result.hitSnake, 650);
       if (playerId === 'player') {
         this.engine.playerPos = result.hitSnake.to;
       } else {
         this.engine.opponentPos = result.hitSnake.to;
       }
-      this.renderBoard(result.hitSnake.to);
       this.updateHUD();
-      await this.sleep(400);
+      await this.sleep(180);
     }
 
     this.isProcessingMove = false;
@@ -858,7 +1196,8 @@ export class SnakeLadderGame implements GameInstance {
       this.engine.opponentPos = this.pendingOpponentPos;
       this.pendingOpponentPos = null;
     }
-    this.renderBoard();
+
+    this.snapTokensToTiles(this.engine.playerPos, this.engine.opponentPos);
     this.updateHUD();
 
     if (playerId === 'player' && this.session.mode === 'online' && this.session.peer?.isConnected) {
@@ -870,6 +1209,7 @@ export class SnakeLadderGame implements GameInstance {
 
     // Check game over
     if (result.won) {
+      this.isGameOver = true;
       sounds.playFanfare();
       confetti({
         particleCount: 80,
@@ -900,15 +1240,15 @@ export class SnakeLadderGame implements GameInstance {
   // -------------------------------------------------------------
   // HUD UPDATES & CONTROLS
   // -------------------------------------------------------------
-  private updateDiceDisplay(dice: DiceRoll) {
+  private updateDiceDisplay(dice: DiceRoll, force: boolean = false) {
     const isDark = this.currentTheme === 'dark';
-    const d1El = document.getElementById('dice-face-1');
-    const d2El = document.getElementById('dice-face-2');
-    const totalEl = document.getElementById('dice-total-text');
-    const doublesTag = document.getElementById('dice-doubles-tag');
+    const d1El = this.diceFace1El || document.getElementById('dice-face-1');
+    const d2El = this.diceFace2El || document.getElementById('dice-face-2');
+    const totalEl = this.diceTotalTextEl || document.getElementById('dice-total-text');
+    const doublesTag = this.diceDoublesTagEl || document.getElementById('dice-doubles-tag');
 
-    if (d1El) d1El.innerHTML = renderDiceFace(dice.d1, isDark);
-    if (d2El) d2El.innerHTML = renderDiceFace(dice.d2, isDark);
+    if (d1El && (force || !this.isRollingDiceAnimation)) d1El.innerHTML = renderDiceFace(dice.d1, isDark);
+    if (d2El && (force || !this.isRollingDiceAnimation)) d2El.innerHTML = renderDiceFace(dice.d2, isDark);
     if (totalEl) totalEl.textContent = `TOTAL: ${dice.total}`;
 
     if (doublesTag) {
@@ -923,16 +1263,42 @@ export class SnakeLadderGame implements GameInstance {
     }
   }
 
-  private updateHUD() {
-    const statusBanner = document.getElementById('sl-status-banner');
-    const statusText = document.getElementById('sl-status-text');
-    const hintText = document.getElementById('sl-hint-text');
-    const btnRoll = document.getElementById('btn-roll-dice') as HTMLButtonElement | null;
-    const badgePlayer = document.getElementById('badge-player-tile');
-    const badgeOpponent = document.getElementById('badge-opponent-tile');
+  private updateHUD(force: boolean = false) {
+    const statusBanner = this.statusBannerEl || document.getElementById('sl-status-banner');
+    const statusText = this.statusTextEl || document.getElementById('sl-status-text');
+    const hintText = this.hintTextEl || document.getElementById('sl-hint-text');
+    const btnRoll = this.btnRollEl || (document.getElementById('btn-roll-dice') as HTMLButtonElement | null);
+    const badgePlayer = this.badgePlayerEl || document.getElementById('badge-player-tile');
+    const badgeOpponent = this.badgeOpponentEl || document.getElementById('badge-opponent-tile');
 
-    if (badgePlayer) badgePlayer.textContent = `TILE ${this.engine.playerPos}`;
-    if (badgeOpponent) badgeOpponent.textContent = `TILE ${this.engine.opponentPos}`;
+    const pPos = this.engine.playerPos;
+    const oPos = this.engine.opponentPos;
+
+    if (badgePlayer && (force || pPos !== this.cachedPlayerPos)) {
+      this.cachedPlayerPos = pPos;
+      badgePlayer.textContent = `TILE ${pPos}`;
+    }
+    if (badgeOpponent && (force || oPos !== this.cachedOpponentPos)) {
+      this.cachedOpponentPos = oPos;
+      badgeOpponent.textContent = `TILE ${oPos}`;
+    }
+
+    // Update token glow filter directly on persistent elements
+    const isPlayerTurn = this.engine.currentTurn === 'player';
+    if (this.tokenPlayerBodyEl) {
+      if (isPlayerTurn) {
+        this.tokenPlayerBodyEl.setAttribute('filter', 'url(#token-glow-player)');
+      } else {
+        this.tokenPlayerBodyEl.removeAttribute('filter');
+      }
+    }
+    if (this.tokenOpponentBodyEl) {
+      if (!isPlayerTurn) {
+        this.tokenOpponentBodyEl.setAttribute('filter', 'url(#token-glow-opp)');
+      } else {
+        this.tokenOpponentBodyEl.removeAttribute('filter');
+      }
+    }
 
     if (this.engine.phase === 'ROLL_FOR_START' || this.engine.phase === 'START_CHOICE') {
       if (statusBanner) {
@@ -955,41 +1321,62 @@ export class SnakeLadderGame implements GameInstance {
     const isMyTurn = this.engine.currentTurn === 'player';
 
     if (statusBanner) {
-      statusBanner.className = isMyTurn
+      const bannerClass = isMyTurn
         ? 'flex-1 max-w-[180px] sm:max-w-[260px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-emerald-600/15 border border-emerald-500/30 text-center mx-auto'
         : 'flex-1 max-w-[180px] sm:max-w-[260px] flex flex-col items-center px-2 py-0.5 rounded-xl bg-rose-600/15 border border-rose-500/30 text-center mx-auto';
+      if (force || bannerClass !== this.cachedBannerClass) {
+        this.cachedBannerClass = bannerClass;
+        statusBanner.className = bannerClass;
+      }
     }
 
     if (statusText) {
+      let text = '';
       if (this.isProcessingMove) {
-        statusText.textContent = isMyTurn ? 'MOVING...' : `${this.opponentName.toUpperCase()} MOVING...`;
-      } else if (this.isAIThinking) {
-        statusText.textContent = `${this.opponentName.toUpperCase()} ROLLING...`;
+        text = isMyTurn ? 'MOVING...' : `${this.opponentName.toUpperCase()} MOVING...`;
+      } else if (this.isAIThinking || (this.isRollingDiceAnimation && !isMyTurn)) {
+        text = `${this.opponentName.toUpperCase()} ROLLING...`;
+      } else if (this.isRollingDiceAnimation && isMyTurn) {
+        text = 'ROLLING...';
       } else {
-        statusText.textContent = isMyTurn ? 'YOUR TURN' : `${this.opponentName.toUpperCase()}'S TURN`;
+        text = isMyTurn ? 'YOUR TURN' : `${this.opponentName.toUpperCase()}'S TURN`;
       }
-      statusText.className = isMyTurn
-        ? 'text-[11px] sm:text-xs md:text-sm font-black tracking-wide text-emerald-600 dark:text-emerald-400 uppercase truncate w-full'
-        : 'text-[11px] sm:text-xs md:text-sm font-black tracking-wide text-rose-600 dark:text-rose-400 uppercase truncate w-full';
+
+      if (force || text !== this.cachedStatusText) {
+        this.cachedStatusText = text;
+        statusText.textContent = text;
+        statusText.className = isMyTurn
+          ? 'text-[11px] sm:text-xs md:text-sm font-black tracking-wide text-emerald-600 dark:text-emerald-400 uppercase truncate w-full'
+          : 'text-[11px] sm:text-xs md:text-sm font-black tracking-wide text-rose-600 dark:text-rose-400 uppercase truncate w-full';
+      }
     }
 
     if (hintText) {
+      let hint = '';
       if (this.engine.consecutiveDoubles > 0) {
-        hintText.textContent = isMyTurn ? 'Rolled doubles! Roll again!' : `${this.opponentName} rolled doubles!`;
+        hint = isMyTurn ? 'Rolled doubles! Roll again!' : `${this.opponentName} rolled doubles!`;
       } else {
-        hintText.textContent = isMyTurn ? 'Roll both dice to advance' : `Waiting for ${this.opponentName}...`;
+        hint = isMyTurn ? 'Roll both dice to advance' : `Waiting for ${this.opponentName}...`;
+      }
+      if (force || hint !== this.cachedHintText) {
+        this.cachedHintText = hint;
+        hintText.textContent = hint;
       }
     }
 
     if (btnRoll) {
       const canRoll = isMyTurn && !this.isProcessingMove && !this.isRollingDiceAnimation && this.engine.phase === 'PLAYING';
-      btnRoll.disabled = !canRoll;
-      if (canRoll) {
-        btnRoll.classList.remove('opacity-50', 'cursor-not-allowed');
-        btnRoll.classList.add('cursor-pointer');
-      } else {
-        btnRoll.classList.add('opacity-50', 'cursor-not-allowed');
-        btnRoll.classList.remove('cursor-pointer');
+      const shouldDisable = !canRoll;
+      if (force || shouldDisable !== this.cachedBtnDisabled) {
+        this.cachedBtnDisabled = shouldDisable;
+        btnRoll.disabled = shouldDisable;
+        if (canRoll) {
+          btnRoll.classList.remove('opacity-50', 'cursor-not-allowed');
+          btnRoll.classList.add('cursor-pointer');
+        } else {
+          btnRoll.classList.add('opacity-50', 'cursor-not-allowed');
+          btnRoll.classList.remove('cursor-pointer');
+        }
       }
     }
   }

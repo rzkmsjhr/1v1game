@@ -2,6 +2,86 @@ import { BoardConfig, Ladder, Snake } from '../snake-ladder-types';
 import { getTileCoord } from '../snake-ladder-engine';
 import { AppTheme } from '../../types';
 
+export interface SnakeBezier {
+  p0: { x: number; y: number };
+  p1: { x: number; y: number };
+  p2: { x: number; y: number };
+  p3: { x: number; y: number };
+}
+
+export function getSnakeBezier(snake: Snake): SnakeBezier {
+  const head = getTileCoord(snake.from);
+  const tail = getTileCoord(snake.to);
+
+  const vx = tail.x - head.x;
+  const vy = tail.y - head.y;
+  const len = Math.sqrt(vx * vx + vy * vy);
+  if (len === 0) {
+    return {
+      p0: { x: head.x, y: head.y },
+      p1: { x: head.x, y: head.y },
+      p2: { x: tail.x, y: tail.y },
+      p3: { x: tail.x, y: tail.y }
+    };
+  }
+
+  const ux = vx / len;
+  const uy = vy / len;
+  const nx = -uy;
+  const ny = ux;
+
+  // Organic S-curve wave displacement matching original snake styling
+  const sign = snake.id % 2 === 0 ? 1 : -1;
+  const waveAmp = Math.min(48, Math.max(26, len * 0.14)) * sign;
+
+  const cp1x = head.x + vx * 0.32 + nx * waveAmp;
+  const cp1y = head.y + vy * 0.32 + ny * waveAmp;
+  const cp2x = head.x + vx * 0.68 - nx * waveAmp;
+  const cp2y = head.y + vy * 0.68 - ny * waveAmp;
+
+  return {
+    p0: { x: head.x, y: head.y },
+    p1: { x: cp1x, y: cp1y },
+    p2: { x: cp2x, y: cp2y },
+    p3: { x: tail.x, y: tail.y }
+  };
+}
+
+export function evaluateCubicBezier(b: SnakeBezier, t: number): { x: number; y: number } {
+  const mt = 1 - t;
+  const mt2 = mt * mt;
+  const mt3 = mt2 * mt;
+  const t2 = t * t;
+  const t3 = t2 * t;
+
+  const x = mt3 * b.p0.x + 3 * mt2 * t * b.p1.x + 3 * mt * t2 * b.p2.x + t3 * b.p3.x;
+  const y = mt3 * b.p0.y + 3 * mt2 * t * b.p1.y + 3 * mt * t2 * b.p2.y + t3 * b.p3.y;
+
+  return { x, y };
+}
+
+export function getTokenCoord(
+  playerId: 'player' | 'opponent',
+  playerPos: number,
+  opponentPos: number
+): { x: number; y: number } {
+  const pCoord = getTileCoord(playerPos);
+  const oCoord = getTileCoord(opponentPos);
+  const sameTile = playerPos === opponentPos;
+
+  if (playerId === 'player') {
+    return {
+      x: sameTile ? pCoord.x - 17 : pCoord.x,
+      y: sameTile ? pCoord.y - 12 : pCoord.y
+    };
+  } else {
+    return {
+      x: sameTile ? oCoord.x + 17 : oCoord.x,
+      y: sameTile ? oCoord.y + 12 : oCoord.y
+    };
+  }
+}
+
 export class SnakeLadderRenderer {
   public renderSVG(
     board: BoardConfig,
@@ -244,29 +324,8 @@ export class SnakeLadderRenderer {
   }
 
   private renderSnake(snake: Snake): string {
-    const head = getTileCoord(snake.from);
-    const tail = getTileCoord(snake.to);
-
-    const vx = tail.x - head.x;
-    const vy = tail.y - head.y;
-    const len = Math.sqrt(vx * vx + vy * vy);
-    if (len === 0) return '';
-
-    const ux = vx / len;
-    const uy = vy / len;
-    const nx = -uy;
-    const ny = ux;
-
-    // Organic S-curve wave displacement
-    const sign = snake.id % 2 === 0 ? 1 : -1;
-    const waveAmp = Math.min(48, Math.max(26, len * 0.14)) * sign;
-
-    const cp1x = head.x + vx * 0.32 + nx * waveAmp;
-    const cp1y = head.y + vy * 0.32 + ny * waveAmp;
-    const cp2x = head.x + vx * 0.68 - nx * waveAmp;
-    const cp2y = head.y + vy * 0.68 - ny * waveAmp;
-
-    const pathData = `M ${head.x} ${head.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${tail.x} ${tail.y}`;
+    const b = getSnakeBezier(snake);
+    const pathData = `M ${b.p0.x} ${b.p0.y} C ${b.p1.x} ${b.p1.y}, ${b.p2.x} ${b.p2.y}, ${b.p3.x} ${b.p3.y}`;
 
     // Select color palette
     const colors = [
@@ -277,7 +336,7 @@ export class SnakeLadderRenderer {
     const palette = colors[snake.id % colors.length];
 
     // Head angle calculation (tangent at start of Bézier curve: cp1 - head)
-    const angleHead = Math.atan2(cp1y - head.y, cp1x - head.x);
+    const angleHead = Math.atan2(b.p1.y - b.p0.y, b.p1.x - b.p0.x);
 
     return `
       <g id="snake-${snake.id}">
@@ -294,7 +353,7 @@ export class SnakeLadderRenderer {
         <path d="${pathData}" fill="none" stroke="${palette.pattern}" stroke-width="3" stroke-dasharray="6 7" stroke-linecap="round" opacity="0.85" />
 
         <!-- Snake Head (Circle + Eyes + Tongue) -->
-        <g transform="translate(${head.x}, ${head.y}) rotate(${(angleHead * 180) / Math.PI})">
+        <g transform="translate(${b.p0.x}, ${b.p0.y}) rotate(${(angleHead * 180) / Math.PI})">
           <!-- Flicking Red Forked Tongue -->
           <path d="M 12 0 L 22 -3 M 12 0 L 22 3" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" />
           
@@ -310,85 +369,83 @@ export class SnakeLadderRenderer {
         </g>
 
         <!-- Head Drop Badge (-X Drop) -->
-        <circle cx="${head.x}" cy="${head.y - 24}" r="13" fill="#dc2626" stroke="#ffffff" stroke-width="2" />
-        <text x="${head.x}" y="${head.y - 20}" font-size="10" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" fill="#ffffff">-${snake.length}</text>
+        <circle cx="${b.p0.x}" cy="${b.p0.y - 24}" r="13" fill="#dc2626" stroke="#ffffff" stroke-width="2" />
+        <text x="${b.p0.x}" y="${b.p0.y - 20}" font-size="10" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" fill="#ffffff">-${snake.length}</text>
       </g>
     `;
   }
 
   private renderTokens(playerPos: number, opponentPos: number, currentTurn: 'player' | 'opponent'): string {
-    const pCoord = getTileCoord(playerPos);
-    const oCoord = getTileCoord(opponentPos);
-
-    // Offset tokens if sharing the exact same tile
-    const sameTile = playerPos === opponentPos;
-    const px = sameTile ? pCoord.x - 17 : pCoord.x;
-    const py = sameTile ? pCoord.y - 12 : pCoord.y;
-
-    const ox = sameTile ? oCoord.x + 17 : oCoord.x;
-    const oy = sameTile ? oCoord.y + 12 : oCoord.y;
+    const pCoord = getTokenCoord('player', playerPos, opponentPos);
+    const oCoord = getTokenCoord('opponent', playerPos, opponentPos);
 
     const pGlow = currentTurn === 'player' ? 'filter="url(#token-glow-player)"' : '';
     const oGlow = currentTurn === 'opponent' ? 'filter="url(#token-glow-opp)"' : '';
 
     return `
-      <!-- Player Marker (Blue) Breathing Aura Waves -->
-      <g id="token-player-aura" pointer-events="none">
-        <circle cx="${px}" cy="${py}" r="21" fill="none" stroke="#60a5fa" stroke-width="3" opacity="0.8">
-          <animate attributeName="r" values="21;35;21" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
-          <animate attributeName="opacity" values="0.85;0.05;0.85" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
-          <animate attributeName="stroke-width" values="3.5;0.5;3.5" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
-        </circle>
-        <circle cx="${px}" cy="${py}" r="21" fill="rgba(59, 130, 246, 0.22)">
-          <animate attributeName="r" values="21;29;21" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
-          <animate attributeName="opacity" values="0.75;0.15;0.75" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
-        </circle>
-      </g>
+      <!-- Player Token (Blue) Group -->
+      <g id="token-player-group" transform="translate(${pCoord.x}, ${pCoord.y})" style="will-change: transform;">
+        <!-- Player Breathing Aura Waves -->
+        <g id="token-player-aura" pointer-events="none">
+          <circle cx="0" cy="0" r="21" fill="none" stroke="#60a5fa" stroke-width="3" opacity="0.8">
+            <animate attributeName="r" values="21;35;21" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+            <animate attributeName="opacity" values="0.85;0.05;0.85" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+            <animate attributeName="stroke-width" values="3.5;0.5;3.5" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+          </circle>
+          <circle cx="0" cy="0" r="21" fill="rgba(59, 130, 246, 0.22)">
+            <animate attributeName="r" values="21;29;21" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+            <animate attributeName="opacity" values="0.75;0.15;0.75" dur="2.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+          </circle>
+        </g>
 
-      <!-- Player Token (Blue) Body -->
-      <g id="token-player" class="transition-all duration-300 ease-out" ${pGlow}>
-        <!-- Breathing Scale Container -->
-        <g transform="translate(${px}, ${py})">
-          <animateTransform attributeName="transform" type="scale" values="1;1.08;1" dur="2.4s" repeatCount="indefinite" additive="sum" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
-          <!-- Drop Shadow -->
-          <ellipse cx="2" cy="4" rx="20" ry="12" fill="rgba(0,0,0,0.4)" />
-          <!-- Base 3D Sphere -->
-          <circle cx="0" cy="0" r="21" fill="url(#grad-token-player)" stroke="#ffffff" stroke-width="2.5" />
-          <!-- White Ring Badge -->
-          <circle cx="0" cy="0" r="12" fill="#ffffff" opacity="0.9" />
-          <text x="0" y="4.5" font-size="12" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" fill="#1e3a8a">YOU</text>
-          <!-- Specular Highlight -->
-          <ellipse cx="-6" cy="-7" rx="6.5" ry="3.5" fill="#ffffff" opacity="0.55" transform="rotate(-30 -6 -7)" />
+        <!-- Player Body -->
+        <g id="token-player-body" ${pGlow}>
+          <!-- Breathing Scale Container -->
+          <g>
+            <animateTransform attributeName="transform" type="scale" values="1;1.08;1" dur="2.4s" repeatCount="indefinite" additive="sum" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+            <!-- Drop Shadow -->
+            <ellipse cx="2" cy="4" rx="20" ry="12" fill="rgba(0,0,0,0.4)" />
+            <!-- Base 3D Sphere -->
+            <circle cx="0" cy="0" r="21" fill="url(#grad-token-player)" stroke="#ffffff" stroke-width="2.5" />
+            <!-- White Ring Badge -->
+            <circle cx="0" cy="0" r="12" fill="#ffffff" opacity="0.9" />
+            <text x="0" y="4.5" font-size="12" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" fill="#1e3a8a">YOU</text>
+            <!-- Specular Highlight -->
+            <ellipse cx="-6" cy="-7" rx="6.5" ry="3.5" fill="#ffffff" opacity="0.55" transform="rotate(-30 -6 -7)" />
+          </g>
         </g>
       </g>
 
-      <!-- Opponent Marker (Rose/Red) Breathing Aura Waves -->
-      <g id="token-opp-aura" pointer-events="none">
-        <circle cx="${ox}" cy="${oy}" r="21" fill="none" stroke="#fb7185" stroke-width="3" opacity="0.8">
-          <animate attributeName="r" values="21;35;21" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
-          <animate attributeName="opacity" values="0.85;0.05;0.85" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
-          <animate attributeName="stroke-width" values="3.5;0.5;3.5" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
-        </circle>
-        <circle cx="${ox}" cy="${oy}" r="21" fill="rgba(244, 63, 94, 0.22)">
-          <animate attributeName="r" values="21;29;21" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
-          <animate attributeName="opacity" values="0.75;0.15;0.75" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
-        </circle>
-      </g>
+      <!-- Opponent Token (Rose/Red) Group -->
+      <g id="token-opponent-group" transform="translate(${oCoord.x}, ${oCoord.y})" style="will-change: transform;">
+        <!-- Opponent Breathing Aura Waves -->
+        <g id="token-opp-aura" pointer-events="none">
+          <circle cx="0" cy="0" r="21" fill="none" stroke="#fb7185" stroke-width="3" opacity="0.8">
+            <animate attributeName="r" values="21;35;21" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+            <animate attributeName="opacity" values="0.85;0.05;0.85" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+            <animate attributeName="stroke-width" values="3.5;0.5;3.5" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+          </circle>
+          <circle cx="0" cy="0" r="21" fill="rgba(244, 63, 94, 0.22)">
+            <animate attributeName="r" values="21;29;21" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+            <animate attributeName="opacity" values="0.75;0.15;0.75" dur="2.4s" begin="0.4s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+          </circle>
+        </g>
 
-      <!-- Opponent Token (Rose/Red) Body -->
-      <g id="token-opponent" class="transition-all duration-300 ease-out" ${oGlow}>
-        <!-- Breathing Scale Container -->
-        <g transform="translate(${ox}, ${oy})">
-          <animateTransform attributeName="transform" type="scale" values="1;1.08;1" dur="2.4s" begin="0.4s" repeatCount="indefinite" additive="sum" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
-          <!-- Drop Shadow -->
-          <ellipse cx="2" cy="4" rx="20" ry="12" fill="rgba(0,0,0,0.4)" />
-          <!-- Base 3D Sphere -->
-          <circle cx="0" cy="0" r="21" fill="url(#grad-token-opp)" stroke="#ffffff" stroke-width="2.5" />
-          <!-- White Ring Badge -->
-          <circle cx="0" cy="0" r="12" fill="#ffffff" opacity="0.9" />
-          <text x="0" y="4.5" font-size="12" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" fill="#881337">OPP</text>
-          <!-- Specular Highlight -->
-          <ellipse cx="-6" cy="-7" rx="6.5" ry="3.5" fill="#ffffff" opacity="0.55" transform="rotate(-30 -6 -7)" />
+        <!-- Opponent Body -->
+        <g id="token-opponent-body" ${oGlow}>
+          <!-- Breathing Scale Container -->
+          <g>
+            <animateTransform attributeName="transform" type="scale" values="1;1.08;1" dur="2.4s" begin="0.4s" repeatCount="indefinite" additive="sum" calcMode="spline" keySplines="0.4 0 0.2 1; 0.4 0 0.2 1" />
+            <!-- Drop Shadow -->
+            <ellipse cx="2" cy="4" rx="20" ry="12" fill="rgba(0,0,0,0.4)" />
+            <!-- Base 3D Sphere -->
+            <circle cx="0" cy="0" r="21" fill="url(#grad-token-opp)" stroke="#ffffff" stroke-width="2.5" />
+            <!-- White Ring Badge -->
+            <circle cx="0" cy="0" r="12" fill="#ffffff" opacity="0.9" />
+            <text x="0" y="4.5" font-size="12" font-weight="900" font-family="'Plus Jakarta Sans', system-ui, sans-serif" text-anchor="middle" fill="#881337">OPP</text>
+            <!-- Specular Highlight -->
+            <ellipse cx="-6" cy="-7" rx="6.5" ry="3.5" fill="#ffffff" opacity="0.55" transform="rotate(-30 -6 -7)" />
+          </g>
         </g>
       </g>
     `;
