@@ -2,6 +2,7 @@ import { GAMES_REGISTRY } from './games/registry';
 import type { GameDefinition, GameInstance, AIDifficulty, AppTheme } from './games/types';
 import { WebRTCPeer } from './network/webrtc-peer';
 import { sounds } from './engine/sound';
+import { wakeLock } from './engine/wake-lock';
 
 // Fallback in-memory storage for Incognito / Private browsing modes
 const memoryStorage = new Map<string, string>();
@@ -133,6 +134,7 @@ class ConsoleDashboard {
   // -------------------------------------------------------------
 
   public renderDashboard() {
+    wakeLock.release();
     this.activeGameInstance?.destroy();
     this.activeGameInstance = null;
     this.peer?.cleanup();
@@ -547,6 +549,7 @@ class ConsoleDashboard {
   // -------------------------------------------------------------
 
   private launchGame(gameDef: GameDefinition, mode: 'ai' | 'online', peer?: WebRTCPeer) {
+    wakeLock.request();
     this.appContainer.innerHTML = `
       <div id="arena-container" class="w-full min-h-screen flex flex-col items-center justify-between md:justify-start px-1 sm:px-4 py-1 sm:py-2 select-none">
         <!-- Game mounts here -->
@@ -563,6 +566,7 @@ class ConsoleDashboard {
       theme: this.currentTheme,
       gameVariant: effectiveVariant,
       onExit: () => {
+        wakeLock.release();
         this.peer?.cleanup();
         this.roomCode = null;
         this.invitedRoomCode = null;
@@ -572,6 +576,7 @@ class ConsoleDashboard {
   }
 
   private async hostOnlineMatch(gameDef: GameDefinition) {
+    wakeLock.request();
     this.invitedRoomCode = null;
     this.renderWaitingRoom('host', gameDef);
 
@@ -602,6 +607,7 @@ class ConsoleDashboard {
   }
 
   private async joinOnlineMatch(code: string) {
+    wakeLock.request();
     this.invitedRoomCode = null;
     this.roomCode = code;
     this.renderWaitingRoom('guest');
@@ -674,6 +680,7 @@ class ConsoleDashboard {
     `;
 
     document.getElementById('btn-cancel-waiting')?.addEventListener('click', () => {
+      wakeLock.release();
       this.peer?.cleanup();
       this.roomCode = null;
       this.invitedRoomCode = null;
