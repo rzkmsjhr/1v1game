@@ -143,8 +143,9 @@ export class SodaDashAI {
 
       // Execute optimal evasive maneuver
       switch (nextItem.type) {
-        case 'HURDLE': {
-          // Action: Jump
+        case 'HURDLE':
+        case 'SLOW_PAD': {
+          // Action: Jump over hurdle or slow hazard strip
           this.scheduleAction(() => this.engine.jump('opponent'));
           break;
         }
@@ -182,6 +183,7 @@ export class SodaDashAI {
         case 'FIZZ_TURBO':
         case 'BUBBLE_SHIELD':
         case 'HEART':
+        case 'CHEST':
           // Bonus pickups require no evasion
           break;
       }

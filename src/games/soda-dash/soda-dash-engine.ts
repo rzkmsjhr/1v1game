@@ -1,12 +1,13 @@
-import type { Lane, RunnerState } from './soda-dash-types';
+import type { Lane, PickupType, RunnerState } from './soda-dash-types';
 import { SodaTrackGenerator } from './soda-dash-generator';
 import { sounds } from '../../engine/sound';
 
 export interface CollisionEvent {
   runnerId: 'player' | 'opponent';
-  type: 'HIT_DAMAGE' | 'HEAL' | 'PICKUP' | 'BOOST' | 'SHIELD_BREAK' | 'STUMBLE' | 'TURBO_SMASH';
+  type: 'HIT_DAMAGE' | 'HEAL' | 'PICKUP' | 'BOOST' | 'SLOW_PAD' | 'SHIELD_BREAK' | 'STUMBLE' | 'TURBO_SMASH' | 'ITEM_USE';
   itemType: string;
   remainingHearts: number;
+  detail?: string;
 }
 
 export class SodaDashEngine {
@@ -130,12 +131,14 @@ export class SodaDashEngine {
       r.turboTimer = 3.2;
       r.stumbleTimer = 0;
       if (runnerId === 'player') sounds.playSodaBoost();
+      this.triggerCollision(runnerId, 'ITEM_USE', item, r.hearts, 'ROCKET_BOOST');
       return true;
     }
 
     if (item === 'BUBBLE_SHIELD') {
       r.hasShield = true;
       if (runnerId === 'player') sounds.playRotate();
+      this.triggerCollision(runnerId, 'ITEM_USE', item, r.hearts, 'BUBBLE_SHIELD');
       return true;
     }
 
@@ -144,6 +147,7 @@ export class SodaDashEngine {
       const dropZ = Math.max(0, r.distance - 2.5);
       this.track.addDynamicItem('SODA_SPILL', dropZ, r.lane);
       if (runnerId === 'player') sounds.playItemDrop();
+      this.triggerCollision(runnerId, 'ITEM_USE', item, r.hearts, 'SODA_SPILL');
       return true;
     }
 
@@ -274,11 +278,35 @@ export class SodaDashEngine {
         continue;
       }
 
-      if (item.type === 'FIZZ_TURBO' || item.type === 'BUBBLE_SHIELD' || item.type === 'SODA_SPILL') {
+      if (item.type === 'SLOW_PAD') {
+        // Slow down hazard strip: Jump over to avoid! Ground runner gets caught
+        if (r.jumpY < 0.25) {
+          item.hit = true;
+          r.stumbleTimer = 1.4;
+          if (r.isTurbo) {
+            r.isTurbo = false;
+            r.turboTimer = 0;
+          }
+          if (r.id === 'player') sounds.playItemSlip();
+          this.triggerCollision(r.id, 'SLOW_PAD', item.type, r.hearts);
+        } else {
+          item.cleared = true;
+        }
+        continue;
+      }
+
+      if (item.type === 'CHEST' || item.type === 'FIZZ_TURBO' || item.type === 'BUBBLE_SHIELD' || item.type === 'SODA_SPILL') {
         item.cleared = true;
-        r.heldItem = item.type;
+        let grantedItem: PickupType;
+        if (item.type === 'CHEST') {
+          const roll = Math.random();
+          grantedItem = roll < 0.333 ? 'FIZZ_TURBO' : roll < 0.666 ? 'BUBBLE_SHIELD' : 'SODA_SPILL';
+        } else {
+          grantedItem = item.type;
+        }
+        r.heldItem = grantedItem;
         if (r.id === 'player') sounds.playHold();
-        this.triggerCollision(r.id, 'PICKUP', item.type, r.hearts);
+        this.triggerCollision(r.id, 'PICKUP', grantedItem, r.hearts);
         continue;
       }
 
@@ -355,9 +383,9 @@ export class SodaDashEngine {
     }
   }
 
-  private triggerCollision(runnerId: 'player' | 'opponent', type: any, itemType: string, remainingHearts: number): void {
+  private triggerCollision(runnerId: 'player' | 'opponent', type: CollisionEvent['type'], itemType: string, remainingHearts: number, detail?: string): void {
     if (this.onCollision) {
-      this.onCollision({ runnerId, type, itemType, remainingHearts });
+      this.onCollision({ runnerId, type, itemType, remainingHearts, detail });
     }
   }
 

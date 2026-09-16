@@ -8,15 +8,17 @@ export type Lane = -1 | 0 | 1; // Left, Center, Right
 export type ObstacleType =
   | 'HURDLE'    // Low roadwork barricade (must Jump over)
   | 'OVERHEAD'  // Low industrial pipe/scaffolding (must Slide under)
-  | 'DUMPSTER'  // Tall metal dumpster blocking entire lane (must Swerve)
+  | 'DUMPSTER'  // Tall brick wall blocking entire lane (must Swerve)
   | 'PUDDLE'    // Slippery soda puddle (causes spinout & slowdown)
-  | 'SPEED_PAD';// Green neon chevron strip (instant speed surge)
+  | 'SPEED_PAD' // Green neon chevron strip (instant speed surge)
+  | 'SLOW_PAD'; // Purple hazard brake strip (causes spinout/slowdown, jump over to avoid!)
 
 export type PickupType =
   | 'HEART'        // Rare life can (+1 ❤️, max 3)
-  | 'FIZZ_TURBO'   // 3s rocket speed boost + destroys obstacles
+  | 'FIZZ_TURBO'   // 3.2s rocket speed boost + destroys obstacles
   | 'SODA_SPILL'   // Drop slippery puddle in your lane behind you
-  | 'BUBBLE_SHIELD';// Absorbs next collision with 0 damage
+  | 'BUBBLE_SHIELD'// Absorbs next collision with 0 damage
+  | 'CHEST';       // Colorful gold chest (mystery drop: Rocket / Shield / Spill)
 
 export type TrackItemType = ObstacleType | PickupType;
 
@@ -102,4 +104,10 @@ export type DashNetworkMessage =
   | {
       type: 'DASH_REMATCH';
       seed: number;
+    }
+  | {
+      type: 'DASH_EVENT';
+      title: string;
+      message: string;
+      icon: string;
     };

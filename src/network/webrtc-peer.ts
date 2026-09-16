@@ -47,6 +47,7 @@ export type NetworkMessage =
   | { type: 'DASH_ITEM_DROP'; itemType: 'SODA_SPILL'; z: number; lane: any }
   | { type: 'DASH_GAME_OVER'; loserId: 'player' | 'opponent'; finalDistance: number }
   | { type: 'DASH_REMATCH'; seed: number }
+  | { type: 'DASH_EVENT'; title: string; message: string; icon: string }
   | { type: 'CUSTOM'; payload: any };
 
 export type NetworkQuality = 'good' | 'moderate' | 'poor' | 'stalled';

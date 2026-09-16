@@ -31,6 +31,13 @@ export class SodaDashGame implements GameInstance {
   private gameOverTitleEl!: HTMLElement;
   private gameOverStatsEl!: HTMLElement;
 
+  // Top-Middle 2-Line Bubble Chat Elements (Rival Info)
+  private rivalBubbleEl!: HTMLElement;
+  private bubbleIconEl!: HTMLElement;
+  private bubbleLine1El!: HTMLElement;
+  private bubbleLine2El!: HTMLElement;
+  private bubbleHideTimer: number | null = null;
+
   // Touch gesture tracking
   private touchStartX: number = 0;
   private touchStartY: number = 0;
@@ -147,6 +154,26 @@ export class SodaDashGame implements GameInstance {
         <div class="relative flex-1 w-full flex items-center justify-center overflow-hidden touch-none">
           <canvas id="dash-canvas" class="w-full h-full block"></canvas>
           
+          <!-- Top-Middle 2-Line Bubble Chat Styled Notification Feed (Rival Info) -->
+          <div id="dash-rival-bubble" class="absolute top-3 sm:top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-300 opacity-0 -translate-y-2 max-w-xs sm:max-w-md w-[90%] flex justify-center">
+            <div class="relative px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl bg-slate-900/95 border border-rose-500/50 shadow-2xl backdrop-blur-md flex items-center space-x-2.5 sm:space-x-3 text-left">
+              <div id="dash-bubble-icon" class="flex-shrink-0 w-8 h-8 rounded-xl bg-gradient-to-br from-rose-500 to-amber-500 flex items-center justify-center text-sm shadow-md">
+                🥷
+              </div>
+              <div class="flex-1 min-w-0 pr-1">
+                <div id="dash-bubble-line1" class="text-[10px] sm:text-[11px] font-black tracking-wider uppercase text-rose-400 flex items-center justify-between">
+                  <span>RIVAL INFO</span>
+                  <span class="text-[9px] text-slate-400 font-normal">ALERT</span>
+                </div>
+                <div id="dash-bubble-line2" class="text-xs sm:text-sm font-bold text-white truncate drop-shadow-sm">
+                  Rival is ready!
+                </div>
+              </div>
+              <!-- Speech bubble notch pointing towards top-right rival card -->
+              <div class="absolute -top-1.5 right-8 w-3 h-3 bg-slate-900 border-l border-t border-rose-500/50 rotate-45"></div>
+            </div>
+          </div>
+          
           <!-- Desktop Keyboard Hint (hidden on touch devices) -->
           <div class="hidden sm:flex absolute bottom-4 left-6 z-10 pointer-events-none items-center space-x-2 text-[11px] font-semibold text-slate-300 bg-slate-900/85 px-3 py-1.5 rounded-xl border border-sky-500/30 backdrop-blur-md">
             <span>Keys: [A/D] or [←/→] Lane • [W/Space] Jump • [S/↓] Slide • [E] Item</span>
@@ -204,6 +231,12 @@ export class SodaDashGame implements GameInstance {
     this.gameOverTitleEl = document.getElementById('dash-winner-title')!;
     this.gameOverStatsEl = document.getElementById('dash-stats-box')!;
 
+    // Bubble chat elements
+    this.rivalBubbleEl = document.getElementById('dash-rival-bubble')!;
+    this.bubbleIconEl = document.getElementById('dash-bubble-icon')!;
+    this.bubbleLine1El = document.getElementById('dash-bubble-line1')!;
+    this.bubbleLine2El = document.getElementById('dash-bubble-line2')!;
+
     // Header buttons
     document.getElementById('btn-dash-exit')?.addEventListener('click', () => this.session.onExit());
     document.getElementById('btn-dash-exit-modal')?.addEventListener('click', () => this.session.onExit());
@@ -233,8 +266,7 @@ export class SodaDashGame implements GameInstance {
       this.engine.slide('player');
     });
     this.itemBtnEl.addEventListener('click', () => {
-      this.engine.useHeldItem('player');
-      this.updateItemButton();
+      this.useItem();
     });
   }
 
@@ -249,29 +281,93 @@ export class SodaDashGame implements GameInstance {
 
     // Engine collision hook for visual/audio effects
     this.engine.onCollision = (evt) => {
-      if (evt.type === 'HIT_DAMAGE') {
-        const x = this.canvas.width * 0.5;
-        const y = this.canvas.height * 0.7;
-        this.renderer.addSplash(x, y, '#ef4444', 20);
-        this.renderer.addFloatingText('-1 ❤️', x, y - 40, '#ef4444');
-      } else if (evt.type === 'HEAL') {
-        const x = this.canvas.width * 0.5;
-        const y = this.canvas.height * 0.7;
-        this.renderer.addSplash(x, y, '#22c55e', 24);
-        this.renderer.addFloatingText('+1 ❤️', x, y - 40, '#22c55e');
-      } else if (evt.type === 'BOOST' || evt.type === 'TURBO_SMASH') {
-        const x = this.canvas.width * 0.5;
-        const y = this.canvas.height * 0.7;
-        this.renderer.addSplash(x, y, '#f59e0b', 16);
-      } else if (evt.type === 'STUMBLE') {
-        const x = this.canvas.width * 0.5;
-        const y = this.canvas.height * 0.7;
-        this.renderer.addFloatingText('SLIP!', x, y - 30, '#a855f7');
-      } else if (evt.type === 'SHIELD_BREAK') {
-        const x = this.canvas.width * 0.5;
-        const y = this.canvas.height * 0.7;
-        this.renderer.addSplash(x, y, '#38bdf8', 24);
-        this.renderer.addFloatingText('SHIELD BROKEN!', x, y - 40, '#38bdf8');
+      if (evt.runnerId === 'player') {
+        // Player's local effects on road
+        if (evt.type === 'HIT_DAMAGE') {
+          const x = this.canvas.width * 0.5;
+          const y = this.canvas.height * 0.7;
+          this.renderer.addSplash(x, y, '#ef4444', 20);
+          this.renderer.addFloatingText('-1 ❤️', x, y - 40, '#ef4444');
+          const obstacleLabel = evt.itemType === 'DUMPSTER' ? 'Brick Wall' : evt.itemType === 'OVERHEAD' ? 'Slide Pipe' : evt.itemType === 'HURDLE' ? 'Hurdle' : evt.itemType;
+          this.broadcastRivalEvent('RIVAL DAMAGED', `💥 Crashed into ${obstacleLabel}! (-1 ❤️)`, '💥');
+        } else if (evt.type === 'HEAL') {
+          const x = this.canvas.width * 0.5;
+          const y = this.canvas.height * 0.7;
+          this.renderer.addSplash(x, y, '#22c55e', 24);
+          this.renderer.addFloatingText('+1 ❤️', x, y - 40, '#22c55e');
+          this.broadcastRivalEvent('RIVAL HEALED', '❤️ Collected Life Can! (+1 ❤️)', '❤️', 'from-emerald-500 to-teal-500');
+        } else if (evt.type === 'BOOST' || evt.type === 'TURBO_SMASH') {
+          const x = this.canvas.width * 0.5;
+          const y = this.canvas.height * 0.7;
+          this.renderer.addSplash(x, y, '#f59e0b', 16);
+          this.broadcastRivalEvent('RIVAL SURGE', '⚡ Hit Speed Surge Pad!', '⚡', 'from-yellow-400 to-amber-500');
+        } else if (evt.type === 'SLOW_PAD') {
+          const x = this.canvas.width * 0.5;
+          const y = this.canvas.height * 0.7;
+          this.renderer.addFloatingText('SLOWED!', x, y - 30, '#c084fc');
+          this.broadcastRivalEvent('RIVAL SLOWED', '🐌 Stepped on Slow Pad! Speed reduced 🔻', '🐌', 'from-purple-500 to-pink-500');
+        } else if (evt.type === 'STUMBLE') {
+          const x = this.canvas.width * 0.5;
+          const y = this.canvas.height * 0.7;
+          this.renderer.addFloatingText('SLIP!', x, y - 30, '#a855f7');
+          this.broadcastRivalEvent('RIVAL SLIPPED', '💫 Slipped on Trap puddle!', '💫', 'from-purple-500 to-pink-500');
+        } else if (evt.type === 'SHIELD_BREAK') {
+          const x = this.canvas.width * 0.5;
+          const y = this.canvas.height * 0.7;
+          this.renderer.addSplash(x, y, '#38bdf8', 24);
+          this.renderer.addFloatingText('SHIELD BROKEN!', x, y - 40, '#38bdf8');
+          this.broadcastRivalEvent('RIVAL SHIELD BROKEN', '🛡️ Shield absorbed collision!', '🛡️', 'from-blue-500 to-cyan-500');
+        } else if (evt.type === 'PICKUP') {
+          const itemNames: Record<string, string> = {
+            FIZZ_TURBO: 'Rocket Boost 🚀',
+            BUBBLE_SHIELD: 'Bubble Shield 🛡️',
+            SODA_SPILL: 'Caltrops Trap 🛢️',
+            CHEST: 'Gold Chest 🎁'
+          };
+          const name = itemNames[evt.itemType] || evt.itemType;
+          this.broadcastRivalEvent('RIVAL ITEM', `🎁 Opened Gold Chest: Got ${name}!`, '🎁', 'from-amber-400 to-yellow-500');
+        } else if (evt.type === 'ITEM_USE') {
+          if (evt.itemType === 'FIZZ_TURBO') {
+            this.broadcastRivalEvent('RIVAL BOOST', '🚀 Ignited Rocket Boost!', '🚀', 'from-amber-500 to-orange-500');
+          } else if (evt.itemType === 'BUBBLE_SHIELD') {
+            this.broadcastRivalEvent('RIVAL SHIELD', '🛡️ Activated Bubble Shield!', '🛡️', 'from-sky-500 to-cyan-500');
+          } else if (evt.itemType === 'SODA_SPILL') {
+            this.broadcastRivalEvent('RIVAL TRAP', '🛢️ Dropped Caltrops Trap behind them!', '🛢️', 'from-rose-500 to-red-600');
+          }
+        }
+      } else {
+        // Opponent's events -> Route to TOP-MIDDLE 2-LINE BUBBLE CHAT (NO on-road text)
+        if (evt.type === 'HIT_DAMAGE') {
+          const obstacleLabel = evt.itemType === 'DUMPSTER' ? 'Brick Wall' : evt.itemType === 'OVERHEAD' ? 'Slide Pipe' : evt.itemType === 'HURDLE' ? 'Hurdle' : evt.itemType;
+          this.showRivalBubble('RIVAL CRASH', `💥 Crashed into ${obstacleLabel}! (-1 ❤️)`, '💥', 'from-rose-600 to-red-500');
+        } else if (evt.type === 'HEAL') {
+          this.showRivalBubble('RIVAL HEAL', '❤️ Collected Life Can! (+1 ❤️)', '❤️', 'from-emerald-500 to-teal-500');
+        } else if (evt.type === 'BOOST' || evt.type === 'TURBO_SMASH') {
+          this.showRivalBubble('RIVAL SURGE', '⚡ Hit Speed Surge Pad!', '⚡', 'from-yellow-400 to-amber-500');
+        } else if (evt.type === 'SLOW_PAD') {
+          this.showRivalBubble('RIVAL SLOWED', '🐌 Stepped on Slow Pad! Speed reduced 🔻', '🐌', 'from-purple-500 to-pink-500');
+        } else if (evt.type === 'STUMBLE') {
+          this.showRivalBubble('RIVAL SLIPPED', '💫 Slipped on Trap puddle!', '💫', 'from-purple-500 to-pink-500');
+        } else if (evt.type === 'SHIELD_BREAK') {
+          this.showRivalBubble('RIVAL SHIELD', '🛡️ Shield absorbed collision!', '🛡️', 'from-blue-500 to-cyan-500');
+        } else if (evt.type === 'PICKUP') {
+          const itemNames: Record<string, string> = {
+            FIZZ_TURBO: 'Rocket Boost 🚀',
+            BUBBLE_SHIELD: 'Bubble Shield 🛡️',
+            SODA_SPILL: 'Caltrops Trap 🛢️',
+            CHEST: 'Gold Chest 🎁'
+          };
+          const name = itemNames[evt.itemType] || evt.itemType;
+          this.showRivalBubble('RIVAL CHEST', `🎁 Opened Gold Chest: Got ${name}!`, '🎁', 'from-amber-400 to-yellow-500');
+        } else if (evt.type === 'ITEM_USE') {
+          if (evt.itemType === 'FIZZ_TURBO') {
+            this.showRivalBubble('RIVAL BOOST', '🚀 Ignited Rocket Boost!', '🚀', 'from-amber-500 to-orange-500');
+          } else if (evt.itemType === 'BUBBLE_SHIELD') {
+            this.showRivalBubble('RIVAL SHIELD', '🛡️ Activated Bubble Shield!', '🛡️', 'from-sky-500 to-cyan-500');
+          } else if (evt.itemType === 'SODA_SPILL') {
+            this.showRivalBubble('RIVAL TRAP', '🛢️ Dropped Caltrops Trap behind them!', '🛢️', 'from-rose-500 to-red-600');
+          }
+        }
       }
       this.updateHUD();
     };
@@ -341,8 +437,7 @@ export class SodaDashGame implements GameInstance {
       case 'E':
       case 'Shift':
         e.preventDefault();
-        this.engine.useHeldItem('player');
-        this.updateItemButton();
+        this.useItem();
         break;
     }
   }
@@ -357,8 +452,7 @@ export class SodaDashGame implements GameInstance {
     // Check double tap to use item
     const now = Date.now();
     if (now - this.lastTapTime < 300) {
-      this.engine.useHeldItem('player');
-      this.updateItemButton();
+      this.useItem();
     }
     this.lastTapTime = now;
   }
@@ -455,6 +549,8 @@ export class SodaDashGame implements GameInstance {
       this.updateHUD();
     } else if (msg.type === 'DASH_ITEM_DROP') {
       this.engine.track.addDynamicItem('SODA_SPILL', msg.z, msg.lane);
+    } else if (msg.type === 'DASH_EVENT') {
+      this.showRivalBubble(msg.title, msg.message, msg.icon);
     } else if (msg.type === 'DASH_GAME_OVER') {
       this.engine.opponent.isDead = true;
       this.engine.opponent.hearts = 0;
@@ -463,6 +559,56 @@ export class SodaDashGame implements GameInstance {
       this.engine.reset(msg.seed);
       this.gameOverModalEl.classList.add('hidden');
       this.updateHUD();
+    }
+  }
+
+  private useItem(): void {
+    const item = this.engine.player.heldItem;
+    if (!item) return;
+    const dropZ = Math.max(0, this.engine.player.distance - 2.5);
+    const dropLane = this.engine.player.lane;
+    this.engine.useHeldItem('player');
+    this.updateItemButton();
+
+    if (item === 'SODA_SPILL' && this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({
+        type: 'DASH_ITEM_DROP',
+        itemType: 'SODA_SPILL',
+        z: dropZ,
+        lane: dropLane
+      });
+    }
+  }
+
+  public showRivalBubble(title: string, message: string, icon: string = '🥷', iconBg: string = 'from-rose-500 to-amber-500'): void {
+    if (!this.rivalBubbleEl || !this.bubbleLine1El || !this.bubbleLine2El || !this.bubbleIconEl) return;
+
+    this.bubbleLine1El.innerHTML = `<span>${title}</span><span class="text-[9px] text-slate-400 font-normal">JUST NOW</span>`;
+    this.bubbleLine2El.textContent = message;
+    this.bubbleIconEl.textContent = icon;
+    this.bubbleIconEl.className = `flex-shrink-0 w-8 h-8 rounded-xl bg-gradient-to-br ${iconBg} flex items-center justify-center text-sm shadow-md`;
+
+    this.rivalBubbleEl.classList.remove('opacity-0', '-translate-y-2');
+    this.rivalBubbleEl.classList.add('opacity-100', 'translate-y-0');
+
+    if (this.bubbleHideTimer !== null) {
+      window.clearTimeout(this.bubbleHideTimer);
+    }
+    this.bubbleHideTimer = window.setTimeout(() => {
+      this.rivalBubbleEl.classList.remove('opacity-100', 'translate-y-0');
+      this.rivalBubbleEl.classList.add('opacity-0', '-translate-y-2');
+      this.bubbleHideTimer = null;
+    }, 3200);
+  }
+
+  private broadcastRivalEvent(title: string, message: string, icon: string = '🥷', _iconBg?: string): void {
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({
+        type: 'DASH_EVENT',
+        title,
+        message,
+        icon
+      });
     }
   }
 
@@ -563,9 +709,9 @@ export class SodaDashGame implements GameInstance {
       this.itemBtnEl.className = 'absolute bottom-6 right-6 z-20 px-4 py-3 rounded-2xl font-black text-xs sm:text-sm tracking-wide bg-slate-800 text-slate-500 border border-slate-700 opacity-40 pointer-events-none transition-all';
     } else {
       const labels: Record<string, string> = {
-        FIZZ_TURBO: '⚡ TURBO DASH',
+        FIZZ_TURBO: '🚀 ROCKET BOOST',
         BUBBLE_SHIELD: '🛡️ SHIELD',
-        SODA_SPILL: '🛢️ DROP SPILL'
+        SODA_SPILL: '🛢️ DROP TRAP'
       };
       this.itemBtnEl.textContent = labels[item] || item;
       this.itemBtnEl.className = 'absolute bottom-6 right-6 z-20 px-4 py-3 rounded-2xl font-black text-xs sm:text-sm tracking-wide bg-gradient-to-r from-amber-500 to-yellow-400 text-amber-950 shadow-xl shadow-amber-500/40 border border-yellow-300 active:scale-95 transition-all opacity-100 cursor-pointer animate-pulse';
@@ -652,6 +798,10 @@ export class SodaDashGame implements GameInstance {
     if (this.syncIntervalId !== null) {
       clearInterval(this.syncIntervalId);
       this.syncIntervalId = null;
+    }
+    if (this.bubbleHideTimer !== null) {
+      clearTimeout(this.bubbleHideTimer);
+      this.bubbleHideTimer = null;
     }
 
     window.removeEventListener('keydown', this.boundKeyDown);

@@ -330,7 +330,7 @@ export class SodaDashRenderer {
     // Track Items within visible convex crest range
     const items = this.engine.track.getActiveItems(cameraZ + 0.4, cameraZ + zCrest + 2.0);
     for (const item of items) {
-      if (item.hit && item.type !== 'PUDDLE' && item.type !== 'SODA_SPILL') continue;
+      if (item.hit && item.type !== 'PUDDLE' && item.type !== 'SODA_SPILL' && item.type !== 'SLOW_PAD') continue;
       renderables.push({
         type: 'track_item',
         z: item.z,
@@ -671,6 +671,45 @@ export class SodaDashRenderer {
         break;
       }
 
+      case 'SLOW_PAD': {
+        // High-Hazard Purple Slowness Strip (Jump to avoid!)
+        const maxBw = p.laneSpacing * 0.38;
+        const bw = Math.min(80 * s, maxBw);
+        const sEff = bw / 80;
+        const bh = 100 * sEff;
+
+        // Glowing translucent purple road pad
+        ctx.fillStyle = 'rgba(168, 85, 247, 0.40)';
+        ctx.strokeStyle = '#a855f7';
+        ctx.lineWidth = Math.max(1.5, 3 * sEff);
+        ctx.beginPath();
+        ctx.roundRect(-bw, -bh * 0.5, bw * 2, bh, 10 * sEff);
+        ctx.fill();
+        ctx.stroke();
+
+        // Inverted brake chevrons pointing down (slowing motion)
+        ctx.fillStyle = '#f43f5e';
+        for (let cy = -bh * 0.35; cy < bh * 0.4; cy += 32 * sEff) {
+          ctx.beginPath();
+          ctx.moveTo(0, cy + 12 * sEff);
+          ctx.lineTo(bw * 0.7, cy - 8 * sEff);
+          ctx.lineTo(bw * 0.45, cy - 8 * sEff);
+          ctx.lineTo(0, cy + 3 * sEff);
+          ctx.lineTo(-bw * 0.45, cy - 8 * sEff);
+          ctx.lineTo(-bw * 0.7, cy - 8 * sEff);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // Warning text on pad
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `900 ${Math.max(9, (15 * sEff) | 0)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🔻 SLOW 🔻', 0, 0);
+        break;
+      }
+
       case 'HEART': {
         // Glowing Strawberry Soda Life Can (+1 Heart)
         const maxCw = p.laneSpacing * 0.28;
@@ -719,38 +758,116 @@ export class SodaDashRenderer {
         break;
       }
 
+      case 'CHEST':
       case 'FIZZ_TURBO':
       case 'BUBBLE_SHIELD': {
-        // Sparkling Rainbow Mystery Box
-        const maxBw = p.laneSpacing * 0.30;
-        const bw = Math.min(46 * s, maxBw);
-        const sEff = bw / 46;
-        const floatY = -50 * sEff + Math.sin(Date.now() * 0.005 + item.z) * 8 * sEff;
+        // Colorful Gold Treasure Chest (Mystery Powerup)
+        const maxBw = p.laneSpacing * 0.32;
+        const bw = Math.min(50 * s, maxBw);
+        const sEff = bw / 50;
+        const floatY = -48 * sEff + Math.sin(Date.now() * 0.005 + item.z) * 8 * sEff;
 
-        // Shadow
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+        // Ground Drop Shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
         ctx.beginPath();
-        ctx.ellipse(0, 0, bw * 1.1, 9 * sEff, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, 0, bw * 1.15, 10 * sEff, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.fillStyle = item.type === 'FIZZ_TURBO' ? '#f59e0b' : '#3b82f6';
+        // Shimmering Magical Aura (Gold & Cyan glow)
+        const auraGrad = ctx.createRadialGradient(0, floatY - 20 * sEff, 6, 0, floatY - 20 * sEff, bw * 2.2);
+        auraGrad.addColorStop(0, 'rgba(251, 191, 36, 0.65)');
+        auraGrad.addColorStop(0.5, 'rgba(6, 182, 212, 0.35)');
+        auraGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = auraGrad;
+        ctx.fillRect(-bw * 2.2, floatY - 20 * sEff - bw * 2.2, bw * 4.4, bw * 4.4);
+
+        const chestW = bw * 1.8;
+        const chestH = 34 * sEff;
+        const lidH = 22 * sEff;
+        const cx = -chestW * 0.5;
+        const cy = floatY - chestH;
+
+        // 1. Lower Chest Box (Metallic Gold Gradient)
+        const goldGrad = ctx.createLinearGradient(0, cy, 0, cy + chestH);
+        goldGrad.addColorStop(0, '#fde047'); // Bright gold
+        goldGrad.addColorStop(0.5, '#eab308'); // Rich amber gold
+        goldGrad.addColorStop(1, '#a16207'); // Deep bronze gold
+        ctx.fillStyle = goldGrad;
         ctx.strokeStyle = '#0f172a';
         ctx.lineWidth = Math.max(2.5, 5 * sEff);
         ctx.beginPath();
-        ctx.roundRect(-bw, floatY - bw * 2, bw * 2, bw * 2, 14 * sEff);
+        ctx.roundRect(cx, cy, chestW, chestH, [0, 0, 8 * sEff, 8 * sEff]);
         ctx.fill();
         ctx.stroke();
 
-        // Inner Gold Border
-        ctx.strokeStyle = '#fde047';
-        ctx.lineWidth = Math.max(2, 4 * sEff);
-        ctx.strokeRect(-bw + 4 * sEff, floatY - bw * 2 + 4 * sEff, bw * 2 - 8 * sEff, bw * 2 - 8 * sEff);
+        // 2. Domed Curved Chest Lid
+        const lidY = cy - lidH;
+        const lidGrad = ctx.createLinearGradient(0, lidY, 0, cy);
+        lidGrad.addColorStop(0, '#fef08a');
+        lidGrad.addColorStop(0.4, '#f59e0b');
+        lidGrad.addColorStop(1, '#b45309');
+        ctx.fillStyle = lidGrad;
+        ctx.beginPath();
+        ctx.roundRect(cx - 3 * sEff, lidY, chestW + 6 * sEff, lidH + 4 * sEff, [14 * sEff, 14 * sEff, 4 * sEff, 4 * sEff]);
+        ctx.fill();
+        ctx.stroke();
 
+        // 3. Colorful Cyan Metal Reinforcing Bands
+        ctx.fillStyle = '#06b6d4'; // Vibrant turquoise metal bands
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = Math.max(1.5, 3 * sEff);
+        const bandW = 8 * sEff;
+        // Left band
+        ctx.fillRect(cx + 12 * sEff, lidY, bandW, lidH + chestH);
+        ctx.strokeRect(cx + 12 * sEff, lidY, bandW, lidH + chestH);
+        // Right band
+        ctx.fillRect(cx + chestW - 12 * sEff - bandW, lidY, bandW, lidH + chestH);
+        ctx.strokeRect(cx + chestW - 12 * sEff - bandW, lidY, bandW, lidH + chestH);
+
+        // Golden Rivets on bands
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath();
+        ctx.arc(cx + 12 * sEff + bandW * 0.5, lidY + 6 * sEff, 2 * sEff, 0, Math.PI * 2);
+        ctx.arc(cx + 12 * sEff + bandW * 0.5, cy + chestH * 0.5, 2 * sEff, 0, Math.PI * 2);
+        ctx.arc(cx + chestW - 12 * sEff - bandW * 0.5, lidY + 6 * sEff, 2 * sEff, 0, Math.PI * 2);
+        ctx.arc(cx + chestW - 12 * sEff - bandW * 0.5, cy + chestH * 0.5, 2 * sEff, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 4. Center Gold Lock Plate with Glowing Gemstone
+        const lockW = 18 * sEff;
+        const lockH = 20 * sEff;
+        const lockX = -lockW * 0.5;
+        const lockY = cy - 4 * sEff;
+
+        ctx.fillStyle = '#fef08a';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = Math.max(2, 3.5 * sEff);
+        ctx.beginPath();
+        ctx.roundRect(lockX, lockY, lockW, lockH, 4 * sEff);
+        ctx.fill();
+        ctx.stroke();
+
+        // Ruby Keyhole Gem in center
+        ctx.fillStyle = '#ef4444';
+        ctx.beginPath();
+        ctx.arc(0, lockY + lockH * 0.45, 4 * sEff, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#991b1b';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Sparkle glint
         ctx.fillStyle = '#ffffff';
-        ctx.font = `bold ${Math.max(14, (34 * sEff) | 0)}px sans-serif`;
+        ctx.beginPath();
+        ctx.arc(-1 * sEff, lockY + lockH * 0.45 - 1 * sEff, 1.5 * sEff, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 5. Floating Magic Sparkles around chest
+        const sparklePulse = Math.sin(Date.now() * 0.008 + item.z);
+        ctx.font = `bold ${Math.max(10, (20 * sEff) | 0)}px sans-serif`;
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(item.type === 'FIZZ_TURBO' ? '⚡' : '🛡️', 0, floatY - bw);
+        ctx.fillText('✨', -chestW * 0.65, lidY + sparklePulse * 4 * sEff);
+        ctx.fillText('✨', chestW * 0.65, cy + chestH * 0.8 - sparklePulse * 4 * sEff);
         break;
       }
     }
@@ -1001,6 +1118,56 @@ export class SodaDashRenderer {
       ctx.beginPath();
       ctx.roundRect(-22 * s, torsoY - 46 * s, 44 * s, 10 * s, 4 * s);
       ctx.fill();
+    }
+
+    // 🚀 DUAL ROCKET BOOSTERS (Active Turbo Thruster Pack)
+    if (runner.isTurbo) {
+      const rocketY = runner.isSliding ? -18 * s : -72 * s;
+      const flameLen = (36 + Math.random() * 22) * s;
+
+      // Rocket Pods at left & right shoulders
+      const podOffsets = [-22 * s, 22 * s];
+      for (const px of podOffsets) {
+        // Rocket Pod Canister (Red with White Stripe & Silver Cone)
+        ctx.fillStyle = '#ef4444';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = Math.max(2, 3.5 * s);
+        ctx.beginPath();
+        ctx.roundRect(px - 7 * s, rocketY - 14 * s, 14 * s, 28 * s, 4 * s);
+        ctx.fill();
+        ctx.stroke();
+
+        // White stripe
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(px - 6 * s, rocketY - 4 * s, 12 * s, 6 * s);
+
+        // Exhaust Nozzle
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(px - 5 * s, rocketY + 14 * s, 10 * s, 4 * s);
+
+        // Outer Roaring Flame (Orange / Red)
+        ctx.fillStyle = '#f97316';
+        ctx.beginPath();
+        ctx.moveTo(px - 6 * s, rocketY + 18 * s);
+        ctx.lineTo(px, rocketY + 18 * s + flameLen);
+        ctx.lineTo(px + 6 * s, rocketY + 18 * s);
+        ctx.closePath();
+        ctx.fill();
+
+        // Inner Blazing Core (Bright Yellow / White)
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath();
+        ctx.moveTo(px - 3 * s, rocketY + 18 * s);
+        ctx.lineTo(px, rocketY + 18 * s + flameLen * 0.65);
+        ctx.lineTo(px + 3 * s, rocketY + 18 * s);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Trailing rocket spark particles
+      if (Math.random() < 0.6) {
+        this.addSplash(p.x + (Math.random() - 0.5) * 20 * s, p.y + rocketY + 24 * s, '#fbbf24', 2);
+      }
     }
 
     // Nametag above Opponent

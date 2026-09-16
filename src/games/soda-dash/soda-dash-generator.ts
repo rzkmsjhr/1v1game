@@ -1,4 +1,4 @@
-import type { Lane, ObstacleType, PickupType, TrackItem } from './soda-dash-types';
+import type { Lane, ObstacleType, TrackItem } from './soda-dash-types';
 
 /**
  * Seeded PRNG using Mulberry32 algorithm
@@ -132,33 +132,46 @@ export class SodaTrackGenerator {
         continue;
       }
 
-      // Speed Pad / Mystery Crate spawn
-      if (roll > 0.82) {
-        const bonusLane = lanes[Math.floor(this.rng() * 3)];
-        const bonusType: PickupType | 'SPEED_PAD' =
-          this.rng() > 0.5 ? 'SPEED_PAD' : this.rng() > 0.5 ? 'FIZZ_TURBO' : 'BUBBLE_SHIELD';
-
+      // Colorful Gold Chest spawn (~12% chance)
+      if (roll > 0.88) {
+        const chestLane = lanes[Math.floor(this.rng() * 3)];
         this.items.push({
           id: `item-${this.nextItemId++}`,
           z: currentZ,
-          lane: bonusLane,
-          type: bonusType
+          lane: chestLane,
+          type: 'CHEST'
+        });
+        currentZ += spacing * 0.75;
+        continue;
+      }
+
+      // Speed Pad surge strip (~10% chance)
+      if (roll > 0.78) {
+        const speedLane = lanes[Math.floor(this.rng() * 3)];
+        this.items.push({
+          id: `item-${this.nextItemId++}`,
+          z: currentZ,
+          lane: speedLane,
+          type: 'SPEED_PAD'
         });
         currentZ += spacing * 0.75;
         continue;
       }
 
       // Generate Obstacle Pattern with Staged Pacing:
-      // - 0m - 250m: Only single gentle obstacles (Hurdle or Overhead) to learn jumping and sliding
+      // - 0m - 250m: Only single gentle obstacles (Hurdle, Overhead, or Slow Pad)
       // - 250m - 600m: Single obstacles (70%) or Double (30%)
       // - 600m+: Full challenge with Triple synchronized barriers
       const patternRoll = this.rng();
 
       if (currentZ < 250 || patternRoll < 0.65) {
-        // Single Obstacle (Playful Hurdle, Overhead Slide, or Toy Crate)
+        // Single Obstacle (Hurdle, Overhead Slide, Brick Wall, or Slowness Pad)
         const lane = lanes[Math.floor(this.rng() * 3)];
+        const obsRoll = this.rng();
         const obsType: ObstacleType =
-          this.rng() < 0.5 ? 'HURDLE' : this.rng() < 0.8 ? 'OVERHEAD' : 'DUMPSTER';
+          obsRoll < 0.35 ? 'HURDLE' :
+          obsRoll < 0.60 ? 'OVERHEAD' :
+          obsRoll < 0.80 ? 'DUMPSTER' : 'SLOW_PAD';
 
         this.items.push({
           id: `obs-${this.nextItemId++}`,
@@ -172,7 +185,10 @@ export class SodaTrackGenerator {
         const blockedLanes = lanes.filter(l => l !== freeLane);
 
         for (const lane of blockedLanes) {
-          const obsType: ObstacleType = this.rng() < 0.55 ? 'HURDLE' : 'OVERHEAD';
+          const doubleRoll = this.rng();
+          const obsType: ObstacleType =
+            doubleRoll < 0.45 ? 'HURDLE' :
+            doubleRoll < 0.80 ? 'OVERHEAD' : 'SLOW_PAD';
           this.items.push({
             id: `obs-${this.nextItemId++}`,
             z: currentZ,
