@@ -79,7 +79,7 @@ export class SodaDashGame implements GameInstance {
     const diff = this.session.aiDifficulty ? this.session.aiDifficulty.toUpperCase() : 'PVP';
 
     this.container.innerHTML = `
-      <div class="relative w-full h-screen max-h-screen flex flex-col items-center justify-between overflow-hidden select-none bg-slate-950 font-sans">
+      <div class="relative w-full h-[100dvh] max-h-[100dvh] flex flex-col items-center justify-between overflow-hidden select-none bg-slate-950 font-sans" style="height: 100dvh; max-height: 100dvh;">
         
         <!-- Top Navigation & Status Bar -->
         <div class="w-full max-w-5xl px-3 py-2 z-20 flex items-center justify-between pointer-events-auto">
@@ -149,17 +149,17 @@ export class SodaDashGame implements GameInstance {
           </div>
 
           <!-- Touch Item Slot Button -->
-          <button id="btn-use-item" class="absolute bottom-6 right-6 z-20 px-4 py-3 rounded-2xl font-black text-xs sm:text-sm tracking-wide bg-gradient-to-r from-amber-500 to-yellow-400 text-amber-950 shadow-xl shadow-amber-500/30 border border-yellow-300 active:scale-95 transition-all opacity-40 pointer-events-none">
+          <button id="btn-use-item" class="absolute bottom-4 right-4 z-20 px-4 py-3 rounded-2xl font-black text-xs sm:text-sm tracking-wide bg-gradient-to-r from-amber-500 to-yellow-400 text-amber-950 shadow-xl shadow-amber-500/30 border border-yellow-300 active:scale-95 transition-all opacity-40 pointer-events-none">
             EMPTY ITEM
           </button>
         </div>
 
-        <!-- Mobile Touch Bar (Directional Tap Controls) -->
-        <div class="sm:hidden w-full px-3 py-3 z-20 grid grid-cols-4 gap-2 pointer-events-auto bg-slate-900/90 border-t border-sky-400/30 backdrop-blur-md">
-          <button id="touch-left" class="py-3 rounded-xl bg-slate-800 text-sky-200 font-bold text-lg active:bg-slate-700 active:scale-95 shadow border border-sky-500/40">←</button>
-          <button id="touch-jump" class="py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-sky-500 text-white font-black text-xs active:scale-95 shadow border border-cyan-300/60">JUMP ⬆</button>
-          <button id="touch-slide" class="py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-black text-xs active:scale-95 shadow border border-yellow-300/60">SLIDE ⬇</button>
-          <button id="touch-right" class="py-3 rounded-xl bg-slate-800 text-sky-200 font-bold text-lg active:bg-slate-700 active:scale-95 shadow border border-sky-500/40">→</button>
+        <!-- Mobile Touch Bar (Directional Tap Controls) with Android Safe Area Inset -->
+        <div class="sm:hidden w-full px-3 pt-2.5 z-20 grid grid-cols-4 gap-2.5 pointer-events-auto bg-slate-900/95 border-t border-sky-400/30 backdrop-blur-md" style="padding-bottom: max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 0.85rem));">
+          <button id="touch-left" class="py-3.5 rounded-xl bg-slate-800 text-sky-200 font-bold text-xl active:bg-slate-700 active:scale-95 shadow border border-sky-500/40 flex items-center justify-center">←</button>
+          <button id="touch-jump" class="py-3.5 rounded-xl bg-gradient-to-r from-cyan-600 to-sky-500 text-white font-black text-xs active:scale-95 shadow border border-cyan-300/60 flex items-center justify-center gap-1"><span>JUMP</span> <span>⬆</span></button>
+          <button id="touch-slide" class="py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-black text-xs active:scale-95 shadow border border-yellow-300/60 flex items-center justify-center gap-1"><span>SLIDE</span> <span>⬇</span></button>
+          <button id="touch-right" class="py-3.5 rounded-xl bg-slate-800 text-sky-200 font-bold text-xl active:bg-slate-700 active:scale-95 shadow border border-sky-500/40 flex items-center justify-center">→</button>
         </div>
 
         <!-- Game Over Modal -->
