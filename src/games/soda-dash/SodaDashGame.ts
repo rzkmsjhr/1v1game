@@ -66,6 +66,7 @@ export class SodaDashGame implements GameInstance {
 
     this.startTime = Date.now();
     this.lastTime = performance.now();
+    (window as any).__sodaDashGame = this;
     this.startLoop();
   }
 
@@ -656,6 +657,9 @@ export class SodaDashGame implements GameInstance {
     }
 
     this.ai?.destroy();
+    if ((window as any).__sodaDashGame === this) {
+      delete (window as any).__sodaDashGame;
+    }
     document.body.style.backgroundColor = '';
   }
 }
