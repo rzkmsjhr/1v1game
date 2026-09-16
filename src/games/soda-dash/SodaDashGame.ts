@@ -267,6 +267,11 @@ export class SodaDashGame implements GameInstance {
         const x = this.canvas.width * 0.5;
         const y = this.canvas.height * 0.7;
         this.renderer.addFloatingText('SLIP!', x, y - 30, '#a855f7');
+      } else if (evt.type === 'SHIELD_BREAK') {
+        const x = this.canvas.width * 0.5;
+        const y = this.canvas.height * 0.7;
+        this.renderer.addSplash(x, y, '#38bdf8', 24);
+        this.renderer.addFloatingText('SHIELD BROKEN!', x, y - 40, '#38bdf8');
       }
       this.updateHUD();
     };

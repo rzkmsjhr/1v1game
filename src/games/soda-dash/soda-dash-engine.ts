@@ -283,13 +283,6 @@ export class SodaDashEngine {
       }
 
       // Handle Obstacles
-      if (r.isTurbo) {
-        // Turbo smashes through obstacles
-        item.hit = true;
-        this.triggerCollision(r.id, 'TURBO_SMASH', item.type, r.hearts);
-        continue;
-      }
-
       if (r.invulnerableTimer > 0) {
         // Blinking invulnerability after taking damage
         continue;
@@ -298,14 +291,14 @@ export class SodaDashEngine {
       let collided = false;
 
       if (item.type === 'HURDLE') {
-        // Must jump over hurdle
+        // Must jump over hurdle (even while on speed boost!)
         if (r.jumpY < 0.35) {
           collided = true;
         } else {
           item.cleared = true;
         }
       } else if (item.type === 'OVERHEAD') {
-        // Must slide under overhead pipe
+        // Must slide under overhead pipe (even while on speed boost!)
         if (!r.isSliding) {
           collided = true;
         } else {
@@ -319,6 +312,11 @@ export class SodaDashEngine {
         if (r.jumpY < 0.25) {
           item.hit = true;
           r.stumbleTimer = 1.2;
+          // Slip interrupts speed boost
+          if (r.isTurbo) {
+            r.isTurbo = false;
+            r.turboTimer = 0;
+          }
           if (r.id === 'player') sounds.playItemSlip();
           this.triggerCollision(r.id, 'STUMBLE', item.type, r.hearts);
         }
@@ -327,6 +325,12 @@ export class SodaDashEngine {
 
       if (collided) {
         item.hit = true;
+
+        // Any collision interrupts active speed boost
+        if (r.isTurbo) {
+          r.isTurbo = false;
+          r.turboTimer = 0;
+        }
 
         if (r.hasShield) {
           // Shield absorbs collision
