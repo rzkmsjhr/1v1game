@@ -495,54 +495,142 @@ export class SodaDashRenderer {
       }
 
       case 'DUMPSTER': {
-        // High-Contrast Toy Soda Crate
-        const maxDw = p.laneSpacing * 0.36;
+        // Tall Cartoon Brick Wall with Directional Detour Arrows (Impassable Lane Barrier)
+        const maxDw = p.laneSpacing * 0.38;
         const dw = Math.min(95 * s, maxDw);
         const sEff = dw / 95;
-        const dh = 115 * sEff;
 
-        // Drop Shadow
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        // Taller than jump height with subtle height variation (185px - 210px)
+        const heightBase = 185 + ((Math.abs(Math.sin(item.z * 1.7)) * 25) | 0);
+        const dh = heightBase * sEff;
+
+        // 1. Ground Drop Shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.40)';
         ctx.beginPath();
-        ctx.ellipse(0, 0, dw * 0.95, 16 * sEff, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, 2 * sEff, dw * 1.06, 14 * sEff, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Bold Cartoon Blue Crate Body
-        ctx.fillStyle = '#2563eb';
+        // 2. Concrete Footer Foundation
+        const footerH = 14 * sEff;
+        ctx.fillStyle = '#64748b';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = Math.max(2.5, 5 * sEff);
+        ctx.beginPath();
+        ctx.roundRect(-dw * 1.02, -footerH, dw * 2.04, footerH, [0, 0, 6 * sEff, 6 * sEff]);
+        ctx.fill();
+        ctx.stroke();
+
+        // 3. Solid Red Brick Wall Body
+        const wallH = dh - footerH;
+        ctx.fillStyle = '#dc2626'; // Vibrant cherry red brick
         ctx.strokeStyle = '#0f172a';
         ctx.lineWidth = Math.max(2.5, 6 * sEff);
         ctx.beginPath();
-        ctx.roundRect(-dw, -dh, dw * 2, dh, 14 * sEff);
+        ctx.roundRect(-dw, -dh, dw * 2, wallH, 4 * sEff);
         ctx.fill();
         ctx.stroke();
 
-        // Orange Inset Frame
-        ctx.fillStyle = '#f97316';
+        // 4. Staggered Brick Pattern (Mortar & Shaded Bricks)
+        const numRows = 7;
+        const rowH = wallH / numRows;
+        ctx.strokeStyle = '#991b1b'; // Darker mortar line
+        ctx.lineWidth = Math.max(1.5, 2.5 * sEff);
+
+        for (let r = 0; r < numRows; r++) {
+          const rowY = -dh + r * rowH;
+          // Horizontal mortar line
+          ctx.beginPath();
+          ctx.moveTo(-dw, rowY);
+          ctx.lineTo(dw, rowY);
+          ctx.stroke();
+
+          // Vertical joints (alternating offset)
+          const isOffset = r % 2 === 1;
+          const brickW = (dw * 2) / 3;
+          const startX = -dw + (isOffset ? brickW * 0.5 : 0);
+
+          for (let bx = startX; bx < dw; bx += brickW) {
+            ctx.beginPath();
+            ctx.moveTo(bx, rowY);
+            ctx.lineTo(bx, rowY + rowH);
+            ctx.stroke();
+
+            // Lighter brick highlight speck on top-left of each brick
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+            ctx.fillRect(bx + 2 * sEff, rowY + 2 * sEff, brickW * 0.7, 3 * sEff);
+          }
+        }
+
+        // 5. Heavy Concrete Top Coping / Stone Cap
+        const capH = 16 * sEff;
+        ctx.fillStyle = '#f1f5f9';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = Math.max(2.5, 5 * sEff);
         ctx.beginPath();
-        ctx.roundRect(-dw + 9 * sEff, -dh + 12 * sEff, dw * 2 - 18 * sEff, dh - 24 * sEff, 10 * sEff);
+        ctx.roundRect(-dw * 1.04, -dh - capH * 0.5, dw * 2.08, capH, 6 * sEff);
+        ctx.fill();
+        ctx.stroke();
+
+        // 6. Blinking Amber Hazard Beacon on Top Cap
+        const beaconY = -dh - capH * 0.5 - 10 * sEff;
+        const pulse = Math.sin(Date.now() * 0.008 + item.z) * 0.3 + 0.7;
+
+        // Glowing halo
+        const haloGrad = ctx.createRadialGradient(0, beaconY, 2, 0, beaconY, 24 * sEff);
+        haloGrad.addColorStop(0, `rgba(245, 158, 11, ${0.7 * pulse})`);
+        haloGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = haloGrad;
+        ctx.fillRect(-24 * sEff, beaconY - 24 * sEff, 48 * sEff, 48 * sEff);
+
+        // Beacon body & dome
+        ctx.fillStyle = '#f59e0b';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = Math.max(2, 3.5 * sEff);
+        ctx.beginPath();
+        ctx.arc(0, beaconY, 8 * sEff, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(-2 * sEff, beaconY - 2 * sEff, 2.5 * sEff, 0, Math.PI * 2);
         ctx.fill();
 
-        // Cyan Inset Panel
-        ctx.fillStyle = '#38bdf8';
-        ctx.beginPath();
-        ctx.roundRect(-dw + 16 * sEff, -dh + 19 * sEff, dw * 2 - 32 * sEff, dh - 38 * sEff, 8 * sEff);
-        ctx.fill();
+        // 7. High-Contrast Reflective Detour Chevron Sign in Center
+        const signW = dw * 1.45;
+        const signH = 44 * sEff;
+        const signY = -dh * 0.52;
 
-        // Golden Star Emblem
-        ctx.fillStyle = '#fef08a';
-        ctx.font = `bold ${Math.max(12, (32 * sEff) | 0)}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('⭐', 0, -dh * 0.5);
-
-        // Top Lid Handle
+        // Sign plate (Caution Yellow)
         ctx.fillStyle = '#facc15';
         ctx.strokeStyle = '#0f172a';
-        ctx.lineWidth = Math.max(2, 4 * sEff);
+        ctx.lineWidth = Math.max(2.5, 5 * sEff);
         ctx.beginPath();
-        ctx.roundRect(-dw * 0.5, -dh - 10 * sEff, dw, 12 * sEff, 6 * sEff);
+        ctx.roundRect(-signW * 0.5, signY - signH * 0.5, signW, signH, 8 * sEff);
         ctx.fill();
         ctx.stroke();
+
+        // Inner border
+        ctx.strokeStyle = '#eab308';
+        ctx.lineWidth = Math.max(1.5, 2.5 * sEff);
+        ctx.strokeRect(-signW * 0.5 + 3 * sEff, signY - signH * 0.5 + 3 * sEff, signW - 6 * sEff, signH - 6 * sEff);
+
+        // Directional Chevrons based on lane
+        // Lane -1 (Left lane) -> Arrow points RIGHT (to center/right lane)
+        // Lane +1 (Right lane) -> Arrow points LEFT (to center/left lane)
+        // Lane 0 (Center lane) -> Dual arrows (◀ ▶)
+        let arrowText = '◀  ▶';
+        if (item.lane < 0) {
+          arrowText = '▶▶▶';
+        } else if (item.lane > 0) {
+          arrowText = '◀◀◀';
+        }
+
+        ctx.fillStyle = '#0f172a';
+        ctx.font = `900 ${Math.max(14, (26 * sEff) | 0)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(arrowText, 0, signY);
         break;
       }
 
