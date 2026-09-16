@@ -1,6 +1,6 @@
 import type { AppTheme, GameInstance, GameSession } from '../types';
-import type { DashNetworkMessage } from './soda-dash-types';
-import type { NetworkMessage } from '../../network/webrtc-peer';
+import type { DashNetworkMessage, Lane } from './soda-dash-types';
+import type { NetworkHealth, NetworkMessage } from '../../network/webrtc-peer';
 import { SodaDashEngine } from './soda-dash-engine';
 import { SodaDashRenderer } from './renderers/SodaDashRenderer';
 import { SodaDashAI } from './soda-dash-ai';
@@ -30,6 +30,21 @@ export class SodaDashGame implements GameInstance {
   private gameOverModalEl!: HTMLElement;
   private gameOverTitleEl!: HTMLElement;
   private gameOverStatsEl!: HTMLElement;
+
+  // Network Health HUD elements
+  private pingEl: HTMLElement | null = null;
+  private pingDotEl: HTMLElement | null = null;
+  private pingTextEl: HTMLElement | null = null;
+  private peerAwayBannerEl: HTMLElement | null = null;
+
+  // Remote Opponent Smooth Netcode State (Dead reckoning + LERP interpolation)
+  private remoteTargetDistance: number = 0;
+  private remoteTargetSpeed: number = 16;
+  private remoteTargetLane: Lane = 1;
+  private remoteTargetX: number = 1;
+  private remoteTargetJumpY: number = 0;
+  private remoteLastSyncTime: number = 0;
+  private isInitialSeedSynced: boolean = false;
 
   // Top-Middle 2-Line Bubble Chat Elements (Rival Info)
   private rivalBubbleEl!: HTMLElement;
@@ -67,8 +82,14 @@ export class SodaDashGame implements GameInstance {
     this.session = session;
 
     // Seed matching: host chooses seed or online syncs seed
-    const initialSeed = Date.now();
-    this.engine = new SodaDashEngine(initialSeed);
+    if (session.mode === 'online' && session.peer?.role === 'host') {
+      const initialSeed = Math.floor(Math.random() * 1000000) + 1;
+      this.engine = new SodaDashEngine(initialSeed);
+      this.isInitialSeedSynced = true;
+    } else {
+      const initialSeed = Date.now();
+      this.engine = new SodaDashEngine(initialSeed);
+    }
 
     this.mountUI();
     this.initCanvasAndRenderer();
@@ -81,6 +102,7 @@ export class SodaDashGame implements GameInstance {
 
     this.startTime = Date.now();
     this.lastTime = performance.now();
+    this.remoteLastSyncTime = performance.now();
     (window as any).__sodaDashGame = this;
     this.startLoop();
   }
@@ -90,7 +112,6 @@ export class SodaDashGame implements GameInstance {
   // -------------------------------------------------------------
 
   private mountUI(): void {
-    const isDark = this.session.theme === 'dark';
     const isOnline = this.session.mode === 'online';
     const diff = this.session.aiDifficulty ? this.session.aiDifficulty.toUpperCase() : 'PVP';
 
@@ -117,12 +138,21 @@ export class SodaDashGame implements GameInstance {
             STARTING...
           </div>
 
-          <!-- Quick Audio Toggle -->
+          <!-- Quick Audio Toggle & Net Ping Badge -->
           <div class="flex items-center space-x-1.5">
+            <div id="dash-net-ping" class="hidden items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm">
+              <span id="dash-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span id="dash-net-text">--ms</span>
+            </div>
             <button id="btn-dash-sound" class="p-2 rounded-xl text-xs bg-slate-800/90 text-slate-300 hover:bg-slate-700 border border-slate-700/60 shadow-md">
               🔊
             </button>
           </div>
+        </div>
+
+        <!-- Inactive Tab / Opponent Away Banner -->
+        <div id="dash-peer-away-banner" class="hidden w-full max-w-6xl px-3 sm:px-6 z-20 py-0.5 text-center rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-[10px] tracking-wide animate-pulse">
+          ⚠️ Opponent is tabbed out / minimized
         </div>
 
         <!-- In-Game HUD: Dual Hearts & Distance Meters -->
@@ -178,46 +208,58 @@ export class SodaDashGame implements GameInstance {
                 </div>
               </div>
               <!-- Speech bubble notch pointing towards top-right rival card -->
-              <div class="absolute -top-1.5 right-8 w-3 h-3 bg-slate-900 border-l border-t border-rose-500/50 rotate-45"></div>
+              <div class="absolute -top-1.5 right-10 w-3 h-3 bg-slate-900 rotate-45 border-t border-l border-rose-500/50"></div>
             </div>
           </div>
-          
-          <!-- Desktop Keyboard Hint (hidden on touch devices) -->
-          <div class="hidden sm:flex absolute bottom-4 left-6 z-10 pointer-events-none items-center space-x-2 text-[11px] font-semibold text-slate-300 bg-slate-900/85 px-3 py-1.5 rounded-xl border border-sky-500/30 backdrop-blur-md">
-            <span>Keys: [A/D] or [←/→] Lane • [W/Space] Jump • [S/↓] Slide • [E] Item</span>
-          </div>
-
-          <!-- Touch Item Slot Button -->
-          <button id="btn-use-item" class="absolute bottom-4 right-4 z-20 px-4 py-3 rounded-2xl font-black text-xs sm:text-sm tracking-wide bg-gradient-to-r from-amber-500 to-yellow-400 text-amber-950 shadow-xl shadow-amber-500/30 border border-yellow-300 active:scale-95 transition-all opacity-40 pointer-events-none">
-            EMPTY ITEM
-          </button>
         </div>
 
-        <!-- Mobile Touch Bar (Directional Tap Controls) with Android Safe Area Inset -->
-        <div class="sm:hidden w-full px-3 pt-2.5 z-20 grid grid-cols-4 gap-2.5 pointer-events-auto bg-slate-900/95 border-t border-sky-400/30 backdrop-blur-md" style="padding-bottom: max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 0.85rem));">
-          <button id="touch-left" class="py-3.5 rounded-xl bg-slate-800 text-sky-200 font-bold text-xl active:bg-slate-700 active:scale-95 shadow border border-sky-500/40 flex items-center justify-center">←</button>
-          <button id="touch-jump" class="py-3.5 rounded-xl bg-gradient-to-r from-cyan-600 to-sky-500 text-white font-black text-xs active:scale-95 shadow border border-cyan-300/60 flex items-center justify-center gap-1"><span>JUMP</span> <span>⬆</span></button>
-          <button id="touch-slide" class="py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-black text-xs active:scale-95 shadow border border-yellow-300/60 flex items-center justify-center gap-1"><span>SLIDE</span> <span>⬇</span></button>
-          <button id="touch-right" class="py-3.5 rounded-xl bg-slate-800 text-sky-200 font-bold text-xl active:bg-slate-700 active:scale-95 shadow border border-sky-500/40 flex items-center justify-center">→</button>
+        <!-- Bottom Controller Bar (Mobile Touch & Keyboard HUD) -->
+        <div class="w-full max-w-6xl px-3 sm:px-6 py-2.5 z-20 flex items-center justify-between pointer-events-auto bg-slate-950/90 backdrop-blur-md border-t border-slate-800/80">
+          <!-- Left/Right Lane Controls -->
+          <div class="flex items-center space-x-2 sm:space-x-3">
+            <button id="touch-left" class="w-14 h-13 sm:w-16 sm:h-14 rounded-2xl bg-slate-800/90 text-white font-black text-xl active:bg-cyan-500 active:scale-95 shadow-lg border border-slate-700 flex items-center justify-center transition-transform select-none">
+              ←
+            </button>
+            <button id="touch-right" class="w-14 h-13 sm:w-16 sm:h-14 rounded-2xl bg-slate-800/90 text-white font-black text-xl active:bg-cyan-500 active:scale-95 shadow-lg border border-slate-700 flex items-center justify-center transition-transform select-none">
+              →
+            </button>
+          </div>
+
+          <!-- Jump & Slide Actions -->
+          <div class="flex items-center space-x-2 sm:space-x-3">
+            <button id="touch-jump" class="px-4 sm:px-6 h-13 sm:h-14 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black text-sm sm:text-base tracking-wider uppercase active:scale-95 shadow-lg shadow-cyan-500/25 border border-cyan-400/40 flex items-center justify-center transition-transform select-none">
+              JUMP ↑
+            </button>
+            <button id="touch-slide" class="px-4 sm:px-6 h-13 sm:h-14 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 text-white font-black text-sm sm:text-base tracking-wider uppercase active:scale-95 shadow-lg shadow-amber-500/25 border border-amber-400/40 flex items-center justify-center transition-transform select-none">
+              SLIDE ↓
+            </button>
+          </div>
+
+          <!-- Item Slot Button -->
+          <div class="flex items-center">
+            <button id="btn-use-item" class="relative px-3.5 sm:px-5 h-13 sm:h-14 rounded-2xl bg-slate-800/80 text-slate-400 font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg border border-slate-700/60 flex items-center space-x-1.5 transition-all select-none">
+              <span>NO ITEM</span>
+            </button>
+          </div>
         </div>
 
         <!-- Game Over Modal -->
-        <div id="modal-dash-gameover" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md hidden">
-          <div class="w-full max-w-sm rounded-3xl p-6 sm:p-8 text-center shadow-2xl border ${isDark ? 'border-slate-700 bg-slate-900' : 'border-slate-800 bg-slate-900'} text-white animate-in fade-in zoom-in-95 duration-200">
-            <div id="dash-winner-emoji" class="text-5xl sm:text-6xl mb-3">🏆</div>
-            <h2 id="dash-winner-title" class="text-2xl sm:text-3xl font-black tracking-tight mb-2 text-yellow-400">VICTORY!</h2>
-            <p id="dash-winner-sub" class="text-xs text-slate-400 mb-5 font-medium">You outlasted your rival on the infinite highway!</p>
-            
-            <div id="dash-stats-box" class="rounded-2xl p-4 mb-6 bg-slate-950 border border-slate-800 text-left space-y-2 text-xs font-mono text-slate-300">
-              <!-- Dynamic stats -->
+        <div id="modal-dash-gameover" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+          <div class="w-full max-w-sm rounded-3xl p-6 flex flex-col items-center text-center shadow-2xl border border-slate-800 bg-slate-900 text-white animate-in fade-in zoom-in-95 duration-200">
+            <div id="dash-winner-icon" class="text-5xl mb-2">🏆</div>
+            <h3 id="dash-winner-title" class="text-2xl font-black mb-1 text-cyan-400 tracking-wide">VICTORY!</h3>
+            <p id="dash-winner-desc" class="text-xs text-slate-400 mb-4">You outlasted your rival!</p>
+
+            <div id="dash-stats-box" class="w-full p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 mb-5 text-xs space-y-1.5">
+              <!-- Stats populated dynamically -->
             </div>
 
-            <div class="space-y-2.5">
-              <button id="btn-dash-rematch" class="w-full py-3.5 rounded-2xl font-black text-sm tracking-wide bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/30 hover:brightness-110 active:scale-98 transition-all">
-                PLAY AGAIN
+            <div class="w-full space-y-2.5">
+              <button id="btn-dash-rematch" class="w-full py-3 px-6 rounded-xl font-black tracking-wider uppercase text-white bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-500/30 active:scale-95 transition-all cursor-pointer">
+                Play Again
               </button>
-              <button id="btn-dash-exit-modal" class="w-full py-2.5 rounded-xl font-bold text-xs text-slate-400 hover:text-white transition-all">
-                Exit to Hub
+              <button id="btn-dash-exit-modal" class="w-full py-2.5 px-6 rounded-xl text-xs font-bold text-slate-300 hover:bg-slate-800 active:scale-95 transition-all border border-slate-700/50 cursor-pointer">
+                Exit to Arcade Hub
               </button>
             </div>
           </div>
@@ -226,7 +268,6 @@ export class SodaDashGame implements GameInstance {
       </div>
     `;
 
-    // Cache elements
     this.canvas = document.getElementById('dash-canvas') as HTMLCanvasElement;
     this.playerHeartsEl = document.getElementById('player-hearts')!;
     this.opponentHeartsEl = document.getElementById('opponent-hearts')!;
@@ -238,6 +279,12 @@ export class SodaDashGame implements GameInstance {
     this.gameOverModalEl = document.getElementById('modal-dash-gameover')!;
     this.gameOverTitleEl = document.getElementById('dash-winner-title')!;
     this.gameOverStatsEl = document.getElementById('dash-stats-box')!;
+
+    // Network Health HUD elements
+    this.pingEl = document.getElementById('dash-net-ping');
+    this.pingDotEl = document.getElementById('dash-net-dot');
+    this.pingTextEl = document.getElementById('dash-net-text');
+    this.peerAwayBannerEl = document.getElementById('dash-peer-away-banner');
 
     // Bubble chat elements
     this.rivalBubbleEl = document.getElementById('dash-rival-bubble')!;
@@ -256,22 +303,26 @@ export class SodaDashGame implements GameInstance {
       if (btn) btn.textContent = enabled ? '🔊' : '🔇';
     });
 
-    // Touch bar buttons
+    // Touch bar buttons (Instant Action Broadcast for PvP)
     document.getElementById('touch-left')?.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.engine.moveLeft('player');
+      this.broadcastAction('MOVE_LEFT');
     });
     document.getElementById('touch-right')?.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.engine.moveRight('player');
+      this.broadcastAction('MOVE_RIGHT');
     });
     document.getElementById('touch-jump')?.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.engine.jump('player');
+      this.broadcastAction('JUMP');
     });
     document.getElementById('touch-slide')?.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.engine.slide('player');
+      this.broadcastAction('SLIDE');
     });
     this.itemBtnEl.addEventListener('click', () => {
       this.useItem();
@@ -426,12 +477,14 @@ export class SodaDashGame implements GameInstance {
       case 'A':
         e.preventDefault();
         this.engine.moveLeft('player');
+        this.broadcastAction('MOVE_LEFT');
         break;
       case 'ArrowRight':
       case 'd':
       case 'D':
         e.preventDefault();
         this.engine.moveRight('player');
+        this.broadcastAction('MOVE_RIGHT');
         break;
       case 'ArrowUp':
       case 'w':
@@ -439,12 +492,14 @@ export class SodaDashGame implements GameInstance {
       case ' ':
         e.preventDefault();
         this.engine.jump('player');
+        this.broadcastAction('JUMP');
         break;
       case 'ArrowDown':
       case 's':
       case 'S':
         e.preventDefault();
         this.engine.slide('player');
+        this.broadcastAction('SLIDE');
         break;
       case 'e':
       case 'E':
@@ -483,18 +538,33 @@ export class SodaDashGame implements GameInstance {
         // Horizontal swipe
         if (dx < 0) {
           this.engine.moveLeft('player');
+          this.broadcastAction('MOVE_LEFT');
         } else {
           this.engine.moveRight('player');
+          this.broadcastAction('MOVE_RIGHT');
         }
       } else {
         // Vertical swipe
         if (dy < 0) {
           this.engine.jump('player');
+          this.broadcastAction('JUMP');
         } else {
           this.engine.slide('player');
+          this.broadcastAction('SLIDE');
         }
       }
     }
+  }
+
+  private broadcastAction(action: 'MOVE_LEFT' | 'MOVE_RIGHT' | 'JUMP' | 'SLIDE'): void {
+    if (this.session.mode !== 'online' || !this.session.peer?.isConnected) return;
+    this.session.peer.sendMessage({
+      type: 'DASH_ACTION',
+      action,
+      lane: this.engine.player.lane,
+      distance: this.engine.player.distance,
+      timestamp: performance.now()
+    });
   }
 
   // -------------------------------------------------------------
@@ -506,19 +576,82 @@ export class SodaDashGame implements GameInstance {
 
     const peer = this.session.peer;
     const origOnMessage = peer.events?.onMessage;
+    const origOnStatusChange = peer.events?.onStatusChange;
+    const origOnHealthChange = peer.events?.onHealthChange;
 
     peer.events = {
       ...peer.events,
       onMessage: (raw: NetworkMessage) => {
         origOnMessage?.(raw);
         this.handleNetworkMessage(raw as any);
+      },
+      onStatusChange: (status: string, message?: string) => {
+        origOnStatusChange?.(status as any, message);
+        if (status === 'connected' && this.session.peer?.role === 'host') {
+          this.session.peer.sendMessage({
+            type: 'DASH_READY',
+            seed: this.engine.track.getSeed()
+          });
+        } else if (status === 'disconnected') {
+          this.handleGameOver('player');
+        }
+      },
+      onHealthChange: (health: NetworkHealth) => {
+        origOnHealthChange?.(health);
+        this.updateNetworkHealthHUD(health);
       }
     };
+
+    if (this.session.peer.isConnected) {
+      if (this.session.peer.role === 'host') {
+        this.session.peer.sendMessage({
+          type: 'DASH_READY',
+          seed: this.engine.track.getSeed()
+        });
+      }
+      this.updateNetworkHealthHUD({
+        rtt: this.session.peer.currentRtt,
+        status: this.session.peer.networkQuality,
+        isPeerVisible: this.session.peer.isPeerVisible
+      });
+    }
 
     // 20Hz state broadcast interval
     this.syncIntervalId = window.setInterval(() => {
       this.broadcastState();
     }, 50);
+  }
+
+  private updateNetworkHealthHUD(health: NetworkHealth): void {
+    if (!this.pingEl || !this.pingDotEl || !this.pingTextEl) return;
+    this.pingEl.classList.remove('hidden');
+    this.pingEl.classList.add('inline-flex');
+
+    if (health.status === 'stalled') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+      this.pingTextEl.textContent = 'Lag ⚠️';
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    } else if (health.status === 'poor') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+      this.pingTextEl.textContent = `${health.rtt}ms`;
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    } else if (health.status === 'moderate') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+      this.pingTextEl.textContent = `${health.rtt}ms`;
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    } else {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+      this.pingTextEl.textContent = `${health.rtt || 28}ms`;
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    }
+
+    if (this.peerAwayBannerEl) {
+      if (!health.isPeerVisible) {
+        this.peerAwayBannerEl.classList.remove('hidden');
+      } else {
+        this.peerAwayBannerEl.classList.add('hidden');
+      }
+    }
   }
 
   private broadcastState(): void {
@@ -539,19 +672,61 @@ export class SodaDashGame implements GameInstance {
       stumbling: p.stumbleTimer > 0,
       isTurbo: p.isTurbo,
       hasShield: p.hasShield,
-      heldItem: p.heldItem
+      heldItem: p.heldItem,
+      timestamp: performance.now()
     };
     this.session.peer.sendMessage(msg);
   }
 
   private handleNetworkMessage(msg: DashNetworkMessage): void {
-    if (msg.type === 'DASH_SYNC') {
+    if (msg.type === 'DASH_READY') {
+      if (!this.isInitialSeedSynced) {
+        this.isInitialSeedSynced = true;
+        this.engine.reset(msg.seed);
+        this.remoteTargetDistance = 0;
+        this.remoteTargetSpeed = 16;
+        this.remoteTargetLane = 1;
+        this.remoteTargetX = 1;
+        this.remoteTargetJumpY = 0;
+        this.remoteLastSyncTime = performance.now();
+        this.updateHUD();
+      }
+    } else if (msg.type === 'DASH_ACTION') {
       const opp = this.engine.opponent;
-      opp.distance = msg.distance;
-      opp.speed = msg.speed;
-      opp.lane = msg.lane;
-      opp.currentX = msg.currentX;
-      opp.jumpY = msg.jumpY;
+      if (msg.action === 'MOVE_LEFT') {
+        opp.lane = Math.max(-1, opp.lane - 1) as Lane;
+        this.remoteTargetLane = opp.lane;
+        this.remoteTargetX = opp.lane;
+        sounds.playMove();
+      } else if (msg.action === 'MOVE_RIGHT') {
+        opp.lane = Math.min(1, opp.lane + 1) as Lane;
+        this.remoteTargetLane = opp.lane;
+        this.remoteTargetX = opp.lane;
+        sounds.playMove();
+      } else if (msg.action === 'JUMP') {
+        opp.isJumping = true;
+        opp.isSliding = false;
+        opp.slideTimer = 0;
+        opp.jumpVy = 4.4;
+        this.remoteTargetJumpY = 1.0;
+        sounds.playDashJump();
+      } else if (msg.action === 'SLIDE') {
+        opp.isSliding = true;
+        opp.isJumping = false;
+        opp.slideTimer = 0.75;
+        this.remoteTargetJumpY = 0;
+        sounds.playDashSlide();
+      }
+    } else if (msg.type === 'DASH_SYNC') {
+      const opp = this.engine.opponent;
+      // Target state update for smooth dead reckoning & LERP
+      this.remoteTargetDistance = msg.distance;
+      this.remoteTargetSpeed = msg.speed;
+      this.remoteTargetLane = msg.lane;
+      this.remoteTargetX = msg.currentX;
+      this.remoteTargetJumpY = msg.jumpY;
+      this.remoteLastSyncTime = performance.now();
+
       opp.isJumping = msg.isJumping;
       opp.isSliding = msg.isSliding;
       opp.hearts = msg.hearts;
@@ -570,6 +745,12 @@ export class SodaDashGame implements GameInstance {
       this.handleGameOver('player');
     } else if (msg.type === 'DASH_REMATCH') {
       this.engine.reset(msg.seed);
+      this.remoteTargetDistance = 0;
+      this.remoteTargetSpeed = 16;
+      this.remoteTargetLane = 1;
+      this.remoteTargetX = 1;
+      this.remoteTargetJumpY = 0;
+      this.remoteLastSyncTime = performance.now();
       this.gameOverModalEl.classList.add('hidden');
       this.updateHUD();
     }
@@ -634,13 +815,44 @@ export class SodaDashGame implements GameInstance {
       const dt = Math.min((time - this.lastTime) / 1000, 0.1);
       this.lastTime = time;
 
-      // Update AI
+      // 1. In online mode: Dead reckoning & liquid exponential LERP smoothing for remote opponent
+      if (this.session.mode === 'online' && !this.engine.opponent.isDead) {
+        const opp = this.engine.opponent;
+
+        // Advance remote target distance using dead reckoning if packet was received recently (< 2.0s)
+        const isStalled = time - this.remoteLastSyncTime > 2000;
+        if (!isStalled) {
+          this.remoteTargetDistance += this.remoteTargetSpeed * dt;
+        }
+
+        // Smoothly blend distance toward target
+        const distDiff = this.remoteTargetDistance - opp.distance;
+        if (Math.abs(distDiff) > 6.0) {
+          opp.distance = this.remoteTargetDistance;
+        } else {
+          opp.distance += distDiff * Math.min(1.0, 14.0 * dt);
+        }
+
+        // Smoothly blend lateral position toward target
+        const xDiff = this.remoteTargetX - opp.currentX;
+        opp.currentX += xDiff * Math.min(1.0, 18.0 * dt);
+
+        // Smoothly blend vertical jump position toward target
+        const yDiff = this.remoteTargetJumpY - opp.jumpY;
+        opp.jumpY += yDiff * Math.min(1.0, 22.0 * dt);
+
+        opp.speed = this.remoteTargetSpeed;
+        opp.lane = this.remoteTargetLane;
+      }
+
+      // 2. Update AI (offline only)
       if (this.ai) {
         this.ai.update(dt);
       }
 
-      // Update Physics & Simulation
-      this.engine.update(dt);
+      // 3. Update Physics & Simulation
+      // In online mode, skip local engine simulation of opponent as remote peer + dead reckoning is authoritative
+      this.engine.update(dt, this.session.mode === 'online');
 
       // Track Max Speed
       const kmh = Math.floor(this.engine.player.speed * 3.6);
@@ -730,66 +942,67 @@ export class SodaDashGame implements GameInstance {
   }
 
   private renderHeartsHtml(hearts: number): string {
-    let s = '';
-    for (let i = 0; i < 3; i++) {
-      if (i < hearts) {
-        s += '<span class="inline-block transform hover:scale-110 transition-transform">❤️</span>';
-      } else {
-        s += '<span class="inline-block opacity-25 grayscale">🖤</span>';
-      }
-    }
-    return s;
+    const full = '❤️'.repeat(Math.max(0, hearts));
+    const empty = '🤍'.repeat(Math.max(0, 3 - hearts));
+    return full + empty;
   }
 
   private updateItemButton(): void {
     const item = this.engine.player.heldItem;
     if (!item) {
       this.itemBtnEl.textContent = 'NO ITEM';
-      this.itemBtnEl.className = 'absolute bottom-6 right-6 z-20 px-4 py-3 rounded-2xl font-black text-xs sm:text-sm tracking-wide bg-slate-800 text-slate-500 border border-slate-700 opacity-40 pointer-events-none transition-all';
-    } else {
-      const labels: Record<string, string> = {
-        FIZZ_TURBO: '🚀 ROCKET BOOST',
-        BUBBLE_SHIELD: '🛡️ SHIELD',
-        SODA_SPILL: '🛢️ DROP TRAP'
-      };
-      this.itemBtnEl.textContent = labels[item] || item;
-      this.itemBtnEl.className = 'absolute bottom-6 right-6 z-20 px-4 py-3 rounded-2xl font-black text-xs sm:text-sm tracking-wide bg-gradient-to-r from-amber-500 to-yellow-400 text-amber-950 shadow-xl shadow-amber-500/40 border border-yellow-300 active:scale-95 transition-all opacity-100 cursor-pointer animate-pulse';
+      this.itemBtnEl.className = 'relative px-3.5 sm:px-5 h-13 sm:h-14 rounded-2xl bg-slate-800/80 text-slate-500 font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg border border-slate-700/60 flex items-center space-x-1.5 transition-all opacity-40 pointer-events-none select-none';
+      return;
+    }
+
+    this.itemBtnEl.classList.remove('opacity-40', 'pointer-events-none');
+    switch (item) {
+      case 'FIZZ_TURBO':
+        this.itemBtnEl.textContent = '🚀 ROCKET BOOST';
+        this.itemBtnEl.className = 'relative px-3.5 sm:px-5 h-13 sm:h-14 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg shadow-orange-500/30 border border-amber-300 flex items-center space-x-1.5 transition-all select-none cursor-pointer animate-pulse';
+        break;
+      case 'BUBBLE_SHIELD':
+        this.itemBtnEl.textContent = '🛡️ BUBBLE SHIELD';
+        this.itemBtnEl.className = 'relative px-3.5 sm:px-5 h-13 sm:h-14 rounded-2xl bg-gradient-to-r from-sky-400 to-blue-600 text-white font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg shadow-sky-500/30 border border-sky-300 flex items-center space-x-1.5 transition-all select-none cursor-pointer';
+        break;
+      case 'SODA_SPILL':
+        this.itemBtnEl.textContent = '🛢️ CALTROPS TRAP';
+        this.itemBtnEl.className = 'relative px-3.5 sm:px-5 h-13 sm:h-14 rounded-2xl bg-gradient-to-r from-purple-500 to-pink-600 text-white font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg shadow-purple-500/30 border border-purple-300 flex items-center space-x-1.5 transition-all select-none cursor-pointer';
+        break;
     }
   }
 
   private handleGameOver(winner: 'player' | 'opponent' | 'draw'): void {
-    const isVictory = winner === 'player';
-    const isDraw = winner === 'draw';
+    if (this.gameOverModalEl && !this.gameOverModalEl.classList.contains('hidden')) {
+      return;
+    }
 
-    const title = isVictory ? 'VICTORY!' : isDraw ? 'PHOTO FINISH!' : 'DEFEATED!';
-    const emoji = isVictory ? '🏆' : isDraw ? '🤝' : '💥';
-    const sub = isVictory
-      ? 'Your rival ran out of hearts! You conquered the infinite highway!'
-      : isDraw
-      ? 'Both runners wiped out at the exact same moment!'
-      : 'You ran out of hearts! The road was unforgiving.';
-
-    document.getElementById('dash-winner-emoji')!.textContent = emoji;
-    this.gameOverTitleEl.textContent = title;
-    this.gameOverTitleEl.className = `text-2xl sm:text-3xl font-black tracking-tight mb-2 ${isVictory ? 'text-yellow-400' : isDraw ? 'text-cyan-400' : 'text-rose-500'}`;
-    document.getElementById('dash-winner-sub')!.textContent = sub;
-
-    const durationSec = Math.floor((Date.now() - this.startTime) / 1000);
+    const duration = Math.floor((Date.now() - this.startTime) / 1000);
     const pDist = Math.floor(this.engine.player.distance);
     const oDist = Math.floor(this.engine.opponent.distance);
 
+    this.gameOverTitleEl.textContent = winner === 'player' ? 'VICTORY!' : winner === 'draw' ? 'DRAW!' : 'DEFEATED!';
+    this.gameOverTitleEl.className = `text-2xl sm:text-3xl font-black tracking-tight mb-2 ${
+      winner === 'player' ? 'text-cyan-400' : winner === 'draw' ? 'text-amber-400' : 'text-rose-400'
+    }`;
+
+    const iconEl = document.getElementById('dash-winner-icon');
+    if (iconEl) {
+      iconEl.textContent = winner === 'player' ? '🏆' : winner === 'draw' ? '🤝' : '💀';
+    }
+
     this.gameOverStatsEl.innerHTML = `
-      <div class="flex justify-between"><span>Your Distance:</span><span class="font-bold text-cyan-400">${pDist} m</span></div>
-      <div class="flex justify-between"><span>Rival Distance:</span><span class="font-bold text-rose-400">${oDist} m</span></div>
-      <div class="flex justify-between"><span>Top Speed:</span><span class="font-bold text-yellow-400">${this.maxSpeedReached} km/h</span></div>
-      <div class="flex justify-between"><span>Obstacles Cleared:</span><span class="font-bold text-amber-400">${this.obstaclesDodged}</span></div>
-      <div class="flex justify-between"><span>Survival Time:</span><span class="font-bold text-white">${durationSec}s</span></div>
+      <div class="flex justify-between text-slate-300"><span>Distance Run:</span> <b class="font-mono text-white">${pDist} m</b></div>
+      <div class="flex justify-between text-slate-300"><span>Rival Distance:</span> <b class="font-mono text-white">${oDist} m</b></div>
+      <div class="flex justify-between text-slate-300"><span>Peak Speed:</span> <b class="font-mono text-white">${this.maxSpeedReached} km/h</b></div>
+      <div class="flex justify-between text-slate-300"><span>Obstacles Dodged:</span> <b class="font-mono text-white">${this.obstaclesDodged}</b></div>
+      <div class="flex justify-between text-slate-300"><span>Match Duration:</span> <b class="font-mono text-white">${duration}s</b></div>
     `;
 
     this.gameOverModalEl.classList.remove('hidden');
 
-    if (isVictory) {
-      sounds.playRoundComplete();
+    if (winner === 'player') {
+      sounds.playFanfare();
       confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
     } else {
       sounds.playInvalidBuzz();
@@ -808,6 +1021,12 @@ export class SodaDashGame implements GameInstance {
   private handleRematch(): void {
     const newSeed = Date.now();
     this.engine.reset(newSeed);
+    this.remoteTargetDistance = 0;
+    this.remoteTargetSpeed = 16;
+    this.remoteTargetLane = 1;
+    this.remoteTargetX = 1;
+    this.remoteTargetJumpY = 0;
+    this.remoteLastSyncTime = performance.now();
     this.gameOverModalEl.classList.add('hidden');
     this.startTime = Date.now();
     this.obstaclesDodged = 0;

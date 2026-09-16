@@ -156,7 +156,7 @@ export class SodaDashEngine {
 
   // --- Main Simulation Update ---
 
-  public update(dt: number): void {
+  public update(dt: number, skipOpponentSimulation: boolean = false): void {
     if (this.isGameOver) return;
 
     // Cap delta time to prevent physics tunneling on lag spikes
@@ -165,7 +165,7 @@ export class SodaDashEngine {
     if (!this.player.isDead) {
       this.updateRunner(this.player, clampedDt);
     }
-    if (!this.opponent.isDead) {
+    if (!this.opponent.isDead && !skipOpponentSimulation) {
       this.updateRunner(this.opponent, clampedDt);
     }
 

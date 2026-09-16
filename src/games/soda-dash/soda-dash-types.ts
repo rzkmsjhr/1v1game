@@ -89,6 +89,14 @@ export type DashNetworkMessage =
       isTurbo: boolean;
       hasShield: boolean;
       heldItem: PickupType | null;
+      timestamp?: number;
+    }
+  | {
+      type: 'DASH_ACTION';
+      action: 'MOVE_LEFT' | 'MOVE_RIGHT' | 'JUMP' | 'SLIDE';
+      lane: Lane;
+      distance: number;
+      timestamp: number;
     }
   | {
       type: 'DASH_ITEM_DROP';
