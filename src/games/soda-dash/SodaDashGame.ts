@@ -93,7 +93,7 @@ export class SodaDashGame implements GameInstance {
               <span>← Hub</span>
             </button>
             <div class="px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              ⚡ SODA RUSH • ${diff}
+              🥷 NINJA RUSH • ${diff}
             </div>
           </div>
 

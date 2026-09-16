@@ -285,9 +285,9 @@ export const GAMES_REGISTRY: GameDefinition[] = [
   },
   {
     id: 'soda-dash',
-    title: 'Soda Rush: 1v1 Dash',
-    subtitle: 'Colorful 1v1 Parkour Dash',
-    description: 'Dash down a sunny, colorful 3-lane highway with 3 Hearts in a cheerful 1v1 duel! Leap over hurdles, slide under banners, collect strawberry life cans, and outlast your rival!',
+    title: 'Ninja Rush: 1v1 Dash',
+    subtitle: '1v1 Ninja Parkour Dash',
+    description: 'Sprint down a sunny 3-lane highway with 3 Hearts in a high-speed ninja parkour duel! Leap over hurdles, slide under banners, dodge towering brick walls, and outlast your rival!',
     genre: 'Action Runner',
     badge: '1v1 Duel',
     bannerGradient: 'from-sky-400 via-cyan-500 to-indigo-600',

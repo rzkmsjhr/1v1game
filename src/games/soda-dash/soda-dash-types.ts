@@ -1,6 +1,6 @@
 /**
- * Type definitions for Soda Rush: 1v1 Infinite Survival Dash
- * High-speed urban parkour duel with 3 hearts, dynamic speed scaling, and obstacle dodging
+ * Type definitions for Ninja Rush: 1v1 Dash
+ * High-speed ninja parkour duel with 3 hearts, dynamic speed scaling, and obstacle dodging
  */
 
 export type Lane = -1 | 0 | 1; // Left, Center, Right
