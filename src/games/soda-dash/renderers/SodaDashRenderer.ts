@@ -29,7 +29,7 @@ export class SodaDashRenderer {
   private floatingTexts: FloatingText[] = [];
 
   // Visual layout constants
-  private horizonRatio: number = 0.33;
+  private horizonRatio: number = 0.28;
 
   constructor(canvas: HTMLCanvasElement, engine: SodaDashEngine) {
     this.canvas = canvas;
@@ -78,8 +78,8 @@ export class SodaDashRenderer {
     const horizonY = height * this.horizonRatio;
     const vanishX = width * 0.5;
 
-    // Camera follows player distance with a fixed follow distance
-    const cameraZ = this.engine.player.distance - 4.5;
+    // Camera follows player distance with a closer, more zoomed-in follow distance
+    const cameraZ = this.engine.player.distance - 3.4;
 
     // 1. Draw Sky & Parallax City Skyline
     this.drawSkyAndSkyline(ctx, width, height, horizonY, cameraZ);
@@ -228,7 +228,7 @@ export class SodaDashRenderer {
     vanishX: number,
     cameraZ: number
   ): void {
-    const roadHalfWidthBottom = width * 0.485;
+    const roadHalfWidthBottom = width * 0.52;
 
     // Lush Emerald Lawn Shoulders
     const grassGrad = ctx.createLinearGradient(0, horizonY, 0, height);
@@ -257,15 +257,15 @@ export class SodaDashRenderer {
 
     // Base Clean Slate Asphalt
     ctx.beginPath();
-    ctx.moveTo(vanishX - 35, horizonY);
-    ctx.lineTo(vanishX + 35, horizonY);
+    ctx.moveTo(vanishX - 42, horizonY);
+    ctx.lineTo(vanishX + 42, horizonY);
     ctx.lineTo(vanishX + roadHalfWidthBottom, height);
     ctx.lineTo(vanishX - roadHalfWidthBottom, height);
     ctx.closePath();
     ctx.fillStyle = '#334155'; // Smooth Vibrant Slate Track
     ctx.fill();
 
-    // Scrolling Curb Strips & Road Segments
+    // Scrolling Curb Strips & Road Segments (Clean road: NO yellow middle stripes)
     const segmentLength = 2.5;
     const startSegment = Math.floor(cameraZ / segmentLength);
 
@@ -285,8 +285,8 @@ export class SodaDashRenderer {
       // Curbs: Playful Candy Red & White Stripes
       const halfW1 = roadHalfWidthBottom * p1.scale;
       const halfW2 = roadHalfWidthBottom * p2.scale;
-      const curbW1 = Math.max(4, 42 * p1.scale);
-      const curbW2 = Math.max(4, 42 * p2.scale);
+      const curbW1 = Math.max(4, 46 * p1.scale);
+      const curbW2 = Math.max(4, 46 * p2.scale);
 
       ctx.fillStyle = isOdd ? '#ef4444' : '#ffffff';
 
@@ -305,17 +305,6 @@ export class SodaDashRenderer {
       ctx.lineTo(vanishX + halfW1 - curbW1, p1.y);
       ctx.lineTo(vanishX + halfW1, p1.y);
       ctx.fill();
-
-      // Dashed lane divider lines (Bright Sunshine Yellow)
-      if (isOdd) {
-        ctx.fillStyle = '#facc15';
-        for (const l of [-0.5, 0.5]) {
-          const lp1 = this.projectPoint(l, 0, relZ1, width, height, horizonY, vanishX);
-          const lp2 = this.projectPoint(l, 0, relZ2, width, height, horizonY, vanishX);
-          const lw = Math.max(2.8, 8 * p1.scale);
-          ctx.fillRect(lp1.x - lw * 0.5, lp2.y, lw, Math.max(1, lp1.y - lp2.y));
-        }
-      }
     }
   }
 
@@ -1003,11 +992,11 @@ export class SodaDashRenderer {
     horizonY: number,
     vanishX: number
   ): { x: number; y: number; scale: number } {
-    const minZ = 2.1;
-    const roadHalfWidthBottom = width * 0.485;
-    const laneSpacingBottom = roadHalfWidthBottom * 0.65;
+    const minZ = 2.4;
+    const roadHalfWidthBottom = width * 0.52;
+    const laneSpacingBottom = roadHalfWidthBottom * 0.68;
     const normScale = minZ / Math.max(0.1, relZ);
-    const y = horizonY + (height - horizonY) * normScale - trackY * 125 * normScale;
+    const y = horizonY + (height - horizonY) * normScale - trackY * 135 * normScale;
     const x = vanishX + (laneX * laneSpacingBottom) * normScale;
 
     return { x, y, scale: normScale };
