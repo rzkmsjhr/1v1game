@@ -65,10 +65,16 @@ export class PoolRenderer {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    // 1. Render Table Frame, Rails, Cloth, and Pockets
+    // 1. Render Table Frame, Rails, and Diamonds
     this.renderTableFrame(ctx);
+    // 2. Hardware Pocket Castings on Rails
+    this.renderPocketCastings(ctx);
+    // 3. Playable Cloth Bed & Markers
     this.renderClothAndMarkers(ctx, engine);
-    this.renderPockets(ctx);
+    // 4. Recessed Pocket Cavities & Drop Throats
+    this.renderPocketCavities(ctx);
+    // 5. Tournament Cushions with Beveled Rubber Facings
+    this.renderCushions(ctx);
 
     // 2. Render Aiming Guideline & Ghost Ball (player or opponent)
     const cue = engine.getCueBall();
@@ -112,25 +118,104 @@ export class PoolRenderer {
   // TABLE RENDERING
   // -------------------------------------------------------------
   private renderTableFrame(ctx: CanvasRenderingContext2D) {
-    // Outer wooden rail (rich mahogany / walnut finish)
+    // Outer wooden rail (rich dark walnut finish)
     const woodGrad = ctx.createLinearGradient(0, 0, TABLE_WIDTH, TABLE_HEIGHT);
-    woodGrad.addColorStop(0, '#1c130d');
-    woodGrad.addColorStop(0.3, '#382214');
-    woodGrad.addColorStop(0.7, '#2b1a10');
-    woodGrad.addColorStop(1, '#180f0a');
+    woodGrad.addColorStop(0, '#191008');
+    woodGrad.addColorStop(0.3, '#2d1c11');
+    woodGrad.addColorStop(0.7, '#23150d');
+    woodGrad.addColorStop(1, '#140c06');
 
     ctx.fillStyle = woodGrad;
     this.roundRect(ctx, 0, 0, TABLE_WIDTH, TABLE_HEIGHT, 22);
     ctx.fill();
 
-    // Subtle gold trim between wood and cushions
-    ctx.strokeStyle = 'rgba(212, 175, 55, 0.35)';
-    ctx.lineWidth = 1.5;
-    this.roundRect(ctx, 4, 4, TABLE_WIDTH - 8, TABLE_HEIGHT - 8, 18);
+    // Subtle outer edge highlight
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 1;
+    this.roundRect(ctx, 1, 1, TABLE_WIDTH - 2, TABLE_HEIGHT - 2, 21);
     ctx.stroke();
 
     // Sights / Diamond Markers on rails
     this.renderRailDiamonds(ctx);
+  }
+
+  private renderPocketCastings(ctx: CanvasRenderingContext2D) {
+    ctx.save();
+
+    // 4 Corner Pocket Hardware Castings (brushed satin bronze)
+    const drawCornerCasting = (cx: number, cy: number, rot: number) => {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rot);
+
+      const castGrad = ctx.createLinearGradient(0, 0, 52, 52);
+      castGrad.addColorStop(0, '#5a4425');
+      castGrad.addColorStop(0.35, '#c2a25a');
+      castGrad.addColorStop(0.7, '#8c7038');
+      castGrad.addColorStop(1, '#523c1e');
+
+      ctx.fillStyle = castGrad;
+      ctx.beginPath();
+      // Outer rounded table corner
+      ctx.moveTo(0, 52);
+      ctx.arcTo(0, 0, 52, 0, 22);
+      ctx.lineTo(52, 0);
+      ctx.lineTo(48, 18);
+      // Clean circular bezel hugging the outer curve of the pocket hole at (30, 30)
+      ctx.arc(30, 30, 20, Math.atan2(-12, 18), Math.atan2(18, -12), true);
+      ctx.lineTo(18, 48);
+      ctx.lineTo(0, 52);
+      ctx.closePath();
+      ctx.fill();
+
+      // Rim highlight bevel
+      ctx.strokeStyle = 'rgba(255, 245, 205, 0.45)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      ctx.restore();
+    };
+
+    drawCornerCasting(0, 0, 0); // Top-Left
+    drawCornerCasting(TABLE_WIDTH, 0, Math.PI / 2); // Top-Right
+    drawCornerCasting(TABLE_WIDTH, TABLE_HEIGHT, Math.PI); // Bottom-Right
+    drawCornerCasting(0, TABLE_HEIGHT, -Math.PI / 2); // Bottom-Left
+
+    // 2 Side Pocket Hardware Castings (brackets capping the top and bottom rails)
+    const drawSideCasting = (x: number, y: number, isTop: boolean) => {
+      ctx.save();
+      ctx.translate(x, y);
+      if (!isTop) ctx.scale(1, -1);
+
+      const castGrad = ctx.createLinearGradient(-32, 0, 32, 20);
+      castGrad.addColorStop(0, '#523c1e');
+      castGrad.addColorStop(0.3, '#c2a25a');
+      castGrad.addColorStop(0.7, '#8c7038');
+      castGrad.addColorStop(1, '#523c1e');
+
+      ctx.fillStyle = castGrad;
+      ctx.beginPath();
+      ctx.moveTo(-32, 0);
+      ctx.lineTo(32, 0);
+      ctx.lineTo(26, 18);
+      // Smoothly hugs the top rim of the pocket drop hole
+      ctx.arc(0, 20, 17, 0, Math.PI, true);
+      ctx.lineTo(-26, 18);
+      ctx.closePath();
+      ctx.fill();
+
+      // Rim highlight
+      ctx.strokeStyle = 'rgba(255, 245, 205, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.restore();
+    };
+
+    drawSideCasting(CENTER_X, 0, true);
+    drawSideCasting(CENTER_X, TABLE_HEIGHT, false);
+
+    ctx.restore();
   }
 
   private renderClothAndMarkers(ctx: CanvasRenderingContext2D, engine: PoolEngine) {
@@ -139,42 +224,24 @@ export class PoolRenderer {
       CENTER_X, CENTER_Y, 40,
       CENTER_X, CENTER_Y, 460
     );
-    clothGrad.addColorStop(0, '#0d8558');
+    clothGrad.addColorStop(0, '#0e8658');
     clothGrad.addColorStop(0.65, '#0a6c47');
-    clothGrad.addColorStop(1, '#064e33');
+    clothGrad.addColorStop(1, '#064d32');
+
+    // 8-sided tournament cloth polygon with 45-degree corner pocket chamfers
+    ctx.beginPath();
+    ctx.moveTo(PLAY_X_MIN + 22, PLAY_Y_MIN);
+    ctx.lineTo(PLAY_X_MAX - 22, PLAY_Y_MIN);
+    ctx.lineTo(PLAY_X_MAX, PLAY_Y_MIN + 22);
+    ctx.lineTo(PLAY_X_MAX, PLAY_Y_MAX - 22);
+    ctx.lineTo(PLAY_X_MAX - 22, PLAY_Y_MAX);
+    ctx.lineTo(PLAY_X_MIN + 22, PLAY_Y_MAX);
+    ctx.lineTo(PLAY_X_MIN, PLAY_Y_MAX - 22);
+    ctx.lineTo(PLAY_X_MIN, PLAY_Y_MIN + 22);
+    ctx.closePath();
 
     ctx.fillStyle = clothGrad;
-    ctx.fillRect(PLAY_X_MIN, PLAY_Y_MIN, PLAY_X_MAX - PLAY_X_MIN, PLAY_Y_MAX - PLAY_Y_MIN);
-
-    // Rail cushion shadows
-    const shadowSize = 14;
-    // Top shadow
-    const topShadow = ctx.createLinearGradient(0, PLAY_Y_MIN, 0, PLAY_Y_MIN + shadowSize);
-    topShadow.addColorStop(0, 'rgba(0, 0, 0, 0.45)');
-    topShadow.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = topShadow;
-    ctx.fillRect(PLAY_X_MIN, PLAY_Y_MIN, PLAY_X_MAX - PLAY_X_MIN, shadowSize);
-
-    // Left shadow
-    const leftShadow = ctx.createLinearGradient(PLAY_X_MIN, 0, PLAY_X_MIN + shadowSize, 0);
-    leftShadow.addColorStop(0, 'rgba(0, 0, 0, 0.45)');
-    leftShadow.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = leftShadow;
-    ctx.fillRect(PLAY_X_MIN, PLAY_Y_MIN, shadowSize, PLAY_Y_MAX - PLAY_Y_MIN);
-
-    // Bottom shadow
-    const bottomShadow = ctx.createLinearGradient(0, PLAY_Y_MAX, 0, PLAY_Y_MAX - shadowSize);
-    bottomShadow.addColorStop(0, 'rgba(0, 0, 0, 0.45)');
-    bottomShadow.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = bottomShadow;
-    ctx.fillRect(PLAY_X_MIN, PLAY_Y_MAX - shadowSize, PLAY_X_MAX - PLAY_X_MIN, shadowSize);
-
-    // Right shadow
-    const rightShadow = ctx.createLinearGradient(PLAY_X_MAX, 0, PLAY_X_MAX - shadowSize, 0);
-    rightShadow.addColorStop(0, 'rgba(0, 0, 0, 0.45)');
-    rightShadow.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = rightShadow;
-    ctx.fillRect(PLAY_X_MAX - shadowSize, PLAY_Y_MIN, shadowSize, PLAY_Y_MAX - PLAY_Y_MIN);
+    ctx.fill();
 
     // Head String (Kitchen Line)
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
@@ -204,7 +271,6 @@ export class PoolRenderer {
 
     // Lagging Phase Guidance
     if (engine.phase === 'LAGGING') {
-      // Horizontal divider dividing Player zone from Opponent zone
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
       ctx.lineWidth = 1.5;
       ctx.setLineDash([6, 6]);
@@ -231,8 +297,135 @@ export class PoolRenderer {
     }
   }
 
+  private renderPocketCavities(ctx: CanvasRenderingContext2D) {
+    ctx.save();
+
+    // 1. Fill all pocket throats with matching table green cloth to seamlessly extend table to pocket hole
+    const clothGrad = ctx.createRadialGradient(
+      CENTER_X, CENTER_Y, 40,
+      CENTER_X, CENTER_Y, 460
+    );
+    clothGrad.addColorStop(0, '#0e8658');
+    clothGrad.addColorStop(0.65, '#0a6c47');
+    clothGrad.addColorStop(1, '#064d32');
+    ctx.fillStyle = clothGrad;
+
+    // Top-Middle Throat
+    ctx.beginPath();
+    ctx.moveTo(CENTER_X - 22, PLAY_Y_MIN);
+    ctx.lineTo(CENTER_X - 16, PLAY_Y_MIN - 18);
+    ctx.lineTo(CENTER_X + 16, PLAY_Y_MIN - 18);
+    ctx.lineTo(CENTER_X + 22, PLAY_Y_MIN);
+    ctx.closePath();
+    ctx.fill();
+
+    // Bottom-Middle Throat
+    ctx.beginPath();
+    ctx.moveTo(CENTER_X - 22, PLAY_Y_MAX);
+    ctx.lineTo(CENTER_X - 16, PLAY_Y_MAX + 18);
+    ctx.lineTo(CENTER_X + 16, PLAY_Y_MAX + 18);
+    ctx.lineTo(CENTER_X + 22, PLAY_Y_MAX);
+    ctx.closePath();
+    ctx.fill();
+
+    // Top-Left Corner Throat
+    ctx.beginPath();
+    ctx.moveTo(PLAY_X_MIN + 22, PLAY_Y_MIN);
+    ctx.lineTo(PLAY_X_MIN + 12, PLAY_Y_MIN - 18);
+    ctx.arc(30, 30, 20, Math.atan2(-12, 18), Math.atan2(18, -12), true);
+    ctx.lineTo(PLAY_X_MIN - 18, PLAY_Y_MIN + 12);
+    ctx.lineTo(PLAY_X_MIN, PLAY_Y_MIN + 22);
+    ctx.closePath();
+    ctx.fill();
+
+    // Top-Right Corner Throat
+    ctx.beginPath();
+    ctx.moveTo(PLAY_X_MAX - 22, PLAY_Y_MIN);
+    ctx.lineTo(PLAY_X_MAX - 12, PLAY_Y_MIN - 18);
+    ctx.arc(TABLE_WIDTH - 30, 30, 20, Math.atan2(-12, -18), Math.atan2(18, 12), false);
+    ctx.lineTo(PLAY_X_MAX + 18, PLAY_Y_MIN + 12);
+    ctx.lineTo(PLAY_X_MAX, PLAY_Y_MIN + 22);
+    ctx.closePath();
+    ctx.fill();
+
+    // Bottom-Left Corner Throat
+    ctx.beginPath();
+    ctx.moveTo(PLAY_X_MIN + 22, PLAY_Y_MAX);
+    ctx.lineTo(PLAY_X_MIN + 12, PLAY_Y_MAX + 18);
+    ctx.arc(30, TABLE_HEIGHT - 30, 20, Math.atan2(12, 18), Math.atan2(-18, -12), false);
+    ctx.lineTo(PLAY_X_MIN - 18, PLAY_Y_MAX - 12);
+    ctx.lineTo(PLAY_X_MIN, PLAY_Y_MAX - 22);
+    ctx.closePath();
+    ctx.fill();
+
+    // Bottom-Right Corner Throat
+    ctx.beginPath();
+    ctx.moveTo(PLAY_X_MAX - 22, PLAY_Y_MAX);
+    ctx.lineTo(PLAY_X_MAX - 12, PLAY_Y_MAX + 18);
+    ctx.arc(TABLE_WIDTH - 30, TABLE_HEIGHT - 30, 20, Math.atan2(12, -18), Math.atan2(-18, 12), true);
+    ctx.lineTo(PLAY_X_MAX + 18, PLAY_Y_MAX - 12);
+    ctx.lineTo(PLAY_X_MAX, PLAY_Y_MAX - 22);
+    ctx.closePath();
+    ctx.fill();
+
+    // 2. Render deep 3D black radial gradient drop hole cavities
+    for (const p of POCKETS) {
+      if (p.isMiddle) {
+        const isTop = p.y < CENTER_Y;
+
+        // Deep black drop cavity abyss
+        const holeGrad = ctx.createRadialGradient(
+          p.x, p.y, 2,
+          p.x, p.y, p.radius
+        );
+        holeGrad.addColorStop(0, '#000103');
+        holeGrad.addColorStop(0.65, '#04070d');
+        holeGrad.addColorStop(1, '#0e1622');
+
+        ctx.fillStyle = holeGrad;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Rear shadow rim
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        if (isTop) {
+          ctx.arc(p.x, p.y, p.radius - 1, Math.PI * 0.9, Math.PI * 2.1);
+        } else {
+          ctx.arc(p.x, p.y, p.radius - 1, 0, Math.PI * 1.2);
+        }
+        ctx.stroke();
+      } else {
+        // Corner Pocket
+        const holeGrad = ctx.createRadialGradient(
+          p.x, p.y, 2,
+          p.x, p.y, p.radius
+        );
+        holeGrad.addColorStop(0, '#000103');
+        holeGrad.addColorStop(0.65, '#04070d');
+        holeGrad.addColorStop(1, '#0e1622');
+
+        ctx.fillStyle = holeGrad;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Soft outer shadow rim
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius - 1, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+  }
+
   private renderRailDiamonds(ctx: CanvasRenderingContext2D) {
-    ctx.fillStyle = 'rgba(245, 245, 245, 0.65)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     const rY = 16;
     const bY = TABLE_HEIGHT - 16;
     const lX = 16;
@@ -268,23 +461,149 @@ export class PoolRenderer {
     ctx.fill();
   }
 
-  private renderPockets(ctx: CanvasRenderingContext2D) {
-    for (const p of POCKETS) {
-      // Pocket drop hole (dark abyss)
-      const holeGrad = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, p.radius);
-      holeGrad.addColorStop(0, '#020408');
-      holeGrad.addColorStop(0.8, '#080c14');
-      holeGrad.addColorStop(1, '#111827');
+  private renderCushions(ctx: CanvasRenderingContext2D) {
+    const xMin = PLAY_X_MIN; // 36
+    const xMax = PLAY_X_MAX; // 836
+    const yMin = PLAY_Y_MIN; // 36
+    const yMax = PLAY_Y_MAX; // 436
+    const cx = CENTER_X;     // 436
 
-      ctx.fillStyle = holeGrad;
+    // 6 tournament cushions
+    const cushions = [
+      // 1. Top-Left Cushion
+      {
+        noseStart: { x: xMin + 22, y: yMin },
+        noseEnd: { x: cx - 22, y: yMin },
+        backEnd: { x: cx - 16, y: yMin - 18 },
+        backStart: { x: xMin + 12, y: yMin - 18 },
+        isHoriz: true,
+        normalY: 1
+      },
+      // 2. Top-Right Cushion
+      {
+        noseStart: { x: cx + 22, y: yMin },
+        noseEnd: { x: xMax - 22, y: yMin },
+        backEnd: { x: xMax - 12, y: yMin - 18 },
+        backStart: { x: cx + 16, y: yMin - 18 },
+        isHoriz: true,
+        normalY: 1
+      },
+      // 3. Bottom-Left Cushion
+      {
+        noseStart: { x: xMin + 22, y: yMax },
+        noseEnd: { x: cx - 22, y: yMax },
+        backEnd: { x: cx - 16, y: yMax + 18 },
+        backStart: { x: xMin + 12, y: yMax + 18 },
+        isHoriz: true,
+        normalY: -1
+      },
+      // 4. Bottom-Right Cushion
+      {
+        noseStart: { x: cx + 22, y: yMax },
+        noseEnd: { x: xMax - 22, y: yMax },
+        backEnd: { x: xMax - 12, y: yMax + 18 },
+        backStart: { x: cx + 16, y: yMax + 18 },
+        isHoriz: true,
+        normalY: -1
+      },
+      // 5. Left Cushion (Head Rail)
+      {
+        noseStart: { x: xMin, y: yMin + 22 },
+        noseEnd: { x: xMin, y: yMax - 22 },
+        backEnd: { x: xMin - 18, y: yMax - 12 },
+        backStart: { x: xMin - 18, y: yMin + 12 },
+        isHoriz: false,
+        normalX: 1
+      },
+      // 6. Right Cushion (Foot Rail)
+      {
+        noseStart: { x: xMax, y: yMin + 22 },
+        noseEnd: { x: xMax, y: yMax - 22 },
+        backEnd: { x: xMax + 18, y: yMax - 12 },
+        backStart: { x: xMax + 18, y: yMin + 12 },
+        isHoriz: false,
+        normalX: -1
+      }
+    ];
+
+    for (const c of cushions) {
+      ctx.save();
+
+      // a. Soft drop shadow cast from cushion nose onto cloth
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      if (c.isHoriz) {
+        const sY = c.normalY! > 0 ? 3.5 : -3.5;
+        ctx.moveTo(c.noseStart.x, c.noseStart.y);
+        ctx.lineTo(c.noseEnd.x, c.noseEnd.y);
+        ctx.lineTo(c.noseEnd.x, c.noseEnd.y + sY);
+        ctx.lineTo(c.noseStart.x, c.noseStart.y + sY);
+      } else {
+        const sX = c.normalX! > 0 ? 3.5 : -3.5;
+        ctx.moveTo(c.noseStart.x, c.noseStart.y);
+        ctx.lineTo(c.noseEnd.x, c.noseEnd.y);
+        ctx.lineTo(c.noseEnd.x + sX, c.noseEnd.y);
+        ctx.lineTo(c.noseStart.x + sX, c.noseStart.y);
+      }
+      ctx.closePath();
       ctx.fill();
 
-      // Brass / Metallic rim
-      ctx.strokeStyle = '#927238';
-      ctx.lineWidth = 2.5;
+      // b. Solid Tournament Green Cushion Body
+      ctx.beginPath();
+      ctx.moveTo(c.noseStart.x, c.noseStart.y);
+      ctx.lineTo(c.noseEnd.x, c.noseEnd.y);
+      ctx.lineTo(c.backEnd.x, c.backEnd.y);
+      ctx.lineTo(c.backStart.x, c.backStart.y);
+      ctx.closePath();
+
+      let grad: CanvasGradient;
+      if (c.isHoriz) {
+        grad = ctx.createLinearGradient(0, c.backStart.y, 0, c.noseStart.y);
+        grad.addColorStop(0, '#0a6442');
+        grad.addColorStop(0.5, '#0c754d');
+        grad.addColorStop(1, '#0e885a');
+      } else {
+        grad = ctx.createLinearGradient(c.backStart.x, 0, c.noseStart.x, 0);
+        grad.addColorStop(0, '#0a6442');
+        grad.addColorStop(0.5, '#0c754d');
+        grad.addColorStop(1, '#0e885a');
+      }
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // c. Authentic Black Rubber Pocket Facing Pads (Jaws)
+      ctx.strokeStyle = '#121820';
+      ctx.lineWidth = 3.0;
+      ctx.lineCap = 'round';
+      // Jaw 1 (start facing)
+      ctx.beginPath();
+      ctx.moveTo(c.noseStart.x, c.noseStart.y);
+      ctx.lineTo(c.backStart.x, c.backStart.y);
       ctx.stroke();
+      // Jaw 2 (end facing)
+      ctx.beginPath();
+      ctx.moveTo(c.noseEnd.x, c.noseEnd.y);
+      ctx.lineTo(c.backEnd.x, c.backEnd.y);
+      ctx.stroke();
+
+      // Facing subtle highlight edge
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(c.noseStart.x, c.noseStart.y);
+      ctx.lineTo(c.backStart.x, c.backStart.y);
+      ctx.stroke();
+
+      // d. Crisp, subtle cushion nose highlight line
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.55)';
+      ctx.lineWidth = 1.2;
+      ctx.lineCap = 'butt';
+      ctx.beginPath();
+      ctx.moveTo(c.noseStart.x, c.noseStart.y);
+      ctx.lineTo(c.noseEnd.x, c.noseEnd.y);
+      ctx.stroke();
+
+      ctx.restore();
     }
   }
 

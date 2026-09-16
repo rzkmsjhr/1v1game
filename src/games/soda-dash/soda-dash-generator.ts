@@ -172,14 +172,16 @@ export class SodaTrackGenerator {
         continue;
       }
 
-      // Colorful Gold Chest spawn (~12% chance)
+      // Powerup Pickup spawn (~12% chance: Gold Chest, Flying Rocket, or Shield Orb)
       if (roll > 0.88) {
-        const chestLane = lanes[Math.floor(this.rng() * 3)];
+        const itemLane = lanes[Math.floor(this.rng() * 3)];
+        const subRoll = this.rng();
+        const pickupType = subRoll < 0.50 ? 'CHEST' : subRoll < 0.75 ? 'FIZZ_TURBO' : 'BUBBLE_SHIELD';
         this.items.push({
           id: `item-${this.nextItemId++}`,
           z: currentZ,
-          lane: chestLane,
-          type: 'CHEST'
+          lane: itemLane,
+          type: pickupType
         });
         currentZ += spacing * 0.75;
         continue;

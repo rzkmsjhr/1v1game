@@ -443,7 +443,7 @@ export class SodaDashRenderer {
     const itemLen = items.length;
     for (let i = 0; i < itemLen; i++) {
       const item = items[i];
-      if (item.hit && item.type !== 'PUDDLE' && item.type !== 'SODA_SPILL' && item.type !== 'SLOW_PAD') continue;
+      if ((item.hit || item.cleared) && item.type !== 'PUDDLE' && item.type !== 'SODA_SPILL' && item.type !== 'SLOW_PAD') continue;
       if (count >= maxSlots) break;
       const slot = this.renderSlots[count++];
       slot.isRunner = false;
@@ -858,56 +858,229 @@ export class SodaDashRenderer {
       }
 
       case 'HEART': {
-        // Glowing Strawberry Soda Life Can (+1 Heart)
-        const maxCw = p.laneSpacing * 0.28;
-        const cw = Math.min(38 * s, maxCw);
-        const sEff = cw / 38;
-        const ch = 66 * sEff;
-        const floatY = -42 * sEff + Math.sin(Date.now() * 0.006 + item.z) * 8 * sEff;
+        // Standalone Glowing 3D Heart Pickup (+1 Heart, purely shaped, no box/wrapper)
+        const maxHw = p.laneSpacing * 0.30;
+        const hw = Math.min(38 * s, maxHw);
+        const sEff = hw / 38;
+        const floatY = -48 * sEff + Math.sin(Date.now() * 0.006 + item.z) * 8 * sEff;
+        const pulse = 1.0 + Math.sin(Date.now() * 0.009 + item.z * 1.5) * 0.08;
 
-        // Radiant Golden Aura Halo
-        const auraGrad = ctx.createRadialGradient(0, floatY - ch * 0.5, 6, 0, floatY - ch * 0.5, cw * 2.2);
-        auraGrad.addColorStop(0, 'rgba(253, 224, 71, 0.65)');
+        // Ground Drop Shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.32)';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, hw * 1.05, 8 * sEff, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Radiant Warm Pink/Red Aura Halo
+        const auraGrad = ctx.createRadialGradient(0, floatY, 4 * sEff, 0, floatY, hw * 2.3);
+        auraGrad.addColorStop(0, 'rgba(244, 63, 94, 0.65)');
+        auraGrad.addColorStop(0.4, 'rgba(239, 68, 68, 0.22)');
         auraGrad.addColorStop(1, 'transparent');
         ctx.fillStyle = auraGrad;
-        ctx.fillRect(-cw * 2.2, floatY - ch * 1.5, cw * 4.4, ch * 2);
+        ctx.fillRect(-hw * 2.3, floatY - hw * 2.3, hw * 4.6, hw * 4.6);
+
+        // Vector Cartoon 3D Heart Shape
+        const w = hw * pulse;
+        const h = hw * 1.05 * pulse;
+        const cy = floatY;
+
+        ctx.beginPath();
+        ctx.moveTo(0, cy + h * 0.85);
+        // Left lobe curve
+        ctx.bezierCurveTo(-w * 1.4, cy + h * 0.2, -w * 1.35, cy - h * 0.75, -w * 0.55, cy - h * 0.75);
+        ctx.bezierCurveTo(-w * 0.15, cy - h * 0.75, 0, cy - h * 0.35, 0, cy - h * 0.22);
+        // Right lobe curve
+        ctx.bezierCurveTo(0, cy - h * 0.35, w * 0.15, cy - h * 0.75, w * 0.55, cy - h * 0.75);
+        ctx.bezierCurveTo(w * 1.35, cy - h * 0.75, w * 1.4, cy + h * 0.2, 0, cy + h * 0.85);
+        ctx.closePath();
+
+        // Vibrant 3D Ruby/Crimson Shading
+        const heartGrad = ctx.createLinearGradient(-w * 0.5, cy - h * 0.7, w * 0.5, cy + h * 0.8);
+        heartGrad.addColorStop(0, '#ff3366'); // Radiant bright cherry top
+        heartGrad.addColorStop(0.45, '#ef4444'); // Classic ruby red
+        heartGrad.addColorStop(1, '#991b1b'); // Rich crimson shadow bottom
+        ctx.fillStyle = heartGrad;
+        ctx.fill();
+
+        // Bold Outline
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = Math.max(2.5, 5 * sEff);
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+
+        // Specular 3D Gloss / Shine on Top-Left Lobe
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+        ctx.beginPath();
+        ctx.ellipse(-w * 0.5, cy - h * 0.42, w * 0.32, h * 0.16, -Math.PI / 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.beginPath();
+        ctx.arc(-w * 0.36, cy - h * 0.48, 2.5 * sEff, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Twinkling stars / sparkles
+        ctx.font = `bold ${Math.max(10, (20 * sEff) | 0)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText('✨', -hw * 1.25, floatY - hw * 0.65);
+        ctx.fillText('✨', hw * 1.25, floatY - hw * 0.1);
+        break;
+      }
+
+      case 'FIZZ_TURBO': {
+        // Standalone 3D Rocket Item (pure shape, not in a box)
+        const maxRw = p.laneSpacing * 0.30;
+        const rw = Math.min(34 * s, maxRw);
+        const sEff = rw / 34;
+        const floatY = -48 * sEff + Math.sin(Date.now() * 0.007 + item.z) * 8 * sEff;
 
         // Ground Drop Shadow
         ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
         ctx.beginPath();
-        ctx.ellipse(0, 0, cw * 1.1, 9 * sEff, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, 0, rw * 1.05, 8 * sEff, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Strawberry Red Can with Bold Cartoon Outline
-        ctx.fillStyle = '#ef4444';
-        ctx.strokeStyle = '#0f172a';
-        ctx.lineWidth = Math.max(2.5, 5 * sEff);
+        // Warm fiery aura
+        const auraGrad = ctx.createRadialGradient(0, floatY, 4 * sEff, 0, floatY, rw * 2.2);
+        auraGrad.addColorStop(0, 'rgba(249, 115, 22, 0.6)');
+        auraGrad.addColorStop(0.5, 'rgba(234, 179, 8, 0.25)');
+        auraGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = auraGrad;
+        ctx.fillRect(-rw * 2.2, floatY - rw * 2.2, rw * 4.4, rw * 4.4);
+
+        // Rocket Thruster Fire (pulsing)
+        const flameH = (16 + Math.sin(Date.now() * 0.02 + item.z) * 6) * sEff;
+        ctx.fillStyle = '#f59e0b';
         ctx.beginPath();
-        ctx.roundRect(-cw, floatY - ch, cw * 2, ch, 14 * sEff);
+        ctx.moveTo(-9 * sEff, floatY + 16 * sEff);
+        ctx.lineTo(0, floatY + 16 * sEff + flameH);
+        ctx.lineTo(9 * sEff, floatY + 16 * sEff);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath();
+        ctx.moveTo(-5 * sEff, floatY + 16 * sEff);
+        ctx.lineTo(0, floatY + 16 * sEff + flameH * 0.65);
+        ctx.lineTo(5 * sEff, floatY + 16 * sEff);
+        ctx.closePath();
+        ctx.fill();
+
+        // Rocket Fins
+        ctx.fillStyle = '#f59e0b';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = Math.max(2, 3.5 * sEff);
+        // Left fin
+        ctx.beginPath();
+        ctx.moveTo(-13 * sEff, floatY + 2 * sEff);
+        ctx.lineTo(-22 * sEff, floatY + 18 * sEff);
+        ctx.lineTo(-13 * sEff, floatY + 16 * sEff);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // Right fin
+        ctx.beginPath();
+        ctx.moveTo(13 * sEff, floatY + 2 * sEff);
+        ctx.lineTo(22 * sEff, floatY + 18 * sEff);
+        ctx.lineTo(13 * sEff, floatY + 16 * sEff);
+        ctx.closePath();
         ctx.fill();
         ctx.stroke();
 
-        // Golden Sparkling Rims
-        ctx.fillStyle = '#fde047';
-        ctx.fillRect(-cw + 2 * sEff, floatY - ch + 2 * sEff, cw * 2 - 4 * sEff, 8 * sEff);
-        ctx.fillRect(-cw + 2 * sEff, floatY - 9 * sEff, cw * 2 - 4 * sEff, 8 * sEff);
+        // Rocket Fuselage
+        ctx.fillStyle = '#ef4444';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = Math.max(2.5, 4.5 * sEff);
+        ctx.beginPath();
+        ctx.roundRect(-13 * sEff, floatY - 14 * sEff, 26 * sEff, 30 * sEff, [0, 0, 6 * sEff, 6 * sEff]);
+        ctx.fill();
+        ctx.stroke();
 
-        // Heart Symbol
-        ctx.font = `bold ${Math.max(14, (36 * sEff) | 0)}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('❤️', 0, floatY - ch * 0.5);
+        // Nose Cone (Pointed Tip)
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(-13 * sEff, floatY - 14 * sEff);
+        ctx.quadraticCurveTo(0, floatY - 40 * sEff, 13 * sEff, floatY - 14 * sEff);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
 
-        // Twinkling stars
-        ctx.font = `bold ${Math.max(10, (22 * sEff) | 0)}px sans-serif`;
-        ctx.fillText('✨', -cw * 1.3, floatY - ch * 0.8);
-        ctx.fillText('✨', cw * 1.3, floatY - ch * 0.2);
+        // Cyan Porthole Window
+        ctx.fillStyle = '#38bdf8';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = Math.max(1.5, 3 * sEff);
+        ctx.beginPath();
+        ctx.arc(0, floatY - 2 * sEff, 6.5 * sEff, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Sparkles
+        ctx.font = `bold ${Math.max(10, (18 * sEff) | 0)}px sans-serif`;
+        ctx.fillText('✨', -rw * 1.2, floatY - 18 * sEff);
+        ctx.fillText('✨', rw * 1.2, floatY);
         break;
       }
 
-      case 'CHEST':
-      case 'FIZZ_TURBO':
       case 'BUBBLE_SHIELD': {
+        // Standalone 3D Shield Orb Item (pure shape, not in a box)
+        const maxSw = p.laneSpacing * 0.30;
+        const sw = Math.min(36 * s, maxSw);
+        const sEff = sw / 36;
+        const floatY = -48 * sEff + Math.sin(Date.now() * 0.006 + item.z) * 8 * sEff;
+
+        // Ground Drop Shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, sw * 1.05, 8 * sEff, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Cyan Shimmering Aura
+        const auraGrad = ctx.createRadialGradient(0, floatY, 4 * sEff, 0, floatY, sw * 2.2);
+        auraGrad.addColorStop(0, 'rgba(56, 189, 248, 0.65)');
+        auraGrad.addColorStop(0.5, 'rgba(6, 182, 212, 0.25)');
+        auraGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = auraGrad;
+        ctx.fillRect(-sw * 2.2, floatY - sw * 2.2, sw * 4.4, sw * 4.4);
+
+        // Spherical Energy Bubble
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.28)';
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = Math.max(2.5, 4.5 * sEff);
+        ctx.beginPath();
+        ctx.arc(0, floatY, 24 * sEff, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Inner Shield Crest Emblem
+        ctx.fillStyle = '#fde047';
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = Math.max(2, 3.5 * sEff);
+        ctx.beginPath();
+        ctx.moveTo(0, floatY + 14 * sEff);
+        ctx.lineTo(-12 * sEff, floatY + 2 * sEff);
+        ctx.lineTo(-12 * sEff, floatY - 12 * sEff);
+        ctx.lineTo(12 * sEff, floatY - 12 * sEff);
+        ctx.lineTo(12 * sEff, floatY + 2 * sEff);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Blue Emblem Center
+        ctx.fillStyle = '#0284c7';
+        ctx.beginPath();
+        ctx.arc(0, floatY - 2 * sEff, 3.5 * sEff, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Specular highlight on bubble
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(2, 3.5 * sEff);
+        ctx.beginPath();
+        ctx.arc(-7 * sEff, floatY - 7 * sEff, 11 * sEff, Math.PI * 1.1, Math.PI * 1.6);
+        ctx.stroke();
+        break;
+      }
+
+      case 'CHEST': {
         // Colorful Gold Treasure Chest (Mystery Powerup)
         const maxBw = p.laneSpacing * 0.32;
         const bw = Math.min(50 * s, maxBw);

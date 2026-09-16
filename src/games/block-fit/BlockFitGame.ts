@@ -510,7 +510,7 @@ export class BlockFitGame implements GameInstance {
       }, 1200);
     } else {
       // Show Round Winner Banner and transition to next round
-      this.roundWinnerTextEl.textContent = winner === 'player' ? `YOU WON ROUND ${this.engine.matchScore.currentRound - 1}!` : `ENEMY TOOK ROUND ${this.engine.matchScore.currentRound - 1}!`;
+      this.roundWinnerTextEl.textContent = winner === 'player' ? `YOU WON ROUND ${this.engine.matchScore.currentRound}!` : `ENEMY TOOK ROUND ${this.engine.matchScore.currentRound}!`;
       this.roundWinnerTextEl.className = `text-3xl sm:text-4xl font-black tracking-tight text-center ${winner === 'player' ? 'text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-300' : 'text-rose-400'}`;
       this.roundWinnerSubtextEl.textContent = `Score: You ${this.engine.matchScore.playerWins} - ${this.engine.matchScore.opponentWins} Enemy`;
       this.roundWinnerOverlayEl.classList.remove('hidden');

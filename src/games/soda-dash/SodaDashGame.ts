@@ -114,75 +114,76 @@ export class SodaDashGame implements GameInstance {
   private mountUI(): void {
     const isOnline = this.session.mode === 'online';
     const diff = this.session.aiDifficulty ? this.session.aiDifficulty.toUpperCase() : 'PVP';
+    const isDark = this.session.theme === 'dark';
 
-    this.container.className = 'w-full h-full p-0 m-0 overflow-hidden bg-[#0a0c13] flex justify-center';
-    document.body.style.backgroundColor = '#0a0c13';
+    this.container.className = 'w-full h-full p-0 m-0 overflow-hidden flex justify-center ' + (isDark ? 'bg-[#0a0c13]' : 'bg-slate-100');
+    document.body.style.backgroundColor = isDark ? '#0a0c13' : '#f1f5f9';
 
     this.container.innerHTML = `
-      <div class="relative w-full max-w-6xl mx-auto h-[100dvh] max-h-[100dvh] flex flex-col items-center justify-between overflow-hidden select-none bg-slate-950 font-sans shadow-2xl sm:border-x sm:border-slate-800/60" style="height: 100dvh; max-height: 100dvh;">
+      <div class="relative w-full max-w-6xl mx-auto h-[100dvh] max-h-[100dvh] flex flex-col items-center justify-between overflow-hidden select-none font-sans shadow-2xl sm:border-x border-slate-200 dark:border-slate-800/60 bg-slate-100 dark:bg-slate-950" style="height: 100dvh; max-height: 100dvh;">
         
         <!-- Top Navigation & Status Bar -->
-        <div class="w-full max-w-6xl px-3 sm:px-6 py-2 sm:py-3 z-20 flex items-center justify-between pointer-events-auto">
+        <div class="w-full max-w-6xl px-3 sm:px-6 py-2 sm:py-3 z-20 flex items-center justify-between pointer-events-auto bg-white/95 dark:bg-transparent backdrop-blur-md dark:backdrop-blur-none">
           <!-- Back button & Mode Tag -->
           <div class="flex items-center space-x-2">
-            <button id="btn-dash-exit" class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-slate-800/90 text-slate-200 hover:bg-slate-700 active:scale-95 flex items-center space-x-1 shadow-md border border-slate-700/60 backdrop-blur-md">
+            <button id="btn-dash-exit" class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-white dark:bg-slate-800/90 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 flex items-center space-x-1 shadow-md border border-slate-200 dark:border-slate-700/60 backdrop-blur-md">
               <span>← Hub</span>
             </button>
-            <div class="hidden sm:inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            <div class="hidden sm:inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wider uppercase bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-300/50 dark:border-amber-500/30">
               🥷 NINJA RUSH • ${diff}
             </div>
           </div>
 
           <!-- Real-Time Distance Lead Badge -->
-          <div id="dash-lead-badge" class="px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-black tracking-wide bg-slate-900/90 text-cyan-400 border border-cyan-500/30 shadow-lg backdrop-blur-md whitespace-nowrap flex-shrink-0 text-center">
+          <div id="dash-lead-badge" class="px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-black tracking-wide bg-white dark:bg-slate-900/90 text-cyan-600 dark:text-cyan-400 border border-cyan-300/40 dark:border-cyan-500/30 shadow-lg backdrop-blur-md whitespace-nowrap flex-shrink-0 text-center">
             STARTING...
           </div>
 
           <!-- Quick Audio Toggle & Net Ping Badge -->
           <div class="flex items-center space-x-1.5">
-            <div id="dash-net-ping" class="hidden items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm">
-              <span id="dash-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <div id="dash-net-ping" class="hidden items-center space-x-1 text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-300/40 dark:border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm">
+              <span id="dash-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400"></span>
               <span id="dash-net-text">--ms</span>
             </div>
-            <button id="btn-dash-sound" class="p-2 rounded-xl text-xs bg-slate-800/90 text-slate-300 hover:bg-slate-700 border border-slate-700/60 shadow-md">
+            <button id="btn-dash-sound" class="p-2 rounded-xl text-xs bg-white dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700/60 shadow-md">
               🔊
             </button>
           </div>
         </div>
 
         <!-- Inactive Tab / Opponent Away Banner -->
-        <div id="dash-peer-away-banner" class="hidden w-full max-w-6xl px-3 sm:px-6 z-20 py-0.5 text-center rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-[10px] tracking-wide animate-pulse">
+        <div id="dash-peer-away-banner" class="hidden w-full max-w-6xl px-3 sm:px-6 z-20 py-0.5 text-center rounded-lg bg-amber-100 dark:bg-amber-500/20 border border-amber-300/40 dark:border-amber-500/40 text-amber-700 dark:text-amber-300 font-bold text-[10px] tracking-wide animate-pulse">
           ⚠️ Opponent is tabbed out / minimized
         </div>
 
         <!-- In-Game HUD: Dual Hearts & Distance Meters (Streamlined & Compact) -->
-        <div class="w-full max-w-6xl px-3 sm:px-6 z-20 grid grid-cols-2 gap-2.5 sm:gap-4 pointer-events-none">
+        <div class="w-full max-w-6xl px-3 sm:px-6 z-20 grid grid-cols-2 gap-2.5 sm:gap-4 pointer-events-none pb-1">
           
           <!-- Player Health & Distance Card -->
-          <div class="px-2.5 py-1.5 sm:p-3 rounded-xl sm:rounded-2xl bg-slate-900/85 border border-cyan-500/40 shadow-xl backdrop-blur-md flex flex-col space-y-0.5 sm:space-y-1">
+          <div class="px-2.5 py-1.5 sm:p-3 rounded-xl sm:rounded-2xl bg-white/95 dark:bg-slate-900/85 border border-cyan-300/50 dark:border-cyan-500/40 shadow-xl backdrop-blur-md flex flex-col space-y-0.5 sm:space-y-1">
             <div class="flex items-center justify-between">
-              <span class="text-[10px] sm:text-[11px] font-black tracking-wider text-cyan-400 uppercase">YOU (CYAN)</span>
+              <span class="text-[10px] sm:text-[11px] font-black tracking-wider text-cyan-600 dark:text-cyan-400 uppercase">YOU (CYAN)</span>
               <div id="player-hearts" class="text-xs sm:text-base tracking-widest text-red-500 flex items-center space-x-0.5">
                 ❤️ ❤️ ❤️
               </div>
             </div>
             <div class="flex items-baseline justify-between pt-0.5">
-              <div id="player-dist" class="text-base sm:text-2xl font-black font-mono text-white tracking-tight">0 m</div>
-              <div id="player-speed" class="text-[10px] sm:text-xs font-bold font-mono text-cyan-300">58 km/h</div>
+              <div id="player-dist" class="text-base sm:text-2xl font-black font-mono text-slate-900 dark:text-white tracking-tight">0 m</div>
+              <div id="player-speed" class="text-[10px] sm:text-xs font-bold font-mono text-cyan-500 dark:text-cyan-300">58 km/h</div>
             </div>
           </div>
 
           <!-- Opponent Health & Distance Card -->
-          <div class="px-2.5 py-1.5 sm:p-3 rounded-xl sm:rounded-2xl bg-slate-900/85 border border-rose-500/40 shadow-xl backdrop-blur-md flex flex-col space-y-0.5 sm:space-y-1">
+          <div class="px-2.5 py-1.5 sm:p-3 rounded-xl sm:rounded-2xl bg-white/95 dark:bg-slate-900/85 border border-rose-300/50 dark:border-rose-500/40 shadow-xl backdrop-blur-md flex flex-col space-y-0.5 sm:space-y-1">
             <div class="flex items-center justify-between">
-              <span class="text-[10px] sm:text-[11px] font-black tracking-wider text-rose-400 uppercase">${isOnline ? 'OPPONENT' : `BOT (${diff})`}</span>
+              <span class="text-[10px] sm:text-[11px] font-black tracking-wider text-rose-600 dark:text-rose-400 uppercase">${isOnline ? 'OPPONENT' : `BOT (${diff})`}</span>
               <div id="opponent-hearts" class="text-xs sm:text-base tracking-widest text-red-500 flex items-center space-x-0.5">
                 ❤️ ❤️ ❤️
               </div>
             </div>
             <div class="flex items-baseline justify-between pt-0.5">
-              <div id="opponent-dist" class="text-base sm:text-2xl font-black font-mono text-white tracking-tight">0 m</div>
-              <div class="text-[10px] sm:text-xs font-bold text-rose-300">RIVAL</div>
+              <div id="opponent-dist" class="text-base sm:text-2xl font-black font-mono text-slate-900 dark:text-white tracking-tight">0 m</div>
+              <div class="text-[10px] sm:text-xs font-bold text-rose-500 dark:text-rose-300">RIVAL</div>
             </div>
           </div>
 
@@ -194,26 +195,26 @@ export class SodaDashGame implements GameInstance {
           
           <!-- Top-Middle 2-Line Bubble Chat Styled Notification Feed (Rival Info) -->
           <div id="dash-rival-bubble" class="absolute top-3 sm:top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-300 opacity-0 -translate-y-2 max-w-xs sm:max-w-md w-[90%] flex justify-center">
-            <div class="relative px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl bg-slate-900/95 border border-rose-500/50 shadow-2xl backdrop-blur-md flex items-center space-x-2.5 sm:space-x-3 text-left">
+            <div class="relative px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl bg-white/95 dark:bg-slate-900/95 border border-rose-300/50 dark:border-rose-500/50 shadow-2xl backdrop-blur-md flex items-center space-x-2.5 sm:space-x-3 text-left">
               <div id="dash-bubble-icon" class="flex-shrink-0 w-8 h-8 rounded-xl bg-gradient-to-br from-rose-500 to-amber-500 flex items-center justify-center text-sm shadow-md">
                 🥷
               </div>
               <div class="flex-1 min-w-0 pr-1">
-                <div id="dash-bubble-line1" class="text-[10px] sm:text-[11px] font-black tracking-wider uppercase text-rose-400 flex items-center justify-between">
+                <div id="dash-bubble-line1" class="text-[10px] sm:text-[11px] font-black tracking-wider uppercase text-rose-500 dark:text-rose-400 flex items-center justify-between">
                   <span>RIVAL INFO</span>
-                  <span class="text-[9px] text-slate-400 font-normal">ALERT</span>
+                  <span class="text-[9px] text-slate-500 dark:text-slate-400 font-normal">ALERT</span>
                 </div>
-                <div id="dash-bubble-line2" class="text-xs sm:text-sm font-bold text-white truncate drop-shadow-sm">
+                <div id="dash-bubble-line2" class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate drop-shadow-sm">
                   Rival is ready!
                 </div>
               </div>
               <!-- Speech bubble notch pointing towards top-right rival card -->
-              <div class="absolute -top-1.5 right-10 w-3 h-3 bg-slate-900 rotate-45 border-t border-l border-rose-500/50"></div>
+              <div class="absolute -top-1.5 right-10 w-3 h-3 bg-white dark:bg-slate-900 rotate-45 border-t border-l border-rose-300/50 dark:border-rose-500/50"></div>
             </div>
           </div>
 
           <!-- Desktop Keyboard Hint (hidden on touch/mobile) -->
-          <div class="hidden sm:flex absolute bottom-4 left-6 z-20 pointer-events-none items-center space-x-2 text-[11px] font-semibold text-slate-400/80 bg-slate-900/85 px-3 py-1.5 rounded-xl border border-slate-800 backdrop-blur-md">
+          <div class="hidden sm:flex absolute bottom-4 left-6 z-20 pointer-events-none items-center space-x-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400/80 bg-white/90 dark:bg-slate-900/85 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 backdrop-blur-md">
             <span>Keys: [A/D] or [←/→] Lane • [W/Space] Jump • [S/↓] Slide • [E] Item</span>
           </div>
 
@@ -224,8 +225,8 @@ export class SodaDashGame implements GameInstance {
         </div>
 
         <!-- Mobile Touch Bar (Directional Tap Controls) with Android/iOS Safe Area Inset -->
-        <div class="sm:hidden w-full max-w-6xl px-3 pt-2.5 z-20 grid grid-cols-4 gap-2.5 pointer-events-auto bg-slate-950/90 border-t border-slate-800/80 backdrop-blur-md" style="padding-bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem));">
-          <button id="touch-left" class="py-3.5 rounded-2xl bg-slate-800/90 text-white font-black text-2xl active:bg-cyan-500 active:scale-95 shadow-lg border border-slate-700 flex items-center justify-center transition-transform select-none">
+        <div class="sm:hidden w-full max-w-6xl px-3 pt-2.5 z-20 grid grid-cols-4 gap-2.5 pointer-events-auto bg-white/95 dark:bg-slate-950/90 border-t border-slate-200 dark:border-slate-800/80 backdrop-blur-md" style="padding-bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem));">
+          <button id="touch-left" class="py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800/90 text-slate-700 dark:text-white font-black text-2xl active:bg-cyan-500 active:text-white active:scale-95 shadow-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center transition-transform select-none">
             ←
           </button>
           <button id="touch-jump" class="py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg shadow-cyan-500/25 border border-cyan-400/40 flex items-center justify-center gap-1 transition-transform select-none">
@@ -234,19 +235,19 @@ export class SodaDashGame implements GameInstance {
           <button id="touch-slide" class="py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 text-white font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg shadow-amber-500/25 border border-amber-400/40 flex items-center justify-center gap-1 transition-transform select-none">
             <span>SLIDE</span> <span>↓</span>
           </button>
-          <button id="touch-right" class="py-3.5 rounded-2xl bg-slate-800/90 text-white font-black text-2xl active:bg-cyan-500 active:scale-95 shadow-lg border border-slate-700 flex items-center justify-center transition-transform select-none">
+          <button id="touch-right" class="py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800/90 text-slate-700 dark:text-white font-black text-2xl active:bg-cyan-500 active:text-white active:scale-95 shadow-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center transition-transform select-none">
             →
           </button>
         </div>
 
         <!-- Game Over Modal -->
         <div id="modal-dash-gameover" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
-          <div class="w-full max-w-sm rounded-3xl p-6 flex flex-col items-center text-center shadow-2xl border border-slate-800 bg-slate-900 text-white animate-in fade-in zoom-in-95 duration-200">
+          <div class="w-full max-w-sm rounded-3xl p-6 flex flex-col items-center text-center shadow-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white animate-in fade-in zoom-in-95 duration-200">
             <div id="dash-winner-icon" class="text-5xl mb-2">🏆</div>
             <h3 id="dash-winner-title" class="text-2xl font-black mb-1 text-cyan-400 tracking-wide">VICTORY!</h3>
-            <p id="dash-winner-desc" class="text-xs text-slate-400 mb-4">You outlasted your rival!</p>
+            <p id="dash-winner-desc" class="text-xs text-slate-500 dark:text-slate-400 mb-4">You outlasted your rival!</p>
 
-            <div id="dash-stats-box" class="w-full p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 mb-5 text-xs space-y-1.5">
+            <div id="dash-stats-box" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800/80 mb-5 text-xs space-y-1.5">
               <!-- Stats populated dynamically -->
             </div>
 
@@ -254,7 +255,7 @@ export class SodaDashGame implements GameInstance {
               <button id="btn-dash-rematch" class="w-full py-3 px-6 rounded-xl font-black tracking-wider uppercase text-white bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-500/30 active:scale-95 transition-all cursor-pointer">
                 Play Again
               </button>
-              <button id="btn-dash-exit-modal" class="w-full py-2.5 px-6 rounded-xl text-xs font-bold text-slate-300 hover:bg-slate-800 active:scale-95 transition-all border border-slate-700/50 cursor-pointer">
+              <button id="btn-dash-exit-modal" class="w-full py-2.5 px-6 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all border border-slate-200 dark:border-slate-700/50 cursor-pointer">
                 Exit to Arcade Hub
               </button>
             </div>
@@ -911,13 +912,13 @@ export class SodaDashGame implements GameInstance {
     let leadClass = '';
     if (Math.abs(lead) < 3) {
       leadText = '⚡ NECK & NECK!';
-      leadClass = 'px-3 py-1 rounded-full text-xs font-black tracking-wide bg-slate-900/90 text-amber-400 border border-amber-500/30 shadow-lg backdrop-blur-md';
+      leadClass = 'px-3 py-1 rounded-full text-xs font-black tracking-wide bg-white dark:bg-slate-900/90 text-amber-600 dark:text-amber-400 border border-amber-300/40 dark:border-amber-500/30 shadow-lg backdrop-blur-md';
     } else if (lead > 0) {
       leadText = `🚀 +${lead}m AHEAD`;
-      leadClass = 'px-3 py-1 rounded-full text-xs font-black tracking-wide bg-slate-900/90 text-cyan-400 border border-cyan-500/30 shadow-lg backdrop-blur-md';
+      leadClass = 'px-3 py-1 rounded-full text-xs font-black tracking-wide bg-white dark:bg-slate-900/90 text-cyan-600 dark:text-cyan-400 border border-cyan-300/40 dark:border-cyan-500/30 shadow-lg backdrop-blur-md';
     } else {
       leadText = `⚠️ ${Math.abs(lead)}m BEHIND`;
-      leadClass = 'px-3 py-1 rounded-full text-xs font-black tracking-wide bg-slate-900/90 text-rose-400 border border-rose-500/30 shadow-lg backdrop-blur-md';
+      leadClass = 'px-3 py-1 rounded-full text-xs font-black tracking-wide bg-white dark:bg-slate-900/90 text-rose-600 dark:text-rose-400 border border-rose-300/40 dark:border-rose-500/30 shadow-lg backdrop-blur-md';
     }
 
     if (this.lastLeadText !== leadText) {
@@ -988,11 +989,11 @@ export class SodaDashGame implements GameInstance {
     }
 
     this.gameOverStatsEl.innerHTML = `
-      <div class="flex justify-between text-slate-300"><span>Distance Run:</span> <b class="font-mono text-white">${pDist} m</b></div>
-      <div class="flex justify-between text-slate-300"><span>Rival Distance:</span> <b class="font-mono text-white">${oDist} m</b></div>
-      <div class="flex justify-between text-slate-300"><span>Peak Speed:</span> <b class="font-mono text-white">${this.maxSpeedReached} km/h</b></div>
-      <div class="flex justify-between text-slate-300"><span>Obstacles Dodged:</span> <b class="font-mono text-white">${this.obstaclesDodged}</b></div>
-      <div class="flex justify-between text-slate-300"><span>Match Duration:</span> <b class="font-mono text-white">${duration}s</b></div>
+      <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Distance Run:</span> <b class="font-mono text-slate-900 dark:text-white">${pDist} m</b></div>
+      <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Rival Distance:</span> <b class="font-mono text-slate-900 dark:text-white">${oDist} m</b></div>
+      <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Peak Speed:</span> <b class="font-mono text-slate-900 dark:text-white">${this.maxSpeedReached} km/h</b></div>
+      <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Obstacles Dodged:</span> <b class="font-mono text-slate-900 dark:text-white">${this.obstaclesDodged}</b></div>
+      <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Match Duration:</span> <b class="font-mono text-slate-900 dark:text-white">${duration}s</b></div>
     `;
 
     this.gameOverModalEl.classList.remove('hidden');
@@ -1042,6 +1043,9 @@ export class SodaDashGame implements GameInstance {
 
   public setTheme(theme: AppTheme): void {
     this.session.theme = theme;
+    const isDark = theme === 'dark';
+    this.container.className = 'w-full h-full p-0 m-0 overflow-hidden flex justify-center ' + (isDark ? 'bg-[#0a0c13]' : 'bg-slate-100');
+    document.body.style.backgroundColor = isDark ? '#0a0c13' : '#f1f5f9';
   }
 
   public destroy(): void {

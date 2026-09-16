@@ -50,14 +50,14 @@ export const BALL_RESTITUTION = 0.96;
 export const CUSHION_RESTITUTION = 0.85;
 export const VELOCITY_STOP_THRESHOLD = 0.12;
 
-// Six pockets with accurate corner mouth capture
+// Six pockets completely recessed inside the table rails and corners
 export const POCKETS: PocketDef[] = [
-  { id: 'top-left', x: PLAY_X_MIN + 3, y: PLAY_Y_MIN + 3, radius: 24, isMiddle: false },
-  { id: 'top-middle', x: CENTER_X, y: PLAY_Y_MIN - 4, radius: 21, isMiddle: true },
-  { id: 'top-right', x: PLAY_X_MAX - 3, y: PLAY_Y_MIN + 3, radius: 24, isMiddle: false },
-  { id: 'bottom-left', x: PLAY_X_MIN + 3, y: PLAY_Y_MAX - 3, radius: 24, isMiddle: false },
-  { id: 'bottom-middle', x: CENTER_X, y: PLAY_Y_MAX + 4, radius: 21, isMiddle: true },
-  { id: 'bottom-right', x: PLAY_X_MAX - 3, y: PLAY_Y_MAX - 3, radius: 24, isMiddle: false },
+  { id: 'top-left', x: 30, y: 30, radius: 17, isMiddle: false },
+  { id: 'top-middle', x: CENTER_X, y: 20, radius: 16, isMiddle: true },
+  { id: 'top-right', x: TABLE_WIDTH - 30, y: 30, radius: 17, isMiddle: false },
+  { id: 'bottom-left', x: 30, y: TABLE_HEIGHT - 30, radius: 17, isMiddle: false },
+  { id: 'bottom-middle', x: CENTER_X, y: TABLE_HEIGHT - 20, radius: 16, isMiddle: true },
+  { id: 'bottom-right', x: TABLE_WIDTH - 30, y: TABLE_HEIGHT - 30, radius: 17, isMiddle: false },
 ];
 
 // Cushions with corner angled jaw bevels

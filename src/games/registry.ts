@@ -293,53 +293,43 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     bannerGradient: 'from-sky-400 via-cyan-500 to-indigo-600',
     accentColor: '#06b6d4',
     iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none">
-      <defs>
-        <linearGradient id="dash-sky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#0284c7"/>
-          <stop offset="60%" stop-color="#38bdf8"/>
-          <stop offset="100%" stop-color="#fed7aa"/>
-        </linearGradient>
-        <linearGradient id="dash-road" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#475569"/>
-          <stop offset="100%" stop-color="#334155"/>
-        </linearGradient>
-        <linearGradient id="dash-cyan" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#67e8f9"/>
-          <stop offset="100%" stop-color="#06b6d4"/>
-        </linearGradient>
-      </defs>
-      <!-- Sunny Blue Sky & Bright Sun -->
-      <rect x="2" y="2" width="20" height="9" rx="2" fill="url(#dash-sky)"/>
-      <circle cx="17" cy="5.5" r="2.5" fill="#fef08a"/>
-      <!-- Lush Green Grass Shoulders -->
-      <rect x="2" y="11" width="20" height="11" fill="#22c55e"/>
-      <!-- 3D Perspective Slate Track -->
-      <path d="M 10 11 L 14 11 L 21 22 L 3 22 Z" fill="url(#dash-road)"/>
-      <!-- Candy Red & White Curbs -->
-      <path d="M 10 11 L 9.2 11 L 2 22 L 3 22 Z" fill="#ef4444"/>
-      <path d="M 14 11 L 14.8 11 L 22 22 L 21 22 Z" fill="#ef4444"/>
-      <!-- Sunshine Yellow Lane Dividers -->
-      <path d="M 11.2 12.5 L 11.4 13.5 M 10.5 15.5 L 10.8 17 M 9.5 19.5 L 10 21.5" stroke="#facc15" stroke-width="0.7" stroke-linecap="round"/>
-      <path d="M 12.8 12.5 L 12.6 13.5 M 13.5 15.5 L 13.2 17 M 14.5 19.5 L 14 21.5" stroke="#facc15" stroke-width="0.7" stroke-linecap="round"/>
-      <!-- Cheerful Yellow Hurdle on Right -->
-      <path d="M 13.5 17.5 L 19 17.5" stroke="#facc15" stroke-width="1.3" stroke-linecap="round"/>
-      <path d="M 14.5 17.5 L 14.5 19.5 M 18 17.5 L 18 19.5" stroke="#0284c7" stroke-width="0.8"/>
-      <!-- Cyan Parkour Mascot -->
-      <g filter="drop-shadow(0 1px 2px rgba(0,0,0,0.4))">
-        <circle cx="9" cy="10" r="1.8" fill="#0f172a"/>
-        <path d="M 9.5 9.5 L 10.6 9.5" stroke="#fde047" stroke-width="0.8" stroke-linecap="round"/>
-        <path d="M 7.5 11.5 L 9.5 11 L 9 14 L 7 13.5 Z" fill="url(#dash-cyan)"/>
-        <!-- Limbs -->
-        <path d="M 9 13.5 L 6.8 15.5 L 5.5 14.8" stroke="#0f172a" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M 9 13.5 L 10.8 15 L 11.5 16.5" stroke="#0f172a" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
-        <!-- Gold Scarf -->
-        <path d="M 8 11.5 C 6 11 4.5 12 3 11" stroke="#facc15" stroke-width="0.9" stroke-linecap="round"/>
-      </g>
-      <!-- Strawberry Life Can with Heart -->
-      <rect x="15" y="6" width="3" height="4.5" rx="0.8" fill="#ef4444" stroke="#fde047" stroke-width="0.4"/>
-      <circle cx="16.5" cy="8.2" r="0.8" fill="#ffffff"/>
-      <!-- Sparkle -->
-      <path d="M 19 6 L 19.8 4.8 L 21 4 L 19.8 3.2 L 19 2 L 18.2 3.2 L 17 4 L 18.2 4.8 Z" fill="#facc15"/>
+      <!-- Ribbon Tails Fluttering Behind -->
+      <path d="M 18 8 C 20.5 7 22.5 7.5 24 6 C 23 8.8 23.5 10.5 21.5 11.5 C 19.8 12.2 18.5 10 18 8 Z" fill="#facc15"/>
+      <path d="M 18.2 9.5 C 20.8 10.2 22 12.2 23 13.8 C 21.2 13.2 19.8 13 18.2 11 Z" fill="#eab308"/>
+
+      <!-- Ninja Hood / Mask Head Base -->
+      <path d="M 12 3 C 6.8 3 4 6.8 4 11.5 C 4 16.2 6.8 20.2 10.5 21.5 C 11.5 21.8 12.5 21.8 13.5 21.5 C 17.2 20.2 20 16.2 20 11.5 C 20 6.8 17.2 3 12 3 Z" fill="#0f172a"/>
+      
+      <!-- Subtle Top Hood Contour Highlight -->
+      <path d="M 7.5 5.8 C 9 4.6 15 4.6 16.5 5.8" stroke="#334155" stroke-width="0.8" stroke-linecap="round"/>
+
+      <!-- Yellow/Gold Ninja Headband -->
+      <path d="M 4.2 9 C 6.5 8.2 17.5 8.2 19.8 9 L 19.5 12.2 C 17 11.4 7 11.4 4.5 12.2 Z" fill="#facc15"/>
+
+      <!-- Shinobi Metal Forehead Plate -->
+      <rect x="7.8" y="8.4" width="8.4" height="3.2" rx="0.8" fill="#e2e8f0" stroke="#0f172a" stroke-width="0.5"/>
+      <circle cx="8.6" cy="10" r="0.4" fill="#64748b"/>
+      <circle cx="15.4" cy="10" r="0.4" fill="#64748b"/>
+      <!-- Star / Shuriken Symbol on Forehead Plate -->
+      <path d="M 12 8.9 L 12.5 9.6 L 13.2 10 L 12.5 10.4 L 12 11.1 L 11.5 10.4 L 10.8 10 L 11.5 9.6 Z" fill="#0284c7"/>
+
+      <!-- Mask Eye Opening (Dark Recess) -->
+      <path d="M 5.5 12.5 C 7.5 11.8 16.5 11.8 18.5 12.5 C 18.2 15 16.5 15.6 12 15.6 C 7.5 15.6 5.8 15 5.5 12.5 Z" fill="#020617"/>
+
+      <!-- Fierce Ninja Eyes (Angled & Sharp) -->
+      <!-- Left Eye -->
+      <path d="M 6.8 13.8 C 7.6 12.8 9.8 12.9 10.2 13.8 C 9.4 14.2 7.8 14.3 6.8 13.8 Z" fill="#ffffff"/>
+      <circle cx="8.8" cy="13.5" r="0.7" fill="#06b6d4"/>
+      <circle cx="8.6" cy="13.3" r="0.25" fill="#ffffff"/>
+
+      <!-- Right Eye -->
+      <path d="M 17.2 13.8 C 16.4 12.8 14.2 12.9 13.8 13.8 C 14.6 14.2 16.2 14.3 17.2 13.8 Z" fill="#ffffff"/>
+      <circle cx="15.2" cy="13.5" r="0.7" fill="#06b6d4"/>
+      <circle cx="15" cy="13.3" r="0.25" fill="#ffffff"/>
+
+      <!-- Lower Mask Nose Fold & Seam -->
+      <path d="M 12 15.6 L 12 17.4" stroke="#1e293b" stroke-width="0.8" stroke-linecap="round"/>
+      <path d="M 8.8 18 C 10.5 18.8 13.5 18.8 15.2 18" stroke="#1e293b" stroke-width="0.8" stroke-linecap="round"/>
     </svg>`,
     screenshotUrl: '/screenshots/soda-dash.png',
     supportsAI: true,
