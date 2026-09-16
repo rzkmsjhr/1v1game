@@ -49,6 +49,14 @@ export class SodaDashGame implements GameInstance {
   private maxSpeedReached: number = 0;
   private startTime: number = 0;
 
+  // DOM Dirty Checking Caches (prevents continuous reflows)
+  private lastPDist: number = -1;
+  private lastODist: number = -1;
+  private lastKmh: number = -1;
+  private lastLeadText: string = '';
+  private lastLeadClass: string = '';
+  private lastHeldItem: string | null = '__init__';
+
   private boundKeyDown = this.handleKeyDown.bind(this);
   private boundTouchStart = this.handleTouchStart.bind(this);
   private boundTouchEnd = this.handleTouchEnd.bind(this);
@@ -378,13 +386,18 @@ export class SodaDashGame implements GameInstance {
   }
 
   private handleResize(): void {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const isMobile = window.innerWidth < 768 || window.innerHeight > window.innerWidth;
+    // On mobile, cap DPR at 1.5 to save >40% fill-rate while preserving crisp sharpness; desktop up to 2.0
+    const maxDpr = isMobile ? 1.5 : 2.0;
+    const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
     const rect = this.canvas.getBoundingClientRect();
     const w = Math.floor(rect.width || window.innerWidth);
     const h = Math.floor(rect.height || (window.innerHeight - 130));
 
     this.canvas.width = Math.max(320, w) * dpr;
     this.canvas.height = Math.max(300, h) * dpr;
+
+    this.renderer?.onResize(this.canvas.width, this.canvas.height);
   }
 
   // -------------------------------------------------------------
@@ -663,31 +676,57 @@ export class SodaDashGame implements GameInstance {
       this.opponentHeartsEl.innerHTML = opponentHeartsHtml;
     }
 
-    // Distance Meters
+    // Distance Meters (Dirty checked)
     const pDist = Math.floor(this.engine.player.distance);
-    const oDist = Math.floor(this.engine.opponent.distance);
-    this.playerDistEl.textContent = `${pDist} m`;
-    this.opponentDistEl.textContent = `${oDist} m`;
-    this.obstaclesDodged = Math.max(this.obstaclesDodged, Math.floor(pDist / 16));
-
-    // Speedometer
-    const kmh = Math.floor(this.engine.player.speed * 3.6);
-    this.playerSpeedEl.textContent = `${kmh} km/h`;
-
-    // Lead Badge
-    const lead = pDist - oDist;
-    if (Math.abs(lead) < 3) {
-      this.leadBadgeEl.textContent = '⚡ NECK & NECK!';
-      this.leadBadgeEl.className = 'px-3 py-1 rounded-full text-xs font-black tracking-wide bg-slate-900/90 text-amber-400 border border-amber-500/30 shadow-lg backdrop-blur-md';
-    } else if (lead > 0) {
-      this.leadBadgeEl.textContent = `🚀 +${lead}m AHEAD`;
-      this.leadBadgeEl.className = 'px-3 py-1 rounded-full text-xs font-black tracking-wide bg-slate-900/90 text-cyan-400 border border-cyan-500/30 shadow-lg backdrop-blur-md';
-    } else {
-      this.leadBadgeEl.textContent = `⚠️ ${Math.abs(lead)}m BEHIND`;
-      this.leadBadgeEl.className = 'px-3 py-1 rounded-full text-xs font-black tracking-wide bg-slate-900/90 text-rose-400 border border-rose-500/30 shadow-lg backdrop-blur-md';
+    if (pDist !== this.lastPDist) {
+      this.lastPDist = pDist;
+      this.playerDistEl.textContent = `${pDist} m`;
+      this.obstaclesDodged = Math.max(this.obstaclesDodged, Math.floor(pDist / 16));
     }
 
-    this.updateItemButton();
+    const oDist = Math.floor(this.engine.opponent.distance);
+    if (oDist !== this.lastODist) {
+      this.lastODist = oDist;
+      this.opponentDistEl.textContent = `${oDist} m`;
+    }
+
+    // Speedometer (Dirty checked)
+    const kmh = Math.floor(this.engine.player.speed * 3.6);
+    if (kmh !== this.lastKmh) {
+      this.lastKmh = kmh;
+      this.playerSpeedEl.textContent = `${kmh} km/h`;
+    }
+
+    // Lead Badge (Dirty checked)
+    const lead = pDist - oDist;
+    let leadText = '';
+    let leadClass = '';
+    if (Math.abs(lead) < 3) {
+      leadText = '⚡ NECK & NECK!';
+      leadClass = 'px-3 py-1 rounded-full text-xs font-black tracking-wide bg-slate-900/90 text-amber-400 border border-amber-500/30 shadow-lg backdrop-blur-md';
+    } else if (lead > 0) {
+      leadText = `🚀 +${lead}m AHEAD`;
+      leadClass = 'px-3 py-1 rounded-full text-xs font-black tracking-wide bg-slate-900/90 text-cyan-400 border border-cyan-500/30 shadow-lg backdrop-blur-md';
+    } else {
+      leadText = `⚠️ ${Math.abs(lead)}m BEHIND`;
+      leadClass = 'px-3 py-1 rounded-full text-xs font-black tracking-wide bg-slate-900/90 text-rose-400 border border-rose-500/30 shadow-lg backdrop-blur-md';
+    }
+
+    if (this.lastLeadText !== leadText) {
+      this.lastLeadText = leadText;
+      this.leadBadgeEl.textContent = leadText;
+    }
+    if (this.lastLeadClass !== leadClass) {
+      this.lastLeadClass = leadClass;
+      this.leadBadgeEl.className = leadClass;
+    }
+
+    // Item Button (Dirty checked by heldItem)
+    const item = this.engine.player.heldItem;
+    if (item !== this.lastHeldItem) {
+      this.lastHeldItem = item;
+      this.updateItemButton();
+    }
   }
 
   private renderHeartsHtml(hearts: number): string {

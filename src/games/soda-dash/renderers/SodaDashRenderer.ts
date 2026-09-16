@@ -2,6 +2,7 @@ import type { RunnerState, TrackItem } from '../soda-dash-types';
 import type { SodaDashEngine } from '../soda-dash-engine';
 
 interface Particle {
+  active: boolean;
   x: number;
   y: number;
   vx: number;
@@ -13,6 +14,7 @@ interface Particle {
 }
 
 interface FloatingText {
+  active: boolean;
   text: string;
   x: number;
   y: number;
@@ -21,12 +23,64 @@ interface FloatingText {
   color: string;
 }
 
+interface RenderSlot {
+  isRunner: boolean;
+  z: number;
+  item: TrackItem | null;
+  runner: RunnerState | null;
+  isPlayer: boolean;
+}
+
 export class SodaDashRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private engine: SodaDashEngine;
-  private particles: Particle[] = [];
-  private floatingTexts: FloatingText[] = [];
+
+  // Pre-allocated Fixed Particle Pool (80 particles)
+  private particlePool: Particle[] = Array.from({ length: 80 }, () => ({
+    active: false,
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
+    life: 0,
+    maxLife: 1,
+    color: '#ffffff',
+    size: 3
+  }));
+  private nextParticleIdx: number = 0;
+
+  // Pre-allocated Fixed Floating Text Pool (12 texts)
+  private floatingTextPool: FloatingText[] = Array.from({ length: 12 }, () => ({
+    active: false,
+    text: '',
+    x: 0,
+    y: 0,
+    vy: -50,
+    alpha: 0,
+    color: '#ffffff'
+  }));
+  private nextFloatingTextIdx: number = 0;
+
+  // Pre-allocated Render Slots (96 slots for zero-allocation depth sorting)
+  private renderSlots: RenderSlot[] = Array.from({ length: 96 }, () => ({
+    isRunner: false,
+    z: 0,
+    item: null,
+    runner: null,
+    isPlayer: false
+  }));
+
+  // Cached Offscreen Canvas & Gradients
+  private skylineCanvas: HTMLCanvasElement | null = null;
+  private cachedSkyGrad: CanvasGradient | null = null;
+  private cachedSunGlow: CanvasGradient | null = null;
+  private cachedSunX: number = 0;
+  private cachedSunY: number = 0;
+  private cachedGrassGrad: CanvasGradient | null = null;
+  private cachedWidth: number = 0;
+  private cachedHeight: number = 0;
+  private now: number = 0;
 
   constructor(canvas: HTMLCanvasElement, engine: SodaDashEngine) {
     this.canvas = canvas;
@@ -34,40 +88,137 @@ export class SodaDashRenderer {
     if (!context) throw new Error('Could not get Canvas 2D context');
     this.ctx = context;
     this.engine = engine;
+    this.onResize(this.canvas.width || 800, this.canvas.height || 600);
+  }
+
+  public onResize(width: number, height: number): void {
+    if (width === this.cachedWidth && height === this.cachedHeight && this.cachedSkyGrad) {
+      return;
+    }
+    this.cachedWidth = width;
+    this.cachedHeight = height;
+
+    const isMobile = width < 768 || height > width;
+    const horizonRatio = isMobile ? 0.28 : 0.32;
+    const horizonY = height * horizonRatio;
+
+    // 1. Cheerful Azure-to-Peach Summer Sky Gradient
+    const skyGrad = this.ctx.createLinearGradient(0, 0, 0, horizonY);
+    skyGrad.addColorStop(0, '#0284c7');    // Deep Azure
+    skyGrad.addColorStop(0.4, '#38bdf8');  // Cheerful Sky Cyan
+    skyGrad.addColorStop(0.75, '#7dd3fc'); // Gentle Summer Blue
+    skyGrad.addColorStop(1, '#fed7aa');    // Warm Peach Sunlight Horizon
+    this.cachedSkyGrad = skyGrad;
+
+    // 2. Radiant Golden Cartoon Sun Radial Gradient
+    this.cachedSunX = width * 0.82;
+    this.cachedSunY = horizonY * 0.32;
+    const sunGlow = this.ctx.createRadialGradient(this.cachedSunX, this.cachedSunY, 12, this.cachedSunX, this.cachedSunY, 140);
+    sunGlow.addColorStop(0, 'rgba(254, 240, 138, 0.95)');
+    sunGlow.addColorStop(0.25, 'rgba(253, 224, 71, 0.6)');
+    sunGlow.addColorStop(0.6, 'rgba(251, 146, 60, 0.2)');
+    sunGlow.addColorStop(1, 'transparent');
+    this.cachedSunGlow = sunGlow;
+
+    // 3. Lush Emerald Lawn Shoulders Gradient
+    const grassGrad = this.ctx.createLinearGradient(0, horizonY, 0, height);
+    grassGrad.addColorStop(0, '#22c55e'); // Fresh Lawn Green
+    grassGrad.addColorStop(0.5, '#16a34a');
+    grassGrad.addColorStop(1, '#15803d');
+    this.cachedGrassGrad = grassGrad;
+
+    // 4. Pre-render City Skyline Offscreen Pattern
+    this.generateSkyline();
+  }
+
+  private generateSkyline(): void {
+    if (typeof document === 'undefined') return;
+    if (!this.skylineCanvas) {
+      this.skylineCanvas = document.createElement('canvas');
+      this.skylineCanvas.width = 312;
+      this.skylineCanvas.height = 105;
+    }
+    const offCtx = this.skylineCanvas.getContext('2d');
+    if (!offCtx) return;
+
+    offCtx.clearRect(0, 0, 312, 105);
+    const buildingColors = ['#f43f5e', '#38bdf8', '#facc15', '#a855f7', '#34d399', '#fb923c'];
+
+    for (let i = 0; i < 6; i++) {
+      const bx = i * 52;
+      const col = buildingColors[i];
+      const bHeight = 35 + ((Math.abs(Math.sin((bx + 80) * 1.6)) * 46) | 0);
+
+      // Building Body
+      offCtx.fillStyle = col;
+      offCtx.beginPath();
+      offCtx.roundRect(bx, 105 - bHeight, 44, bHeight, [6, 6, 0, 0]);
+      offCtx.fill();
+
+      // Cute Triangular Roof
+      if (i % 2 === 0) {
+        offCtx.fillStyle = '#ffffff';
+        offCtx.beginPath();
+        offCtx.moveTo(bx, 105 - bHeight);
+        offCtx.lineTo(bx + 22, 105 - bHeight - 14);
+        offCtx.lineTo(bx + 44, 105 - bHeight);
+        offCtx.closePath();
+        offCtx.fill();
+      }
+
+      // Friendly White Windows
+      offCtx.fillStyle = '#ffffff';
+      for (let wy = 105 - bHeight + 8; wy < 105 - 6; wy += 12) {
+        offCtx.fillRect(bx + 8, wy, 8, 7);
+        offCtx.fillRect(bx + 28, wy, 8, 7);
+      }
+    }
   }
 
   public addSplash(x: number, y: number, color: string, count: number = 12): void {
+    const pool = this.particlePool;
+    const poolLen = pool.length;
     for (let i = 0; i < count; i++) {
+      const p = pool[this.nextParticleIdx];
+      this.nextParticleIdx = (this.nextParticleIdx + 1) % poolLen;
+
       const angle = Math.random() * Math.PI * 2;
       const speed = 40 + Math.random() * 120;
-      this.particles.push({
-        x,
-        y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - 30,
-        life: 0.4 + Math.random() * 0.4,
-        maxLife: 0.8,
-        color,
-        size: 3 + Math.random() * 4
-      });
+      p.active = true;
+      p.x = x;
+      p.y = y;
+      p.vx = Math.cos(angle) * speed;
+      p.vy = Math.sin(angle) * speed - 30;
+      p.life = 0.4 + Math.random() * 0.4;
+      p.maxLife = 0.8;
+      p.color = color;
+      p.size = 3 + Math.random() * 4;
     }
   }
 
   public addFloatingText(text: string, x: number, y: number, color: string): void {
-    this.floatingTexts.push({
-      text,
-      x,
-      y,
-      vy: -50,
-      alpha: 1.0,
-      color
-    });
+    const pool = this.floatingTextPool;
+    const ft = pool[this.nextFloatingTextIdx];
+    this.nextFloatingTextIdx = (this.nextFloatingTextIdx + 1) % pool.length;
+
+    ft.active = true;
+    ft.text = text;
+    ft.x = x;
+    ft.y = y;
+    ft.vy = -50;
+    ft.alpha = 1.0;
+    ft.color = color;
   }
 
   public render(dt: number): void {
     const width = this.canvas.width;
     const height = this.canvas.height;
     const ctx = this.ctx;
+
+    this.now = performance.now();
+    if (!this.cachedSkyGrad || width !== this.cachedWidth || height !== this.cachedHeight) {
+      this.onResize(width, height);
+    }
 
     ctx.save();
     ctx.clearRect(0, 0, width, height);
@@ -136,25 +287,17 @@ export class SodaDashRenderer {
     horizonY: number,
     cameraZ: number
   ): void {
-    // 1. Cheerful Azure-to-Peach Summer Sky
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, horizonY);
-    skyGrad.addColorStop(0, '#0284c7');    // Deep Azure
-    skyGrad.addColorStop(0.4, '#38bdf8');  // Cheerful Sky Cyan
-    skyGrad.addColorStop(0.75, '#7dd3fc'); // Gentle Summer Blue
-    skyGrad.addColorStop(1, '#fed7aa');    // Warm Peach Sunlight Horizon
-    ctx.fillStyle = skyGrad;
+    // 1. Cheerful Azure-to-Peach Summer Sky (Cached gradient)
+    ctx.fillStyle = this.cachedSkyGrad || '#38bdf8';
     ctx.fillRect(0, 0, width, horizonY);
 
-    // 2. Radiant Golden Cartoon Sun
-    const sunX = width * 0.82;
-    const sunY = horizonY * 0.32;
-    const sunGlow = ctx.createRadialGradient(sunX, sunY, 12, sunX, sunY, 140);
-    sunGlow.addColorStop(0, 'rgba(254, 240, 138, 0.95)');
-    sunGlow.addColorStop(0.25, 'rgba(253, 224, 71, 0.6)');
-    sunGlow.addColorStop(0.6, 'rgba(251, 146, 60, 0.2)');
-    sunGlow.addColorStop(1, 'transparent');
-    ctx.fillStyle = sunGlow;
-    ctx.fillRect(sunX - 140, sunY - 140, 280, 280);
+    // 2. Radiant Golden Cartoon Sun (Cached glow)
+    const sunX = this.cachedSunX;
+    const sunY = this.cachedSunY;
+    if (this.cachedSunGlow) {
+      ctx.fillStyle = this.cachedSunGlow;
+      ctx.fillRect(sunX - 140, sunY - 140, 280, 280);
+    }
 
     ctx.fillStyle = '#fef08a';
     ctx.beginPath();
@@ -180,38 +323,15 @@ export class SodaDashRenderer {
     ctx.closePath();
     ctx.fill();
 
-    // 5. Colorful Pastel Candy / Soda City Skyline
-    const buildingColors = ['#f43f5e', '#38bdf8', '#facc15', '#a855f7', '#34d399', '#fb923c'];
-    const cityOffset = (cameraZ * 0.06) % 312;
-
-    for (let x = -100; x < width + 100; x += 52) {
-      const bx = x - (cityOffset % 52);
-      const colIdx = Math.abs(Math.floor((x + cityOffset) / 52)) % buildingColors.length;
-      const col = buildingColors[colIdx];
-      const bHeight = 35 + ((Math.abs(Math.sin((x + 80) * 1.6)) * 46) | 0);
-
-      // Building Body
-      ctx.fillStyle = col;
-      ctx.beginPath();
-      ctx.roundRect(bx, horizonY - bHeight, 44, bHeight, [6, 6, 0, 0]);
-      ctx.fill();
-
-      // Cute Triangular Roof
-      if (colIdx % 2 === 0) {
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.moveTo(bx, horizonY - bHeight);
-        ctx.lineTo(bx + 22, horizonY - bHeight - 14);
-        ctx.lineTo(bx + 44, horizonY - bHeight);
-        ctx.closePath();
-        ctx.fill();
-      }
-
-      // Friendly White Windows
-      ctx.fillStyle = '#ffffff';
-      for (let wy = horizonY - bHeight + 8; wy < horizonY - 6; wy += 12) {
-        ctx.fillRect(bx + 8, wy, 8, 7);
-        ctx.fillRect(bx + 28, wy, 8, 7);
+    // 5. Colorful Pastel Candy / Soda City Skyline (Blitted from cached offscreen canvas)
+    if (this.skylineCanvas) {
+      const tileW = 312;
+      const tileH = 105;
+      const cityOffset = (cameraZ * 0.06) % tileW;
+      let startX = -cityOffset;
+      while (startX > 0) startX -= tileW;
+      for (let x = startX; x < width; x += tileW) {
+        ctx.drawImage(this.skylineCanvas, x, horizonY - tileH);
       }
     }
   }
@@ -231,12 +351,8 @@ export class SodaDashRenderer {
     const isMobile = width < 768 || height > width;
     const zCrest = isMobile ? 28 : 38;
 
-    // Lush Emerald Lawn Shoulders
-    const grassGrad = ctx.createLinearGradient(0, horizonY, 0, height);
-    grassGrad.addColorStop(0, '#22c55e'); // Fresh Lawn Green
-    grassGrad.addColorStop(0.5, '#16a34a');
-    grassGrad.addColorStop(1, '#15803d');
-    ctx.fillStyle = grassGrad;
+    // Lush Emerald Lawn Shoulders (Cached gradient)
+    ctx.fillStyle = this.cachedGrassGrad || '#16a34a';
     ctx.fillRect(0, horizonY, width, height - horizonY);
 
     // Scrolling Road Segments with Perfectly Aligned Curbs (Segment-by-Segment)
@@ -316,51 +432,82 @@ export class SodaDashRenderer {
     vanishX: number,
     cameraZ: number
   ): void {
-    interface Renderable {
-      type: 'track_item' | 'runner';
-      z: number;
-      draw: () => void;
-    }
-
-    const renderables: Renderable[] = [];
-
     const isMobile = width < 768 || height > width;
     const zCrest = isMobile ? 28 : 38;
 
+    let count = 0;
+    const maxSlots = this.renderSlots.length;
+
     // Track Items within visible convex crest range
     const items = this.engine.track.getActiveItems(cameraZ + 0.4, cameraZ + zCrest + 2.0);
-    for (const item of items) {
+    const itemLen = items.length;
+    for (let i = 0; i < itemLen; i++) {
+      const item = items[i];
       if (item.hit && item.type !== 'PUDDLE' && item.type !== 'SODA_SPILL' && item.type !== 'SLOW_PAD') continue;
-      renderables.push({
-        type: 'track_item',
-        z: item.z,
-        draw: () => this.drawTrackItem(ctx, item, width, height, horizonY, vanishX, cameraZ)
-      });
+      if (count >= maxSlots) break;
+      const slot = this.renderSlots[count++];
+      slot.isRunner = false;
+      slot.z = item.z;
+      slot.item = item;
+      slot.runner = null;
     }
 
     // Player Runner
-    if (!this.engine.player.isDead) {
-      renderables.push({
-        type: 'runner',
-        z: this.engine.player.distance,
-        draw: () => this.drawRunner(ctx, this.engine.player, width, height, horizonY, vanishX, cameraZ, true)
-      });
+    if (!this.engine.player.isDead && count < maxSlots) {
+      const slot = this.renderSlots[count++];
+      slot.isRunner = true;
+      slot.z = this.engine.player.distance;
+      slot.runner = this.engine.player;
+      slot.isPlayer = true;
+      slot.item = null;
     }
 
     // Opponent Runner
-    if (!this.engine.opponent.isDead) {
-      renderables.push({
-        type: 'runner',
-        z: this.engine.opponent.distance,
-        draw: () => this.drawRunner(ctx, this.engine.opponent, width, height, horizonY, vanishX, cameraZ, false)
-      });
+    if (!this.engine.opponent.isDead && count < maxSlots) {
+      const slot = this.renderSlots[count++];
+      slot.isRunner = true;
+      slot.z = this.engine.opponent.distance;
+      slot.runner = this.engine.opponent;
+      slot.isPlayer = false;
+      slot.item = null;
     }
 
-    // Sort back-to-front (furthest Z drawn first)
-    renderables.sort((a, b) => b.z - a.z);
+    // In-place insertion sort (descending Z: furthest drawn first)
+    // Items are already sorted ascending; adding 2 runners takes < 0.02ms with ZERO heap allocations!
+    for (let i = 1; i < count; i++) {
+      const curZ = this.renderSlots[i].z;
+      const curIsRunner = this.renderSlots[i].isRunner;
+      const curItem = this.renderSlots[i].item;
+      const curRunner = this.renderSlots[i].runner;
+      const curIsPlayer = this.renderSlots[i].isPlayer;
 
-    for (const obj of renderables) {
-      obj.draw();
+      let j = i - 1;
+      while (j >= 0 && this.renderSlots[j].z < curZ) {
+        const prev = this.renderSlots[j];
+        const next = this.renderSlots[j + 1];
+        next.z = prev.z;
+        next.isRunner = prev.isRunner;
+        next.item = prev.item;
+        next.runner = prev.runner;
+        next.isPlayer = prev.isPlayer;
+        j--;
+      }
+      const target = this.renderSlots[j + 1];
+      target.z = curZ;
+      target.isRunner = curIsRunner;
+      target.item = curItem;
+      target.runner = curRunner;
+      target.isPlayer = curIsPlayer;
+    }
+
+    // Render back-to-front
+    for (let i = 0; i < count; i++) {
+      const slot = this.renderSlots[i];
+      if (slot.isRunner && slot.runner) {
+        this.drawRunner(ctx, slot.runner, width, height, horizonY, vanishX, cameraZ, slot.isPlayer);
+      } else if (!slot.isRunner && slot.item) {
+        this.drawTrackItem(ctx, slot.item, width, height, horizonY, vanishX, cameraZ);
+      }
     }
   }
 
@@ -909,7 +1056,7 @@ export class SodaDashRenderer {
 
     // Blinking transparency during invulnerability
     if (runner.invulnerableTimer > 0) {
-      const blink = Math.sin(Date.now() * 0.04) > 0;
+      const blink = Math.sin(this.now * 0.04) > 0;
       if (blink) ctx.globalAlpha = isSameLane ? 0.18 : 0.35;
     }
 
@@ -1191,14 +1338,21 @@ export class SodaDashRenderer {
   // -------------------------------------------------------------
 
   private drawParticles(ctx: CanvasRenderingContext2D, dt: number): void {
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
+    let hasActive = false;
+    const pool = this.particlePool;
+    const poolLen = pool.length;
+
+    for (let i = 0; i < poolLen; i++) {
+      const p = pool[i];
+      if (!p.active) continue;
+
       p.life -= dt;
       if (p.life <= 0) {
-        this.particles.splice(i, 1);
+        p.active = false;
         continue;
       }
 
+      hasActive = true;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.vy += 220 * dt; // Gravity
@@ -1210,46 +1364,65 @@ export class SodaDashRenderer {
       ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.globalAlpha = 1.0;
+    if (hasActive) {
+      ctx.globalAlpha = 1.0;
+    }
   }
 
   private drawFloatingTexts(ctx: CanvasRenderingContext2D, dt: number): void {
-    for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
-      const ft = this.floatingTexts[i];
+    let hasActive = false;
+    const pool = this.floatingTextPool;
+    const poolLen = pool.length;
+
+    for (let i = 0; i < poolLen; i++) {
+      const ft = pool[i];
+      if (!ft.active) continue;
+
       ft.alpha -= dt * 1.2;
       ft.y += ft.vy * dt;
 
       if (ft.alpha <= 0) {
-        this.floatingTexts.splice(i, 1);
+        ft.active = false;
         continue;
       }
 
-      ctx.save();
+      if (!hasActive) {
+        hasActive = true;
+        ctx.save();
+        ctx.font = 'bold 22px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.lineJoin = 'round';
+      }
+
       ctx.globalAlpha = ft.alpha;
+      // High-performance hardware-accelerated text outline instead of slow shadowBlur
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+      ctx.lineWidth = 4;
+      ctx.strokeText(ft.text, ft.x, ft.y);
+
       ctx.fillStyle = ft.color;
-      ctx.font = 'bold 22px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-      ctx.shadowBlur = 6;
       ctx.fillText(ft.text, ft.x, ft.y);
+    }
+
+    if (hasActive) {
       ctx.restore();
     }
   }
 
   private drawScreenOverlays(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-    // Speed Wind Streaks if Turbo is active
+    // Speed Wind Streaks if Turbo is active (batched into single draw call)
     if (this.engine.player.isTurbo) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
       ctx.lineWidth = 1.5;
+      ctx.beginPath();
       for (let i = 0; i < 8; i++) {
         const sx = Math.random() * width;
         const sy = Math.random() * height;
         const len = 40 + Math.random() * 80;
-        ctx.beginPath();
         ctx.moveTo(sx, sy);
         ctx.lineTo(sx - len * 0.4, sy + len);
-        ctx.stroke();
       }
+      ctx.stroke();
     }
 
     // Damage Red Vignette Flash

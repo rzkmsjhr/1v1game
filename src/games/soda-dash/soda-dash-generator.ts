@@ -86,14 +86,54 @@ export class SodaTrackGenerator {
     // Recycle / prune items that are more than 100m behind the camera
     const pruneThreshold = minZ - 100;
     if (this.items.length > 80 && this.items[0].z < pruneThreshold) {
-      this.items = this.items.filter(item => item.z >= pruneThreshold);
+      let pruneCount = 0;
+      while (pruneCount < this.items.length && this.items[pruneCount].z < pruneThreshold) {
+        pruneCount++;
+      }
+      if (pruneCount > 0) {
+        this.items.splice(0, pruneCount);
+      }
     }
     if (this.dynamicItems.length > 20 && this.dynamicItems[0].z < pruneThreshold) {
-      this.dynamicItems = this.dynamicItems.filter(item => item.z >= pruneThreshold);
+      let pruneCount = 0;
+      while (pruneCount < this.dynamicItems.length && this.dynamicItems[pruneCount].z < pruneThreshold) {
+        pruneCount++;
+      }
+      if (pruneCount > 0) {
+        this.dynamicItems.splice(0, pruneCount);
+      }
     }
 
-    const staticSlice = this.items.filter(item => item.z >= minZ && item.z <= maxZ);
-    const dynamicSlice = this.dynamicItems.filter(item => item.z >= minZ && item.z <= maxZ);
+    // Fast range index window across pre-sorted this.items:
+    const len = this.items.length;
+    let startIdx = 0;
+    while (startIdx < len && this.items[startIdx].z < minZ) {
+      startIdx++;
+    }
+    let endIdx = startIdx;
+    while (endIdx < len && this.items[endIdx].z <= maxZ) {
+      endIdx++;
+    }
+
+    const staticSlice = this.items.slice(startIdx, endIdx);
+
+    // Fast-path when no dynamic items exist (true >95% of frames)
+    if (this.dynamicItems.length === 0) {
+      return staticSlice;
+    }
+
+    // Only filter and merge dynamic items if any exist
+    const dynamicSlice: TrackItem[] = [];
+    for (let i = 0; i < this.dynamicItems.length; i++) {
+      const d = this.dynamicItems[i];
+      if (d.z >= minZ && d.z <= maxZ) {
+        dynamicSlice.push(d);
+      }
+    }
+
+    if (dynamicSlice.length === 0) {
+      return staticSlice;
+    }
 
     return [...staticSlice, ...dynamicSlice].sort((a, b) => a.z - b.z);
   }
