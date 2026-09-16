@@ -170,11 +170,11 @@ class ConsoleDashboard {
       </header>
 
       <!-- Main Showcase & Carousel Area -->
-      <main class="w-full max-w-6xl px-4 sm:px-8 flex-1 flex flex-col justify-center py-6 sm:py-8">
+      <main class="w-full max-w-6xl px-3 sm:px-8 flex-1 flex flex-col justify-start py-4 sm:py-6">
         
         <!-- Match Invitation Banner if invited via URL -->
         ${this.invitedRoomCode ? `
-          <div class="mb-6 p-4 rounded-2xl ${isDark ? 'bg-blue-950/40 border-blue-500/40' : 'bg-blue-50 border-blue-200'} border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+          <div class="mb-4 p-4 rounded-2xl ${isDark ? 'bg-blue-950/40 border-blue-500/40' : 'bg-blue-50 border-blue-200'} border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
             <div class="flex items-center space-x-3">
               <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold">
                 🎮
@@ -195,98 +195,14 @@ class ConsoleDashboard {
           </div>
         ` : ''}
 
-        <!-- Hero Showcase Card -->
+        <!-- Hero Showcase Card (Fixed / Sticky on Scroll) -->
         ${(() => {
           const isLightBanner = currentGame.bannerTheme === 'light' || currentGame.id === 'sling-puck';
           return `
-        <div class="relative overflow-hidden rounded-3xl p-6 sm:p-10 mb-8 ps-card shadow-2xl bg-gradient-to-br ${currentGame.bannerGradient} ${isLightBanner ? 'text-stone-900 border-amber-900/15' : 'text-white border-white/10 dark:border-white/15'} group border">
-          ${currentGame.id === 'pool' ? `
-            <!-- Iconic Billiard 8-Ball & Stripes Decorative Overlay -->
-            <div class="absolute inset-0 pointer-events-none overflow-hidden select-none z-0">
-              <!-- Radial warm amber overhead table spotlight -->
-              <div class="absolute -top-28 right-1/3 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl"></div>
-              
-              <!-- Stylized Diagonal Billiard Rally / 9-Ball Stripes -->
-              <div class="absolute -top-16 -left-32 w-[160%] h-36 transform -rotate-12 pointer-events-none opacity-25">
-                <div class="w-full h-1.5 bg-white/40 mb-2"></div>
-                <div class="w-full h-10 bg-gradient-to-r from-amber-500/30 via-yellow-400/40 to-amber-600/30 mb-2 shadow-lg shadow-amber-500/10"></div>
-                <div class="w-full h-1.5 bg-white/40"></div>
-              </div>
-
-              <!-- Subtle Billiard Aim Accent Lines -->
-              <div class="absolute bottom-6 left-12 w-64 h-[1px] bg-gradient-to-r from-white/20 via-amber-400/30 to-transparent"></div>
-              <div class="absolute bottom-9 left-16 w-40 h-[1px] bg-gradient-to-r from-white/10 via-amber-400/15 to-transparent"></div>
-            </div>
-          ` : ''}
-
-          ${currentGame.id === 'sling-puck' ? `
-            <!-- Authentic Light Wood Tabletop & Laser-Etched Court Markings Overlay -->
-            <div class="absolute inset-0 pointer-events-none overflow-hidden select-none z-0">
-              <!-- Subtle vertical wood plank grain seams -->
-              <div class="absolute inset-0 flex justify-around opacity-30">
-                <div class="w-px h-full bg-[#c99b66]"></div>
-                <div class="w-px h-full bg-[#c99b66]"></div>
-                <div class="w-px h-full bg-[#c99b66]"></div>
-                <div class="w-px h-full bg-[#c99b66]"></div>
-              </div>
-              <!-- Laser-etched center face-off ring and baseline accents -->
-              <div class="absolute -right-16 -top-24 w-96 h-96 rounded-full border-2 border-amber-950/10 pointer-events-none"></div>
-              <div class="absolute -right-6 -top-14 w-72 h-72 rounded-full border border-dashed border-amber-950/15 pointer-events-none"></div>
-              <!-- Baseline aim and cord tension accent -->
-              <div class="absolute bottom-8 left-16 w-72 h-px bg-gradient-to-r from-amber-800/25 via-amber-700/15 to-transparent"></div>
-              <div class="absolute bottom-11 left-20 w-48 h-px bg-gradient-to-r from-amber-800/15 via-amber-700/10 to-transparent"></div>
-            </div>
-          ` : ''}
-
-          <div class="relative z-10 max-w-xl">
-            <div class="flex items-center space-x-2 mb-3">
-              <span class="ps-badge ${isLightBanner ? 'bg-amber-950/10 text-amber-950 border border-amber-950/20 font-bold' : 'bg-white/20 backdrop-blur-md text-white'}">
-                ${currentGame.badge}
-              </span>
-              <span class="text-xs ${isLightBanner ? 'text-stone-600 font-semibold' : 'text-white/80 font-medium'}">
-                ${currentGame.genre}
-              </span>
-            </div>
-
-            <h2 class="text-3xl sm:text-4xl font-extrabold tracking-tight mb-2 ${isLightBanner ? 'text-amber-950' : 'text-white'}">
-              ${currentGame.title}
-            </h2>
-            <p class="text-base sm:text-lg font-semibold mb-3 ${isLightBanner ? 'text-amber-900' : 'text-white/90'}">
-              ${currentGame.subtitle}
-            </p>
-            <p class="text-sm mb-8 line-clamp-2 leading-relaxed ${isLightBanner ? 'text-stone-700' : 'text-white/75'}">
-              ${currentGame.description}
-            </p>
-
-            <div class="flex items-center space-x-3">
-              ${!currentGame.isComingSoon ? `
-                <button id="btn-play-hero" class="px-7 py-3 rounded-xl ${isLightBanner ? 'bg-amber-950 text-amber-50 hover:bg-stone-900 shadow-amber-950/25' : 'bg-white text-gray-950 hover:bg-gray-100 shadow-black/20'} font-bold text-sm transition-all transform hover:-translate-y-0.5 shadow-lg flex items-center space-x-2">
-                  <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                  <span>PLAY NOW</span>
-                </button>
-              ` : `
-                <button disabled class="px-6 py-3 rounded-xl bg-white/20 text-white/60 font-semibold text-sm cursor-not-allowed">
-                  COMING SOON
-                </button>
-              `}
-            </div>
+        <div id="hero-banner-container" class="sticky top-0 z-30 pt-1 pb-3 sm:pb-5 bg-[#f4f6fa]/95 dark:bg-[#0a0c13]/95 backdrop-blur-md transition-all">
+          <div id="hero-banner-card" class="relative overflow-hidden rounded-2xl sm:rounded-3xl p-3.5 sm:p-7 md:p-8 ps-card shadow-2xl bg-gradient-to-br ${currentGame.bannerGradient} ${isLightBanner ? 'text-stone-900 border-amber-900/15' : 'text-white border-white/10 dark:border-white/15'} group border">
+            ${this.renderHeroCardInner(currentGame, isDark)}
           </div>
-
-          <!-- Screenshot / Ambient background overlay -->
-          ${currentGame.screenshotUrl ? `
-            <div class="absolute -right-8 sm:-right-4 md:right-2 lg:right-6 -bottom-8 sm:-bottom-6 md:-bottom-4 w-[280px] sm:w-[380px] md:w-[460px] lg:w-[520px] pointer-events-none select-none z-0 transform -rotate-6 sm:-rotate-8 group-hover:-rotate-3 group-hover:scale-105 transition-all duration-700 ease-out origin-bottom-right">
-              <div class="relative rounded-2xl sm:rounded-3xl overflow-hidden border-2 ${isLightBanner ? 'border-amber-900/20 shadow-2xl shadow-amber-950/30' : 'border-white/20 shadow-2xl shadow-black/80'} bg-black/40 backdrop-blur-sm">
-                <img src="${currentGame.screenshotUrl}" alt="${currentGame.title} Preview" class="w-full h-auto object-cover block" />
-                <div class="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-black/20 pointer-events-none"></div>
-                <div class="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none"></div>
-              </div>
-            </div>
-            <div class="absolute inset-0 ${isLightBanner ? 'bg-gradient-to-r from-[#fbf2e3]/95 via-[#f7e5c6]/60 to-transparent' : 'bg-gradient-to-r from-black/65 via-black/20 to-transparent'} pointer-events-none z-[1]"></div>
-          ` : `
-            <div class="absolute right-8 sm:right-16 -bottom-4 sm:-bottom-8 opacity-15 pointer-events-none transform scale-[5] sm:scale-[7] origin-bottom-right text-white">
-              ${currentGame.iconSvg}
-            </div>
-          `}
         </div>
         `;
         })()}
@@ -344,20 +260,18 @@ class ConsoleDashboard {
           </div>
 
           <div class="space-y-4">
-            ${currentGame.id === 'pool' ? `
-              <!-- Billiards Variant Selector -->
-              <div class="p-3.5 rounded-2xl ${isDark ? 'bg-[#0f121d]' : 'bg-gray-50'} border ${isDark ? 'border-gray-800' : 'border-gray-200'}">
-                <div class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Select Game Variant</div>
-                <div class="grid grid-cols-2 gap-2">
-                  <button id="modal-opt-8ball" class="px-3 py-2 rounded-xl text-xs font-bold transition-all ${this.currentPoolVariant === '8ball' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'ps-btn-secondary'}">
-                    🎱 8-Ball (Solids & Stripes)
-                  </button>
-                  <button id="modal-opt-9ball" class="px-3 py-2 rounded-xl text-xs font-bold transition-all ${this.currentPoolVariant === '9ball' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'ps-btn-secondary'}">
-                    🟡 9-Ball (Rotation)
-                  </button>
-                </div>
+            <!-- Billiards Variant Selector -->
+            <div id="modal-pool-variants" class="${currentGame.id === 'pool' ? 'block' : 'hidden'} p-3.5 rounded-2xl ${isDark ? 'bg-[#0f121d]' : 'bg-gray-50'} border ${isDark ? 'border-gray-800' : 'border-gray-200'}">
+              <div class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Select Game Variant</div>
+              <div class="grid grid-cols-2 gap-2">
+                <button id="modal-opt-8ball" class="px-3 py-2 rounded-xl text-xs font-bold transition-all ${this.currentPoolVariant === '8ball' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'ps-btn-secondary'}">
+                  🎱 8-Ball (Solids & Stripes)
+                </button>
+                <button id="modal-opt-9ball" class="px-3 py-2 rounded-xl text-xs font-bold transition-all ${this.currentPoolVariant === '9ball' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'ps-btn-secondary'}">
+                  🟡 9-Ball (Rotation)
+                </button>
               </div>
-            ` : ''}
+            </div>
 
             <!-- Solo vs AI -->
             <div class="p-4 rounded-2xl ${isDark ? 'bg-[#0f121d]' : 'bg-gray-50'} border ${isDark ? 'border-gray-800' : 'border-gray-200'}">
@@ -396,6 +310,136 @@ class ConsoleDashboard {
     this.attachDashboardListeners();
   }
 
+  private renderHeroCardInner(currentGame: GameDefinition, _isDark: boolean): string {
+    const isLightBanner = currentGame.bannerTheme === 'light' || currentGame.id === 'sling-puck';
+    return `
+      ${currentGame.id === 'pool' ? `
+        <!-- Iconic Billiard 8-Ball & Stripes Decorative Overlay -->
+        <div class="absolute inset-0 pointer-events-none overflow-hidden select-none z-0">
+          <div class="absolute -top-28 right-1/3 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl"></div>
+          <div class="absolute -top-16 -left-32 w-[160%] h-36 transform -rotate-12 pointer-events-none opacity-25">
+            <div class="w-full h-1.5 bg-white/40 mb-2"></div>
+            <div class="w-full h-10 bg-gradient-to-r from-amber-500/30 via-yellow-400/40 to-amber-600/30 mb-2 shadow-lg shadow-amber-500/10"></div>
+            <div class="w-full h-1.5 bg-white/40"></div>
+          </div>
+          <div class="absolute bottom-6 left-12 w-64 h-[1px] bg-gradient-to-r from-white/20 via-amber-400/30 to-transparent"></div>
+          <div class="absolute bottom-9 left-16 w-40 h-[1px] bg-gradient-to-r from-white/10 via-amber-400/15 to-transparent"></div>
+        </div>
+      ` : ''}
+
+      ${currentGame.id === 'sling-puck' ? `
+        <!-- Authentic Light Wood Tabletop & Laser-Etched Court Markings Overlay -->
+        <div class="absolute inset-0 pointer-events-none overflow-hidden select-none z-0">
+          <div class="absolute inset-0 flex justify-around opacity-30">
+            <div class="w-px h-full bg-[#c99b66]"></div>
+            <div class="w-px h-full bg-[#c99b66]"></div>
+            <div class="w-px h-full bg-[#c99b66]"></div>
+            <div class="w-px h-full bg-[#c99b66]"></div>
+          </div>
+          <div class="absolute -right-16 -top-24 w-96 h-96 rounded-full border-2 border-amber-950/10 pointer-events-none"></div>
+          <div class="absolute -right-6 -top-14 w-72 h-72 rounded-full border border-dashed border-amber-950/15 pointer-events-none"></div>
+          <div class="absolute bottom-8 left-16 w-72 h-px bg-gradient-to-r from-amber-800/25 via-amber-700/15 to-transparent"></div>
+          <div class="absolute bottom-11 left-20 w-48 h-px bg-gradient-to-r from-amber-800/15 via-amber-700/10 to-transparent"></div>
+        </div>
+      ` : ''}
+
+      <div class="relative z-10 max-w-xl">
+        <div class="flex items-center space-x-2 mb-1.5 sm:mb-3">
+          <span class="ps-badge text-[10px] sm:text-xs ${isLightBanner ? 'bg-amber-950/10 text-amber-950 border border-amber-950/20 font-bold' : 'bg-white/20 backdrop-blur-md text-white'}">
+            ${currentGame.badge}
+          </span>
+          <span class="text-[10px] sm:text-xs ${isLightBanner ? 'text-stone-600 font-semibold' : 'text-white/80 font-medium'}">
+            ${currentGame.genre}
+          </span>
+        </div>
+
+        <h2 class="text-xl sm:text-3xl md:text-4xl font-extrabold tracking-tight mb-0.5 sm:mb-2 ${isLightBanner ? 'text-amber-950' : 'text-white'}">
+          ${currentGame.title}
+        </h2>
+        <p class="text-xs sm:text-base font-semibold mb-2 sm:mb-3 ${isLightBanner ? 'text-amber-900' : 'text-white/90'}">
+          ${currentGame.subtitle}
+        </p>
+        <p class="hidden sm:block text-sm mb-6 line-clamp-2 leading-relaxed ${isLightBanner ? 'text-stone-700' : 'text-white/75'}">
+          ${currentGame.description}
+        </p>
+
+        <div class="flex items-center space-x-3">
+          ${!currentGame.isComingSoon ? `
+            <button id="btn-play-hero" class="px-5 py-2.5 sm:px-7 sm:py-3 rounded-xl ${isLightBanner ? 'bg-amber-950 text-amber-50 hover:bg-stone-900 shadow-amber-950/25' : 'bg-white text-gray-950 hover:bg-gray-100 shadow-black/20'} font-bold text-xs sm:text-sm transition-all transform hover:-translate-y-0.5 shadow-lg flex items-center space-x-2 cursor-pointer">
+              <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              <span>PLAY NOW</span>
+            </button>
+          ` : `
+            <button disabled class="px-5 py-2 sm:px-6 sm:py-3 rounded-xl bg-white/20 text-white/60 font-semibold text-xs sm:text-sm cursor-not-allowed">
+              COMING SOON
+            </button>
+          `}
+        </div>
+      </div>
+
+      <!-- Screenshot / Ambient background overlay -->
+      ${currentGame.screenshotUrl ? `
+        <div class="absolute -right-6 sm:-right-4 md:right-2 lg:right-6 -bottom-6 sm:-bottom-6 md:-bottom-4 w-[140px] sm:w-[320px] md:w-[420px] lg:w-[480px] pointer-events-none select-none z-0 transform -rotate-6 sm:-rotate-8 group-hover:-rotate-3 group-hover:scale-105 transition-all duration-700 ease-out origin-bottom-right">
+          <div class="relative rounded-xl sm:rounded-3xl overflow-hidden border-2 ${isLightBanner ? 'border-amber-900/20 shadow-2xl shadow-amber-950/30' : 'border-white/20 shadow-2xl shadow-black/80'} bg-black/40 backdrop-blur-sm">
+            <img src="${currentGame.screenshotUrl}" alt="${currentGame.title} Preview" class="w-full h-auto object-cover block" />
+            <div class="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-black/20 pointer-events-none"></div>
+            <div class="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none"></div>
+          </div>
+        </div>
+        <div class="absolute inset-0 ${isLightBanner ? 'bg-gradient-to-r from-[#fbf2e3]/95 via-[#f7e5c6]/60 to-transparent' : 'bg-gradient-to-r from-black/65 via-black/20 to-transparent'} pointer-events-none z-[1]"></div>
+      ` : `
+        <div class="absolute right-4 sm:right-16 -bottom-2 sm:-bottom-8 opacity-15 pointer-events-none transform scale-[3.5] sm:scale-[7] origin-bottom-right text-white">
+          ${currentGame.iconSvg}
+        </div>
+      `}
+    `;
+  }
+
+  private selectGame(index: number): void {
+    if (index < 0 || index >= GAMES_REGISTRY.length) return;
+    this.selectedGameIndex = index;
+    const currentGame = GAMES_REGISTRY[index];
+    const isDark = this.currentTheme === 'dark';
+    const isLightBanner = currentGame.bannerTheme === 'light' || currentGame.id === 'sling-puck';
+
+    // Update active card styling without re-rendering entire grid (zero scroll jump)
+    document.querySelectorAll('.game-card').forEach((card, idx) => {
+      if (idx === index) {
+        card.classList.add('ps-card-active', '-translate-y-1');
+      } else {
+        card.classList.remove('ps-card-active', '-translate-y-1');
+      }
+    });
+
+    // Update Hero banner card in place
+    const heroCard = document.getElementById('hero-banner-card');
+    if (heroCard) {
+      heroCard.className = `relative overflow-hidden rounded-2xl sm:rounded-3xl p-3.5 sm:p-7 md:p-8 ps-card shadow-2xl bg-gradient-to-br ${currentGame.bannerGradient} ${isLightBanner ? 'text-stone-900 border-amber-900/15' : 'text-white border-white/10 dark:border-white/15'} group border`;
+      heroCard.innerHTML = this.renderHeroCardInner(currentGame, isDark);
+
+      // Re-attach play button listener
+      document.getElementById('btn-play-hero')?.addEventListener('click', () => {
+        this.openLaunchModal();
+      });
+    }
+
+    // Update Modal Game Title & Variant selector
+    const modalTitle = document.getElementById('modal-game-title');
+    if (modalTitle) {
+      modalTitle.textContent = currentGame.title;
+    }
+    const poolVariants = document.getElementById('modal-pool-variants');
+    if (poolVariants) {
+      if (currentGame.id === 'pool') {
+        poolVariants.classList.remove('hidden');
+        poolVariants.classList.add('block');
+      } else {
+        poolVariants.classList.remove('block');
+        poolVariants.classList.add('hidden');
+      }
+    }
+  }
+
   private isValidRoomCode(code: string | null | undefined): boolean {
     if (!code) return false;
     return /^[A-Z0-9]{6}$/.test(code.trim().toUpperCase());
@@ -413,12 +457,11 @@ class ConsoleDashboard {
       this.renderDashboard();
     });
 
-    // Carousel card click
+    // Carousel card click (in-place selection with preserved scroll position)
     document.querySelectorAll('.game-card').forEach(card => {
       card.addEventListener('click', (e) => {
         const index = parseInt((e.currentTarget as HTMLElement).dataset.index || '0', 10);
-        this.selectedGameIndex = index;
-        this.renderDashboard();
+        this.selectGame(index);
       });
     });
 

@@ -128,13 +128,13 @@ export class SodaDashGame implements GameInstance {
             <button id="btn-dash-exit" class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-slate-800/90 text-slate-200 hover:bg-slate-700 active:scale-95 flex items-center space-x-1 shadow-md border border-slate-700/60 backdrop-blur-md">
               <span>← Hub</span>
             </button>
-            <div class="px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            <div class="hidden sm:inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
               🥷 NINJA RUSH • ${diff}
             </div>
           </div>
 
           <!-- Real-Time Distance Lead Badge -->
-          <div id="dash-lead-badge" class="px-3 py-1 rounded-full text-xs font-black tracking-wide bg-slate-900/90 text-cyan-400 border border-cyan-500/30 shadow-lg backdrop-blur-md">
+          <div id="dash-lead-badge" class="px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-black tracking-wide bg-slate-900/90 text-cyan-400 border border-cyan-500/30 shadow-lg backdrop-blur-md whitespace-nowrap flex-shrink-0 text-center">
             STARTING...
           </div>
 
@@ -155,33 +155,33 @@ export class SodaDashGame implements GameInstance {
           ⚠️ Opponent is tabbed out / minimized
         </div>
 
-        <!-- In-Game HUD: Dual Hearts & Distance Meters -->
-        <div class="w-full max-w-6xl px-3 sm:px-6 z-20 grid grid-cols-2 gap-3 sm:gap-4 pointer-events-none">
+        <!-- In-Game HUD: Dual Hearts & Distance Meters (Streamlined & Compact) -->
+        <div class="w-full max-w-6xl px-3 sm:px-6 z-20 grid grid-cols-2 gap-2.5 sm:gap-4 pointer-events-none">
           
           <!-- Player Health & Distance Card -->
-          <div class="p-2.5 sm:p-3 rounded-2xl bg-slate-900/85 border border-cyan-500/40 shadow-xl backdrop-blur-md flex flex-col space-y-1">
+          <div class="px-2.5 py-1.5 sm:p-3 rounded-xl sm:rounded-2xl bg-slate-900/85 border border-cyan-500/40 shadow-xl backdrop-blur-md flex flex-col space-y-0.5 sm:space-y-1">
             <div class="flex items-center justify-between">
-              <span class="text-[11px] font-black tracking-wider text-cyan-400 uppercase">YOU (CYAN)</span>
-              <div id="player-hearts" class="text-sm sm:text-base tracking-widest text-red-500 flex items-center space-x-0.5">
+              <span class="text-[10px] sm:text-[11px] font-black tracking-wider text-cyan-400 uppercase">YOU (CYAN)</span>
+              <div id="player-hearts" class="text-xs sm:text-base tracking-widest text-red-500 flex items-center space-x-0.5">
                 ❤️ ❤️ ❤️
               </div>
             </div>
             <div class="flex items-baseline justify-between pt-0.5">
-              <div id="player-dist" class="text-lg sm:text-2xl font-black font-mono text-white tracking-tight">0 m</div>
+              <div id="player-dist" class="text-base sm:text-2xl font-black font-mono text-white tracking-tight">0 m</div>
               <div id="player-speed" class="text-[10px] sm:text-xs font-bold font-mono text-cyan-300">58 km/h</div>
             </div>
           </div>
 
           <!-- Opponent Health & Distance Card -->
-          <div class="p-2.5 sm:p-3 rounded-2xl bg-slate-900/85 border border-rose-500/40 shadow-xl backdrop-blur-md flex flex-col space-y-1">
+          <div class="px-2.5 py-1.5 sm:p-3 rounded-xl sm:rounded-2xl bg-slate-900/85 border border-rose-500/40 shadow-xl backdrop-blur-md flex flex-col space-y-0.5 sm:space-y-1">
             <div class="flex items-center justify-between">
-              <span class="text-[11px] font-black tracking-wider text-rose-400 uppercase">${isOnline ? 'OPPONENT' : `BOT (${diff})`}</span>
-              <div id="opponent-hearts" class="text-sm sm:text-base tracking-widest text-red-500 flex items-center space-x-0.5">
+              <span class="text-[10px] sm:text-[11px] font-black tracking-wider text-rose-400 uppercase">${isOnline ? 'OPPONENT' : `BOT (${diff})`}</span>
+              <div id="opponent-hearts" class="text-xs sm:text-base tracking-widest text-red-500 flex items-center space-x-0.5">
                 ❤️ ❤️ ❤️
               </div>
             </div>
             <div class="flex items-baseline justify-between pt-0.5">
-              <div id="opponent-dist" class="text-lg sm:text-2xl font-black font-mono text-white tracking-tight">0 m</div>
+              <div id="opponent-dist" class="text-base sm:text-2xl font-black font-mono text-white tracking-tight">0 m</div>
               <div class="text-[10px] sm:text-xs font-bold text-rose-300">RIVAL</div>
             </div>
           </div>
@@ -211,36 +211,32 @@ export class SodaDashGame implements GameInstance {
               <div class="absolute -top-1.5 right-10 w-3 h-3 bg-slate-900 rotate-45 border-t border-l border-rose-500/50"></div>
             </div>
           </div>
+
+          <!-- Desktop Keyboard Hint (hidden on touch/mobile) -->
+          <div class="hidden sm:flex absolute bottom-4 left-6 z-20 pointer-events-none items-center space-x-2 text-[11px] font-semibold text-slate-400/80 bg-slate-900/85 px-3 py-1.5 rounded-xl border border-slate-800 backdrop-blur-md">
+            <span>Keys: [A/D] or [←/→] Lane • [W/Space] Jump • [S/↓] Slide • [E] Item</span>
+          </div>
+
+          <!-- Floating Item Slot Button -->
+          <button id="btn-use-item" class="absolute bottom-4 right-4 z-20 px-4 py-3 rounded-2xl font-black text-xs sm:text-sm tracking-wide bg-slate-900/80 text-slate-500 border border-slate-700/60 opacity-40 pointer-events-none transition-all select-none shadow-md backdrop-blur-sm">
+            <span>NO ITEM</span>
+          </button>
         </div>
 
-        <!-- Bottom Controller Bar (Mobile Touch & Keyboard HUD) -->
-        <div class="w-full max-w-6xl px-3 sm:px-6 py-2.5 z-20 flex items-center justify-between pointer-events-auto bg-slate-950/90 backdrop-blur-md border-t border-slate-800/80">
-          <!-- Left/Right Lane Controls -->
-          <div class="flex items-center space-x-2 sm:space-x-3">
-            <button id="touch-left" class="w-14 h-13 sm:w-16 sm:h-14 rounded-2xl bg-slate-800/90 text-white font-black text-xl active:bg-cyan-500 active:scale-95 shadow-lg border border-slate-700 flex items-center justify-center transition-transform select-none">
-              ←
-            </button>
-            <button id="touch-right" class="w-14 h-13 sm:w-16 sm:h-14 rounded-2xl bg-slate-800/90 text-white font-black text-xl active:bg-cyan-500 active:scale-95 shadow-lg border border-slate-700 flex items-center justify-center transition-transform select-none">
-              →
-            </button>
-          </div>
-
-          <!-- Jump & Slide Actions -->
-          <div class="flex items-center space-x-2 sm:space-x-3">
-            <button id="touch-jump" class="px-4 sm:px-6 h-13 sm:h-14 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black text-sm sm:text-base tracking-wider uppercase active:scale-95 shadow-lg shadow-cyan-500/25 border border-cyan-400/40 flex items-center justify-center transition-transform select-none">
-              JUMP ↑
-            </button>
-            <button id="touch-slide" class="px-4 sm:px-6 h-13 sm:h-14 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 text-white font-black text-sm sm:text-base tracking-wider uppercase active:scale-95 shadow-lg shadow-amber-500/25 border border-amber-400/40 flex items-center justify-center transition-transform select-none">
-              SLIDE ↓
-            </button>
-          </div>
-
-          <!-- Item Slot Button -->
-          <div class="flex items-center">
-            <button id="btn-use-item" class="relative px-3.5 sm:px-5 h-13 sm:h-14 rounded-2xl bg-slate-800/80 text-slate-400 font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg border border-slate-700/60 flex items-center space-x-1.5 transition-all select-none">
-              <span>NO ITEM</span>
-            </button>
-          </div>
+        <!-- Mobile Touch Bar (Directional Tap Controls) with Android/iOS Safe Area Inset -->
+        <div class="sm:hidden w-full max-w-6xl px-3 pt-2.5 z-20 grid grid-cols-4 gap-2.5 pointer-events-auto bg-slate-950/90 border-t border-slate-800/80 backdrop-blur-md" style="padding-bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem));">
+          <button id="touch-left" class="py-3.5 rounded-2xl bg-slate-800/90 text-white font-black text-2xl active:bg-cyan-500 active:scale-95 shadow-lg border border-slate-700 flex items-center justify-center transition-transform select-none">
+            ←
+          </button>
+          <button id="touch-jump" class="py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg shadow-cyan-500/25 border border-cyan-400/40 flex items-center justify-center gap-1 transition-transform select-none">
+            <span>JUMP</span> <span>↑</span>
+          </button>
+          <button id="touch-slide" class="py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 text-white font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg shadow-amber-500/25 border border-amber-400/40 flex items-center justify-center gap-1 transition-transform select-none">
+            <span>SLIDE</span> <span>↓</span>
+          </button>
+          <button id="touch-right" class="py-3.5 rounded-2xl bg-slate-800/90 text-white font-black text-2xl active:bg-cyan-500 active:scale-95 shadow-lg border border-slate-700 flex items-center justify-center transition-transform select-none">
+            →
+          </button>
         </div>
 
         <!-- Game Over Modal -->
@@ -951,7 +947,7 @@ export class SodaDashGame implements GameInstance {
     const item = this.engine.player.heldItem;
     if (!item) {
       this.itemBtnEl.textContent = 'NO ITEM';
-      this.itemBtnEl.className = 'relative px-3.5 sm:px-5 h-13 sm:h-14 rounded-2xl bg-slate-800/80 text-slate-500 font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg border border-slate-700/60 flex items-center space-x-1.5 transition-all opacity-40 pointer-events-none select-none';
+      this.itemBtnEl.className = 'absolute bottom-4 right-4 z-20 px-4 py-3 rounded-2xl font-black text-xs sm:text-sm tracking-wide bg-slate-900/80 text-slate-500 border border-slate-700/60 opacity-40 pointer-events-none transition-all select-none shadow-md backdrop-blur-sm';
       return;
     }
 
@@ -959,15 +955,15 @@ export class SodaDashGame implements GameInstance {
     switch (item) {
       case 'FIZZ_TURBO':
         this.itemBtnEl.textContent = '🚀 ROCKET BOOST';
-        this.itemBtnEl.className = 'relative px-3.5 sm:px-5 h-13 sm:h-14 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg shadow-orange-500/30 border border-amber-300 flex items-center space-x-1.5 transition-all select-none cursor-pointer animate-pulse';
+        this.itemBtnEl.className = 'absolute bottom-4 right-4 z-20 px-4 py-3 rounded-2xl font-black text-xs sm:text-sm tracking-wide bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-xl shadow-orange-500/40 border border-amber-300 active:scale-95 transition-all select-none cursor-pointer animate-pulse backdrop-blur-sm';
         break;
       case 'BUBBLE_SHIELD':
         this.itemBtnEl.textContent = '🛡️ BUBBLE SHIELD';
-        this.itemBtnEl.className = 'relative px-3.5 sm:px-5 h-13 sm:h-14 rounded-2xl bg-gradient-to-r from-sky-400 to-blue-600 text-white font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg shadow-sky-500/30 border border-sky-300 flex items-center space-x-1.5 transition-all select-none cursor-pointer';
+        this.itemBtnEl.className = 'absolute bottom-4 right-4 z-20 px-4 py-3 rounded-2xl font-black text-xs sm:text-sm tracking-wide bg-gradient-to-r from-sky-400 to-blue-600 text-white shadow-xl shadow-sky-500/40 border border-sky-300 active:scale-95 transition-all select-none cursor-pointer backdrop-blur-sm';
         break;
       case 'SODA_SPILL':
         this.itemBtnEl.textContent = '🛢️ CALTROPS TRAP';
-        this.itemBtnEl.className = 'relative px-3.5 sm:px-5 h-13 sm:h-14 rounded-2xl bg-gradient-to-r from-purple-500 to-pink-600 text-white font-black text-xs sm:text-sm tracking-wider uppercase active:scale-95 shadow-lg shadow-purple-500/30 border border-purple-300 flex items-center space-x-1.5 transition-all select-none cursor-pointer';
+        this.itemBtnEl.className = 'absolute bottom-4 right-4 z-20 px-4 py-3 rounded-2xl font-black text-xs sm:text-sm tracking-wide bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-xl shadow-purple-500/40 border border-purple-300 active:scale-95 transition-all select-none cursor-pointer backdrop-blur-sm';
         break;
     }
   }
