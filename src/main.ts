@@ -552,7 +552,7 @@ class ConsoleDashboard {
     wakeLock.request();
     const isFullscreen = gameDef.id === 'soda-dash';
     this.appContainer.innerHTML = `
-      <div id="arena-container" class="w-full ${isFullscreen ? 'h-screen max-h-screen p-0 m-0 overflow-hidden' : 'min-h-screen flex flex-col items-center justify-between md:justify-start px-1 sm:px-4 py-1 sm:py-2'} select-none">
+      <div id="arena-container" class="w-full ${isFullscreen ? 'h-screen max-h-screen p-0 m-0 overflow-hidden flex justify-center bg-[#0a0c13]' : 'min-h-screen flex flex-col items-center justify-between md:justify-start px-1 sm:px-4 py-1 sm:py-2'} select-none">
         <!-- Game mounts here -->
       </div>
     `;

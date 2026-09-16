@@ -79,14 +79,14 @@ export class SodaDashGame implements GameInstance {
     const isOnline = this.session.mode === 'online';
     const diff = this.session.aiDifficulty ? this.session.aiDifficulty.toUpperCase() : 'PVP';
 
-    this.container.className = 'w-full h-full p-0 m-0 overflow-hidden bg-slate-950';
+    this.container.className = 'w-full h-full p-0 m-0 overflow-hidden bg-[#0a0c13] flex justify-center';
     document.body.style.backgroundColor = '#0a0c13';
 
     this.container.innerHTML = `
-      <div class="relative w-full h-[100dvh] max-h-[100dvh] flex flex-col items-center justify-between overflow-hidden select-none bg-slate-950 font-sans" style="height: 100dvh; max-height: 100dvh;">
+      <div class="relative w-full max-w-6xl mx-auto h-[100dvh] max-h-[100dvh] flex flex-col items-center justify-between overflow-hidden select-none bg-slate-950 font-sans shadow-2xl sm:border-x sm:border-slate-800/60" style="height: 100dvh; max-height: 100dvh;">
         
         <!-- Top Navigation & Status Bar -->
-        <div class="w-full max-w-5xl px-3 py-2 z-20 flex items-center justify-between pointer-events-auto">
+        <div class="w-full max-w-6xl px-3 sm:px-6 py-2 sm:py-3 z-20 flex items-center justify-between pointer-events-auto">
           <!-- Back button & Mode Tag -->
           <div class="flex items-center space-x-2">
             <button id="btn-dash-exit" class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-slate-800/90 text-slate-200 hover:bg-slate-700 active:scale-95 flex items-center space-x-1 shadow-md border border-slate-700/60 backdrop-blur-md">
@@ -111,7 +111,7 @@ export class SodaDashGame implements GameInstance {
         </div>
 
         <!-- In-Game HUD: Dual Hearts & Distance Meters -->
-        <div class="w-full max-w-5xl px-3 z-20 grid grid-cols-2 gap-3 pointer-events-none">
+        <div class="w-full max-w-6xl px-3 sm:px-6 z-20 grid grid-cols-2 gap-3 sm:gap-4 pointer-events-none">
           
           <!-- Player Health & Distance Card -->
           <div class="p-2.5 sm:p-3 rounded-2xl bg-slate-900/85 border border-cyan-500/40 shadow-xl backdrop-blur-md flex flex-col space-y-1">
@@ -308,6 +308,8 @@ export class SodaDashGame implements GameInstance {
 
   private handleKeyDown(e: KeyboardEvent): void {
     if (this.engine.isGameOver) return;
+    // Ignore OS key auto-repeat when holding keys (prevents infinite slide glitching)
+    if (e.repeat) return;
 
     switch (e.key) {
       case 'ArrowLeft':

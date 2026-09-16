@@ -239,23 +239,6 @@ export class SodaDashRenderer {
     ctx.fillStyle = grassGrad;
     ctx.fillRect(0, horizonY, width, height - horizonY);
 
-    // Cheerful Roadside Flowers
-    const flowerColors = ['#facc15', '#f43f5e', '#38bdf8', '#ffffff', '#fb923c'];
-    for (let i = 0; i < 28; i++) {
-      const fx = (i * 47) % width;
-      const fy = horizonY + 15 + ((i * 31) % (height - horizonY - 30));
-      if (fx > vanishX - 220 && fx < vanishX + 220 && fy > height - 120) continue;
-
-      ctx.fillStyle = flowerColors[i % flowerColors.length];
-      ctx.beginPath();
-      ctx.arc(fx, fy, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#fef08a';
-      ctx.beginPath();
-      ctx.arc(fx, fy, 1.8, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
     // Scrolling Road Segments with Perfectly Aligned Curbs (Segment-by-Segment)
     const segmentLength = 2.0;
     const startSegment = Math.floor(cameraZ / segmentLength);
@@ -800,10 +783,17 @@ export class SodaDashRenderer {
     ctx.save();
     ctx.translate(p.x, p.y);
 
+    // Same-Lane Shadow/Ghost: When other player/AI is in the same lane, make them semi-transparent
+    // so player character and track view ahead remain clearly visible
+    const isSameLane = !isPlayer && Math.abs(runner.currentX - this.engine.player.currentX) < 0.65;
+    if (isSameLane) {
+      ctx.globalAlpha = 0.32;
+    }
+
     // Blinking transparency during invulnerability
     if (runner.invulnerableTimer > 0) {
       const blink = Math.sin(Date.now() * 0.04) > 0;
-      if (blink) ctx.globalAlpha = 0.35;
+      if (blink) ctx.globalAlpha = isSameLane ? 0.18 : 0.35;
     }
 
     // Dynamic Shadow
