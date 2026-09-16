@@ -5,6 +5,7 @@ import { PoolGame } from './pool/PoolGame';
 import { SnakeLadderGame } from './snake-ladder/SnakeLadderGame';
 import { SlingPuckGame } from './sling-puck/SlingPuckGame';
 import { BlockFitGame } from './block-fit/BlockFitGame';
+import { SodaDashGame } from './soda-dash/SodaDashGame';
 
 export const GAMES_REGISTRY: GameDefinition[] = [
   {
@@ -281,5 +282,70 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     screenshotUrl: '/screenshots/block-fit.png',
     supportsAI: true,
     create: (container, session) => new BlockFitGame(container, session)
+  },
+  {
+    id: 'soda-dash',
+    title: 'Soda Rush: 1v1 Dash',
+    subtitle: 'Infinite Urban Parkour Duel',
+    description: 'Sprint down an infinite 3-lane highway with 3 Hearts in a sudden-death 1v1 duel. Leap over road barricades, slide under scaffolding, grab life cans, and outlast your rival as speed escalates!',
+    genre: 'Action Runner',
+    badge: '1v1 Sudden-Death',
+    bannerGradient: 'from-cyan-600 via-blue-700 to-indigo-950',
+    accentColor: '#06b6d4',
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none">
+      <defs>
+        <linearGradient id="dash-sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#0f172a"/>
+          <stop offset="40%" stop-color="#312e81"/>
+          <stop offset="100%" stop-color="#f97316"/>
+        </linearGradient>
+        <linearGradient id="dash-road" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#1e293b"/>
+          <stop offset="100%" stop-color="#0f172a"/>
+        </linearGradient>
+        <linearGradient id="dash-cyan" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#67e8f9"/>
+          <stop offset="100%" stop-color="#0284c7"/>
+        </linearGradient>
+        <linearGradient id="dash-gold" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#fde047"/>
+          <stop offset="100%" stop-color="#ea580c"/>
+        </linearGradient>
+      </defs>
+      <!-- Twilight Sky & Sun Backdrop -->
+      <rect x="2" y="2" width="20" height="9" rx="2" fill="url(#dash-sky)"/>
+      <circle cx="12" cy="11" r="3.5" fill="#facc15" opacity="0.6"/>
+      <!-- 3D Perspective Road -->
+      <path d="M 10 11 L 14 11 L 22 22 L 2 22 Z" fill="url(#dash-road)"/>
+      <!-- Red & White Curbs -->
+      <path d="M 10 11 L 9.2 11 L 2 22 L 3.2 22 Z" fill="#ef4444"/>
+      <path d="M 14 11 L 14.8 11 L 22 22 L 20.8 22 Z" fill="#ef4444"/>
+      <!-- Dashed Lane Dividers -->
+      <path d="M 11.2 12.5 L 11.4 13.5 M 10.5 15.5 L 10.8 17 M 9.5 19.5 L 10 21.5" stroke="#ffffff" stroke-width="0.7" stroke-linecap="round" opacity="0.8"/>
+      <path d="M 12.8 12.5 L 12.6 13.5 M 13.5 15.5 L 13.2 17 M 14.5 19.5 L 14 21.5" stroke="#ffffff" stroke-width="0.7" stroke-linecap="round" opacity="0.8"/>
+      <!-- Yellow Hurdle Barricade on Right -->
+      <path d="M 13.5 17.5 L 19 17.5" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round"/>
+      <path d="M 14.5 17.5 L 14.5 19.5 M 18 17.5 L 18 19.5" stroke="#334155" stroke-width="0.8"/>
+      <!-- Leaping Parkour Runner (Left/Center) -->
+      <g filter="drop-shadow(0 1px 2px rgba(0,0,0,0.5))">
+        <!-- Runner Torso & Head -->
+        <circle cx="9" cy="10" r="1.8" fill="#0f172a"/>
+        <path d="M 9.5 9.5 L 10.6 9.5" stroke="#fde047" stroke-width="0.8" stroke-linecap="round"/>
+        <path d="M 7.5 11.5 L 9.5 11 L 9 14 L 7 13.5 Z" fill="url(#dash-cyan)"/>
+        <!-- Flying Limbs -->
+        <path d="M 9 13.5 L 6.8 15.5 L 5.5 14.8" stroke="#38bdf8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M 9 13.5 L 10.8 15 L 11.5 16.5" stroke="#0284c7" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- Speed Wind Scarf -->
+        <path d="M 8 11.5 C 6 11 4.5 12 3 11" stroke="#38bdf8" stroke-width="0.9" stroke-linecap="round"/>
+      </g>
+      <!-- Floating Soda Life Can with Heart -->
+      <rect x="15" y="6" width="3" height="4.5" rx="0.8" fill="#ef4444" stroke="#f8fafc" stroke-width="0.4"/>
+      <circle cx="16.5" cy="8.2" r="0.8" fill="#ffffff"/>
+      <!-- Sparkle -->
+      <path d="M 19 6 L 19.8 4.8 L 21 4 L 19.8 3.2 L 19 2 L 18.2 3.2 L 17 4 L 18.2 4.8 Z" fill="#facc15"/>
+    </svg>`,
+    screenshotUrl: '/screenshots/soda-dash.png',
+    supportsAI: true,
+    create: (container, session) => new SodaDashGame(container, session)
   }
 ];

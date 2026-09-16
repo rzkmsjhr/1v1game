@@ -43,6 +43,10 @@ export type NetworkMessage =
   | { type: 'FIT_ROUND_CLAIM'; roundNumber: number; timestamp: number }
   | { type: 'FIT_REMATCH_REQUEST' }
   | { type: 'FIT_REMATCH_ACCEPT' }
+  | { type: 'DASH_SYNC'; distance: number; speed: number; lane: any; currentX: number; jumpY: number; isJumping: boolean; isSliding: boolean; hearts: number; invulnerable: boolean; stumbling: boolean; isTurbo: boolean; hasShield: boolean; heldItem: any }
+  | { type: 'DASH_ITEM_DROP'; itemType: 'SODA_SPILL'; z: number; lane: any }
+  | { type: 'DASH_GAME_OVER'; loserId: 'player' | 'opponent'; finalDistance: number }
+  | { type: 'DASH_REMATCH'; seed: number }
   | { type: 'CUSTOM'; payload: any };
 
 export type NetworkQuality = 'good' | 'moderate' | 'poor' | 'stalled';
