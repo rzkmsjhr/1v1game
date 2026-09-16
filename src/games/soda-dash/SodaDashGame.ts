@@ -78,6 +78,9 @@ export class SodaDashGame implements GameInstance {
     const isOnline = this.session.mode === 'online';
     const diff = this.session.aiDifficulty ? this.session.aiDifficulty.toUpperCase() : 'PVP';
 
+    this.container.className = 'w-full h-full p-0 m-0 overflow-hidden bg-slate-950';
+    document.body.style.backgroundColor = '#0a0c13';
+
     this.container.innerHTML = `
       <div class="relative w-full h-[100dvh] max-h-[100dvh] flex flex-col items-center justify-between overflow-hidden select-none bg-slate-950 font-sans" style="height: 100dvh; max-height: 100dvh;">
         
@@ -653,5 +656,6 @@ export class SodaDashGame implements GameInstance {
     }
 
     this.ai?.destroy();
+    document.body.style.backgroundColor = '';
   }
 }

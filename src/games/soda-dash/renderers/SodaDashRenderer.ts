@@ -28,9 +28,6 @@ export class SodaDashRenderer {
   private particles: Particle[] = [];
   private floatingTexts: FloatingText[] = [];
 
-  // Visual layout constants
-  private horizonRatio: number = 0.28;
-
   constructor(canvas: HTMLCanvasElement, engine: SodaDashEngine) {
     this.canvas = canvas;
     const context = canvas.getContext('2d', { alpha: false });
@@ -75,11 +72,14 @@ export class SodaDashRenderer {
     ctx.save();
     ctx.clearRect(0, 0, width, height);
 
-    const horizonY = height * this.horizonRatio;
+    const isMobile = width < 768 || height > width;
+    const horizonRatio = isMobile ? 0.28 : 0.32;
+    const horizonY = height * horizonRatio;
     const vanishX = width * 0.5;
 
-    // Camera follows player distance with a closer, more zoomed-in follow distance
-    const cameraZ = this.engine.player.distance - 3.4;
+    // Camera follows player distance: mobile is zoomed in more (2.0m follow), desktop is 3.4m
+    const cameraFollowZ = isMobile ? 2.0 : 3.4;
+    const cameraZ = this.engine.player.distance - cameraFollowZ;
 
     // 1. Draw Sky & Parallax City Skyline
     this.drawSkyAndSkyline(ctx, width, height, horizonY, cameraZ);
@@ -228,7 +228,8 @@ export class SodaDashRenderer {
     vanishX: number,
     cameraZ: number
   ): void {
-    const roadHalfWidthBottom = width * 0.52;
+    const isMobile = width < 768 || height > width;
+    const zCrest = isMobile ? 28 : 38;
 
     // Lush Emerald Lawn Shoulders
     const grassGrad = ctx.createLinearGradient(0, horizonY, 0, height);
@@ -255,55 +256,67 @@ export class SodaDashRenderer {
       ctx.fill();
     }
 
-    // Base Clean Slate Asphalt
-    ctx.beginPath();
-    ctx.moveTo(vanishX - 42, horizonY);
-    ctx.lineTo(vanishX + 42, horizonY);
-    ctx.lineTo(vanishX + roadHalfWidthBottom, height);
-    ctx.lineTo(vanishX - roadHalfWidthBottom, height);
-    ctx.closePath();
-    ctx.fillStyle = '#334155'; // Smooth Vibrant Slate Track
-    ctx.fill();
-
-    // Scrolling Curb Strips & Road Segments (Clean road: NO yellow middle stripes)
-    const segmentLength = 2.5;
+    // Scrolling Road Segments with Perfectly Aligned Curbs (Segment-by-Segment)
+    const segmentLength = 2.0;
     const startSegment = Math.floor(cameraZ / segmentLength);
+    const numSegments = Math.ceil(zCrest / segmentLength) + 1;
 
-    for (let i = 0; i < 35; i++) {
+    for (let i = numSegments - 1; i >= -1; i--) {
       const segZ1 = (startSegment + i) * segmentLength;
       const segZ2 = (startSegment + i + 1) * segmentLength;
 
-      const relZ1 = segZ1 - cameraZ;
-      const relZ2 = segZ2 - cameraZ;
-      if (relZ1 <= 1.0) continue;
+      const relZ1 = Math.max(0, segZ1 - cameraZ);
+      const relZ2 = Math.max(0.1, segZ2 - cameraZ);
+      if (relZ2 <= relZ1) continue;
 
       const p1 = this.projectPoint(0, 0, relZ1, width, height, horizonY, vanishX);
       const p2 = this.projectPoint(0, 0, relZ2, width, height, horizonY, vanishX);
 
       const isOdd = (startSegment + i) % 2 === 0;
 
-      // Curbs: Playful Candy Red & White Stripes
-      const halfW1 = roadHalfWidthBottom * p1.scale;
-      const halfW2 = roadHalfWidthBottom * p2.scale;
-      const curbW1 = Math.max(4, 46 * p1.scale);
-      const curbW2 = Math.max(4, 46 * p2.scale);
+      // Curb width scales with distance
+      const curbW1 = Math.max(5, 40 * (p1.scale / (isMobile ? 1.42 : 1.0)));
+      const curbW2 = Math.max(5, 40 * (p2.scale / (isMobile ? 1.42 : 1.0)));
 
-      ctx.fillStyle = isOdd ? '#ef4444' : '#ffffff';
+      // Shared vertex coordinates guarantee 100% mathematical alignment
+      const leftOuter1 = vanishX - p1.halfW;
+      const leftOuter2 = vanishX - p2.halfW;
+      const leftInner1 = leftOuter1 + curbW1;
+      const leftInner2 = leftOuter2 + curbW2;
 
-      // Left curb
+      const rightOuter1 = vanishX + p1.halfW;
+      const rightOuter2 = vanishX + p2.halfW;
+      const rightInner1 = rightOuter1 - curbW1;
+      const rightInner2 = rightOuter2 - curbW2;
+
+      // 1. Center Asphalt Road (Smooth Slate, clean without yellow stripes)
+      ctx.fillStyle = isOdd ? '#334155' : '#2d3748';
       ctx.beginPath();
-      ctx.moveTo(vanishX - halfW2, p2.y);
-      ctx.lineTo(vanishX - halfW2 + curbW2, p2.y);
-      ctx.lineTo(vanishX - halfW1 + curbW1, p1.y);
-      ctx.lineTo(vanishX - halfW1, p1.y);
+      ctx.moveTo(leftInner2, p2.y);
+      ctx.lineTo(rightInner2, p2.y);
+      ctx.lineTo(rightInner1, p1.y);
+      ctx.lineTo(leftInner1, p1.y);
+      ctx.closePath();
       ctx.fill();
 
-      // Right curb
+      // 2. Left Red & White Strip (100% Aligned to Asphalt Outer Edge)
+      ctx.fillStyle = isOdd ? '#ef4444' : '#ffffff';
       ctx.beginPath();
-      ctx.moveTo(vanishX + halfW2, p2.y);
-      ctx.lineTo(vanishX + halfW2 - curbW2, p2.y);
-      ctx.lineTo(vanishX + halfW1 - curbW1, p1.y);
-      ctx.lineTo(vanishX + halfW1, p1.y);
+      ctx.moveTo(leftOuter2, p2.y);
+      ctx.lineTo(leftInner2, p2.y);
+      ctx.lineTo(leftInner1, p1.y);
+      ctx.lineTo(leftOuter1, p1.y);
+      ctx.closePath();
+      ctx.fill();
+
+      // 3. Right Red & White Strip (100% Aligned to Asphalt Outer Edge)
+      ctx.fillStyle = isOdd ? '#ef4444' : '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(rightInner2, p2.y);
+      ctx.lineTo(rightOuter2, p2.y);
+      ctx.lineTo(rightOuter1, p1.y);
+      ctx.lineTo(rightInner1, p1.y);
+      ctx.closePath();
       ctx.fill();
     }
   }
@@ -328,8 +341,11 @@ export class SodaDashRenderer {
 
     const renderables: Renderable[] = [];
 
-    // Track Items within range [cameraZ + 1.2, cameraZ + 90]
-    const items = this.engine.track.getActiveItems(cameraZ + 1.2, cameraZ + 90);
+    const isMobile = width < 768 || height > width;
+    const zCrest = isMobile ? 28 : 38;
+
+    // Track Items within visible convex crest range
+    const items = this.engine.track.getActiveItems(cameraZ + 0.4, cameraZ + zCrest + 2.0);
     for (const item of items) {
       if (item.hit && item.type !== 'PUDDLE' && item.type !== 'SODA_SPILL') continue;
       renderables.push({
@@ -375,10 +391,10 @@ export class SodaDashRenderer {
     cameraZ: number
   ): void {
     const relZ = item.z - cameraZ;
-    if (relZ <= 1.2) return;
+    if (relZ <= 0.4) return;
 
     const p = this.projectPoint(item.lane, 0, relZ, width, height, horizonY, vanishX);
-    if (p.scale <= 0.04) return;
+    if (p.isBeyondCrest || p.scale <= 0.04) return;
 
     ctx.save();
     ctx.translate(p.x, p.y);
@@ -667,10 +683,11 @@ export class SodaDashRenderer {
     isPlayer: boolean
   ): void {
     const relZ = runner.distance - cameraZ;
-    if (relZ <= 0.8) return;
+    if (relZ <= 0.4) return;
 
     // Projected ground point
     const p = this.projectPoint(runner.currentX, 0, relZ, width, height, horizonY, vanishX);
+    if (p.isBeyondCrest || p.scale <= 0.04) return;
     const s = p.scale;
 
     ctx.save();
@@ -991,14 +1008,40 @@ export class SodaDashRenderer {
     height: number,
     horizonY: number,
     vanishX: number
-  ): { x: number; y: number; scale: number } {
-    const minZ = 2.4;
-    const roadHalfWidthBottom = width * 0.52;
-    const laneSpacingBottom = roadHalfWidthBottom * 0.68;
-    const normScale = minZ / Math.max(0.1, relZ);
-    const y = horizonY + (height - horizonY) * normScale - trackY * 135 * normScale;
-    const x = vanishX + (laneX * laneSpacingBottom) * normScale;
+  ): { x: number; y: number; scale: number; halfW: number; isBeyondCrest: boolean } {
+    const isMobile = width < 768 || height > width;
+    const zCrest = isMobile ? 28 : 38;
+    const yBottom = height + 8;
+    const yCrest = horizonY;
 
-    return { x, y, scale: normScale };
+    // Road half width at bottom and crest (flat, non-tapered road)
+    const roadHalfWidthBottom = isMobile ? width * 0.495 : width * 0.46;
+    const roadHalfWidthCrest = roadHalfWidthBottom * (isMobile ? 0.76 : 0.72);
+
+    // Convex curve progress u: 0 (near camera) to 1.0 (at crest)
+    const u = Math.max(0, Math.min(1.0, relZ / zCrest));
+
+    // Convex hill curve: rises and flattens out smoothly at crest
+    const curveFactor = Math.sin(u * Math.PI * 0.5);
+    const groundY = yBottom - (yBottom - yCrest) * curveFactor;
+
+    // Flat width: only tapers gently (24% on mobile, 28% on desktop)
+    const halfW = roadHalfWidthBottom - (roadHalfWidthBottom - roadHalfWidthCrest) * u;
+    const laneSpacing = halfW * 0.65;
+
+    // Scale along convex curve
+    const baseScale = isMobile ? 1.42 : 1.0;
+    const s = baseScale * (1.0 - 0.60 * Math.pow(u, 1.2));
+
+    const x = vanishX + laneX * laneSpacing;
+    const y = groundY - trackY * 130 * s;
+
+    return {
+      x,
+      y,
+      scale: s,
+      halfW,
+      isBeyondCrest: relZ > zCrest
+    };
   }
 }
