@@ -106,6 +106,29 @@ export class SodaDashRenderer {
   // 1. SKY & CITY PARALLAX
   // -------------------------------------------------------------
 
+  private drawCloud(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number): void {
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 22 * s, 0, Math.PI * 2);
+    ctx.arc(cx + 22 * s, cy - 10 * s, 30 * s, 0, Math.PI * 2);
+    ctx.arc(cx + 50 * s, cy - 4 * s, 24 * s, 0, Math.PI * 2);
+    ctx.arc(cx + 72 * s, cy + 6 * s, 18 * s, 0, Math.PI * 2);
+    ctx.arc(cx - 18 * s, cy + 6 * s, 18 * s, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // Cloud soft under-shading
+    ctx.fillStyle = '#e0f2fe';
+    ctx.beginPath();
+    ctx.arc(cx + 22 * s, cy + 12 * s, 16 * s, 0, Math.PI * 2);
+    ctx.arc(cx + 50 * s, cy + 12 * s, 14 * s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // -------------------------------------------------------------
+  // 1. VIBRANT SUNNY SKY & PLAYFUL CARTOON CITY
+  // -------------------------------------------------------------
+
   private drawSkyAndSkyline(
     ctx: CanvasRenderingContext2D,
     width: number,
@@ -113,46 +136,88 @@ export class SodaDashRenderer {
     horizonY: number,
     cameraZ: number
   ): void {
-    // Twilight Sunset Sky Gradient
+    // 1. Cheerful Azure-to-Peach Summer Sky
     const skyGrad = ctx.createLinearGradient(0, 0, 0, horizonY);
-    skyGrad.addColorStop(0, '#090d16');
-    skyGrad.addColorStop(0.5, '#1e1b4b');
-    skyGrad.addColorStop(0.85, '#4c1d95');
-    skyGrad.addColorStop(1, '#f97316');
+    skyGrad.addColorStop(0, '#0284c7');    // Deep Azure
+    skyGrad.addColorStop(0.4, '#38bdf8');  // Cheerful Sky Cyan
+    skyGrad.addColorStop(0.75, '#7dd3fc'); // Gentle Summer Blue
+    skyGrad.addColorStop(1, '#fed7aa');    // Warm Peach Sunlight Horizon
     ctx.fillStyle = skyGrad;
     ctx.fillRect(0, 0, width, horizonY);
 
-    // Distant Neon City Buildings
-    const cityOffset = (cameraZ * 0.04) % 120;
-    ctx.fillStyle = '#0f172a';
+    // 2. Radiant Golden Cartoon Sun
+    const sunX = width * 0.82;
+    const sunY = horizonY * 0.32;
+    const sunGlow = ctx.createRadialGradient(sunX, sunY, 12, sunX, sunY, 140);
+    sunGlow.addColorStop(0, 'rgba(254, 240, 138, 0.95)');
+    sunGlow.addColorStop(0.25, 'rgba(253, 224, 71, 0.6)');
+    sunGlow.addColorStop(0.6, 'rgba(251, 146, 60, 0.2)');
+    sunGlow.addColorStop(1, 'transparent');
+    ctx.fillStyle = sunGlow;
+    ctx.fillRect(sunX - 140, sunY - 140, 280, 280);
 
-    for (let x = -120; x < width + 120; x += 36) {
-      const buildingX = x - cityOffset;
-      const bHeight = 45 + ((Math.abs(Math.sin(x * 1.7)) * 55) | 0);
-      ctx.fillRect(buildingX, horizonY - bHeight, 32, bHeight);
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 28, 0, Math.PI * 2);
+    ctx.fill();
 
-      // Lit windows
-      ctx.fillStyle = (x % 72 === 0) ? '#fde047' : '#38bdf8';
-      for (let wy = horizonY - bHeight + 8; wy < horizonY - 8; wy += 12) {
-        if ((x + wy) % 5 === 0) {
-          ctx.fillRect(buildingX + 6, wy, 4, 4);
-          ctx.fillRect(buildingX + 18, wy, 4, 4);
-        }
-      }
-      ctx.fillStyle = '#0f172a';
+    // 3. Cute Drifting Fluffy White Clouds
+    const cloudSpeed = cameraZ * 0.03;
+    const cSpan = width + 300;
+    this.drawCloud(ctx, ((140 - cloudSpeed) % cSpan + cSpan) % cSpan - 100, 80, 1.2);
+    this.drawCloud(ctx, ((520 - cloudSpeed) % cSpan + cSpan) % cSpan - 100, 105, 0.9);
+    this.drawCloud(ctx, ((940 - cloudSpeed) % cSpan + cSpan) % cSpan - 100, 70, 1.0);
+
+    // 4. Distant Rolling Green Hills
+    ctx.fillStyle = '#86efac';
+    ctx.beginPath();
+    ctx.moveTo(0, horizonY);
+    for (let x = 0; x <= width; x += 80) {
+      const hy = horizonY - 24 - Math.sin(x * 0.008 + cameraZ * 0.005) * 16;
+      ctx.lineTo(x, hy);
     }
+    ctx.lineTo(width, horizonY);
+    ctx.closePath();
+    ctx.fill();
 
-    // Distant Sun Glow on Horizon
-    const sunGrad = ctx.createRadialGradient(width * 0.5, horizonY, 5, width * 0.5, horizonY, width * 0.4);
-    sunGrad.addColorStop(0, 'rgba(251, 146, 60, 0.45)');
-    sunGrad.addColorStop(0.4, 'rgba(236, 72, 153, 0.2)');
-    sunGrad.addColorStop(1, 'transparent');
-    ctx.fillStyle = sunGrad;
-    ctx.fillRect(0, horizonY - 60, width, 60);
+    // 5. Colorful Pastel Candy / Soda City Skyline
+    const buildingColors = ['#f43f5e', '#38bdf8', '#facc15', '#a855f7', '#34d399', '#fb923c'];
+    const cityOffset = (cameraZ * 0.06) % 312;
+
+    for (let x = -100; x < width + 100; x += 52) {
+      const bx = x - (cityOffset % 52);
+      const colIdx = Math.abs(Math.floor((x + cityOffset) / 52)) % buildingColors.length;
+      const col = buildingColors[colIdx];
+      const bHeight = 35 + ((Math.abs(Math.sin((x + 80) * 1.6)) * 46) | 0);
+
+      // Building Body
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.roundRect(bx, horizonY - bHeight, 44, bHeight, [6, 6, 0, 0]);
+      ctx.fill();
+
+      // Cute Triangular Roof
+      if (colIdx % 2 === 0) {
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(bx, horizonY - bHeight);
+        ctx.lineTo(bx + 22, horizonY - bHeight - 14);
+        ctx.lineTo(bx + 44, horizonY - bHeight);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Friendly White Windows
+      ctx.fillStyle = '#ffffff';
+      for (let wy = horizonY - bHeight + 8; wy < horizonY - 6; wy += 12) {
+        ctx.fillRect(bx + 8, wy, 8, 7);
+        ctx.fillRect(bx + 28, wy, 8, 7);
+      }
+    }
   }
 
   // -------------------------------------------------------------
-  // 2. PERSPECTIVE ROAD ENGINE
+  // 2. PERSPECTIVE ROAD ENGINE (LUSH LAWN & VIBRANT TRACK)
   // -------------------------------------------------------------
 
   private drawRoad(
@@ -165,22 +230,43 @@ export class SodaDashRenderer {
   ): void {
     const roadHalfWidthBottom = width * 0.42;
 
-    // Ground Grass / Shoulders
-    ctx.fillStyle = '#0b0f19';
+    // Lush Emerald Lawn Shoulders
+    const grassGrad = ctx.createLinearGradient(0, horizonY, 0, height);
+    grassGrad.addColorStop(0, '#22c55e'); // Fresh Lawn Green
+    grassGrad.addColorStop(0.5, '#16a34a');
+    grassGrad.addColorStop(1, '#15803d');
+    ctx.fillStyle = grassGrad;
     ctx.fillRect(0, horizonY, width, height - horizonY);
 
-    // Base Asphalt
+    // Cheerful Roadside Flowers
+    const flowerColors = ['#facc15', '#f43f5e', '#38bdf8', '#ffffff', '#fb923c'];
+    for (let i = 0; i < 28; i++) {
+      const fx = (i * 47) % width;
+      const fy = horizonY + 15 + ((i * 31) % (height - horizonY - 30));
+      if (fx > vanishX - 220 && fx < vanishX + 220 && fy > height - 120) continue;
+
+      ctx.fillStyle = flowerColors[i % flowerColors.length];
+      ctx.beginPath();
+      ctx.arc(fx, fy, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fef08a';
+      ctx.beginPath();
+      ctx.arc(fx, fy, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Base Clean Slate Asphalt
     ctx.beginPath();
     ctx.moveTo(vanishX - 25, horizonY);
     ctx.lineTo(vanishX + 25, horizonY);
     ctx.lineTo(vanishX + roadHalfWidthBottom, height);
     ctx.lineTo(vanishX - roadHalfWidthBottom, height);
     ctx.closePath();
-    ctx.fillStyle = '#1e293b';
+    ctx.fillStyle = '#334155'; // Smooth Vibrant Slate Track
     ctx.fill();
 
-    // Rapidly Scrolling Curb Strips & Road Segments
-    const segmentLength = 2.5; // 2.5 meters per segment
+    // Scrolling Curb Strips & Road Segments
+    const segmentLength = 2.5;
     const startSegment = Math.floor(cameraZ / segmentLength);
 
     for (let i = 0; i < 35; i++) {
@@ -196,13 +282,13 @@ export class SodaDashRenderer {
 
       const isOdd = (startSegment + i) % 2 === 0;
 
-      // Road side curbs (Red & White hazard markings)
+      // Curbs: Playful Candy Red & White Stripes
       const halfW1 = roadHalfWidthBottom * p1.scale;
       const halfW2 = roadHalfWidthBottom * p2.scale;
-      const curbW1 = Math.max(2, 34 * p1.scale);
-      const curbW2 = Math.max(2, 34 * p2.scale);
+      const curbW1 = Math.max(3, 36 * p1.scale);
+      const curbW2 = Math.max(3, 36 * p2.scale);
 
-      ctx.fillStyle = isOdd ? '#ef4444' : '#f8fafc';
+      ctx.fillStyle = isOdd ? '#ef4444' : '#ffffff';
 
       // Left curb
       ctx.beginPath();
@@ -220,13 +306,13 @@ export class SodaDashRenderer {
       ctx.lineTo(vanishX + halfW1, p1.y);
       ctx.fill();
 
-      // Dashed lane divider lines (between lanes -1, 0, 1)
+      // Dashed lane divider lines (Bright Sunshine Yellow)
       if (isOdd) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+        ctx.fillStyle = '#facc15';
         for (const l of [-0.5, 0.5]) {
           const lp1 = this.projectPoint(l, 0, relZ1, width, height, horizonY, vanishX);
           const lp2 = this.projectPoint(l, 0, relZ2, width, height, horizonY, vanishX);
-          const lw = Math.max(1.8, 6 * p1.scale);
+          const lw = Math.max(2.2, 7 * p1.scale);
           ctx.fillRect(lp1.x - lw * 0.5, lp2.y, lw, Math.max(1, lp1.y - lp2.y));
         }
       }
@@ -312,19 +398,19 @@ export class SodaDashRenderer {
 
     switch (item.type) {
       case 'HURDLE': {
-        // Road barricade (Jump over)
+        // Playful Yellow & Orange Hurdle
         const hw = 95 * s;
         const hh = 60 * s;
 
         // Shadow
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
         ctx.beginPath();
         ctx.ellipse(0, 0, hw * 0.9, 12 * s, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Barricade Feet
-        ctx.strokeStyle = '#334155';
-        ctx.lineWidth = Math.max(2, 6 * s);
+        // Blue Support Feet
+        ctx.strokeStyle = '#0284c7';
+        ctx.lineWidth = Math.max(2.5, 7 * s);
         ctx.beginPath();
         ctx.moveTo(-hw * 0.75, 0);
         ctx.lineTo(-hw * 0.75, -hh);
@@ -332,13 +418,15 @@ export class SodaDashRenderer {
         ctx.lineTo(hw * 0.75, -hh);
         ctx.stroke();
 
-        // Hazard Board
-        ctx.fillStyle = '#f59e0b';
-        ctx.fillRect(-hw, -hh, hw * 2, 34 * s);
+        // Cheerful Yellow Board
+        ctx.fillStyle = '#facc15';
+        ctx.beginPath();
+        ctx.roundRect(-hw, -hh, hw * 2, 34 * s, 8 * s);
+        ctx.fill();
 
-        // Hazard Stripes
-        ctx.fillStyle = '#0f172a';
-        for (let x = -hw; x < hw; x += 28 * s) {
+        // Orange Hazard Chevrons / Stripes
+        ctx.fillStyle = '#f97316';
+        for (let x = -hw + 8 * s; x < hw - 8 * s; x += 30 * s) {
           ctx.beginPath();
           ctx.moveTo(x, -hh);
           ctx.lineTo(x + 14 * s, -hh);
@@ -350,13 +438,13 @@ export class SodaDashRenderer {
       }
 
       case 'OVERHEAD': {
-        // Scaffolding / Low Pipe (Slide under)
+        // Cheerful Slide Overhead Arch
         const pw = 120 * s;
         const pipeY = -120 * s;
 
-        // Side Vertical Poles
-        ctx.strokeStyle = '#64748b';
-        ctx.lineWidth = Math.max(1.5, 7 * s);
+        // Striped Posts
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = Math.max(2, 8 * s);
         ctx.beginPath();
         ctx.moveTo(-pw, 0);
         ctx.lineTo(-pw, pipeY);
@@ -364,52 +452,84 @@ export class SodaDashRenderer {
         ctx.lineTo(pw, pipeY);
         ctx.stroke();
 
-        // Horizontal Heavy Pipe
-        ctx.fillStyle = '#e11d48';
-        ctx.fillRect(-pw - 6 * s, pipeY - 14 * s, (pw + 6 * s) * 2, 28 * s);
+        // Vibrant Arch Banner
+        ctx.fillStyle = '#f43f5e';
+        ctx.beginPath();
+        ctx.roundRect(-pw - 8 * s, pipeY - 16 * s, (pw + 8 * s) * 2, 32 * s, 8 * s);
+        ctx.fill();
 
-        // Warning Clearance Sign
+        // Yellow Center Plaque
         ctx.fillStyle = '#facc15';
-        ctx.fillRect(-36 * s, pipeY - 11 * s, 72 * s, 22 * s);
-        ctx.fillStyle = '#000000';
-        ctx.font = `bold ${Math.max(8, (16 * s) | 0)}px monospace`;
+        ctx.beginPath();
+        ctx.roundRect(-42 * s, pipeY - 12 * s, 84 * s, 24 * s, 6 * s);
+        ctx.fill();
+
+        ctx.fillStyle = '#0f172a';
+        ctx.font = `900 ${Math.max(8, (16 * s) | 0)}px sans-serif`;
         ctx.textAlign = 'center';
-        ctx.fillText('SLIDE', 0, pipeY + 6 * s);
+        ctx.fillText('🔻 SLIDE! 🔻', 0, pipeY + 6 * s);
         break;
       }
 
       case 'DUMPSTER': {
-        // Heavy Urban Dumpster (Swerve lane)
+        // Vibrant Toy / Soda Block Crate
         const dw = 80 * s;
         const dh = 100 * s;
 
         // Shadow
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
         ctx.beginPath();
         ctx.ellipse(0, 0, dw * 0.95, 14 * s, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Dumpster Body
+        // Cheerful Royal Blue Crate Body
         ctx.fillStyle = '#0284c7';
-        ctx.fillRect(-dw, -dh, dw * 2, dh);
+        ctx.beginPath();
+        ctx.roundRect(-dw, -dh, dw * 2, dh, 14 * s);
+        ctx.fill();
 
-        // Highlight & Details
-        ctx.fillStyle = '#0369a1';
-        ctx.fillRect(-dw + 8 * s, -dh + 12 * s, dw * 2 - 16 * s, dh - 24 * s);
+        // Colorful Inset Frame (Bright Orange)
+        ctx.fillStyle = '#f97316';
+        ctx.beginPath();
+        ctx.roundRect(-dw + 8 * s, -dh + 10 * s, dw * 2 - 16 * s, dh - 20 * s, 10 * s);
+        ctx.fill();
 
-        // Lid
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(-dw - 6 * s, -dh - 12 * s, dw * 2 + 12 * s, 16 * s);
+        // Inset Center (Sky Cyan)
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.roundRect(-dw + 14 * s, -dh + 16 * s, dw * 2 - 28 * s, dh - 32 * s, 8 * s);
+        ctx.fill();
+
+        // Star Emblem
+        ctx.fillStyle = '#fef08a';
+        ctx.font = `bold ${Math.max(12, (26 * s) | 0)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⭐', 0, -dh * 0.5);
+
+        // Top Lid Handle
+        ctx.fillStyle = '#facc15';
+        ctx.beginPath();
+        ctx.roundRect(-dw * 0.5, -dh - 8 * s, dw, 10 * s, 5 * s);
+        ctx.fill();
         break;
       }
 
       case 'PUDDLE':
       case 'SODA_SPILL': {
-        // Reflective Soda Puddle
+        // Sparkling Fizzy Soda Splash
         const pr = 80 * s;
-        ctx.fillStyle = item.type === 'SODA_SPILL' ? 'rgba(239, 68, 68, 0.75)' : 'rgba(168, 85, 247, 0.65)';
+        ctx.fillStyle = item.type === 'SODA_SPILL' ? 'rgba(244, 63, 94, 0.78)' : 'rgba(192, 132, 252, 0.75)';
         ctx.beginPath();
         ctx.ellipse(0, 0, pr, pr * 0.35, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Bubble specks
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(-pr * 0.4, 0, 3 * s, 0, Math.PI * 2);
+        ctx.arc(pr * 0.3, -2 * s, 2.5 * s, 0, Math.PI * 2);
+        ctx.arc(pr * 0.1, 3 * s, 3.5 * s, 0, Math.PI * 2);
         ctx.fill();
 
         // Rim highlight
@@ -420,12 +540,14 @@ export class SodaDashRenderer {
       }
 
       case 'SPEED_PAD': {
-        // Neon Boost Chevron Arrow Strip
+        // Supercharged Lime Boost Strip
         const bw = 70 * s;
         const bh = 90 * s;
 
-        ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
-        ctx.fillRect(-bw, -bh * 0.5, bw * 2, bh);
+        ctx.fillStyle = 'rgba(74, 222, 128, 0.32)';
+        ctx.beginPath();
+        ctx.roundRect(-bw, -bh * 0.5, bw * 2, bh, 10 * s);
+        ctx.fill();
 
         ctx.fillStyle = '#22c55e';
         for (let cy = -bh * 0.4; cy < bh * 0.4; cy += 30 * s) {
@@ -443,27 +565,27 @@ export class SodaDashRenderer {
       }
 
       case 'HEART': {
-        // Sparkling Life Can (+1 Heart)
+        // Sparkling Strawberry Soda Can (+1 Heart)
         const cw = 32 * s;
         const ch = 56 * s;
         const floatY = -40 * s + Math.sin(Date.now() * 0.006 + item.z) * 8 * s;
 
-        // Floating Shadow
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        // Shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
         ctx.beginPath();
         ctx.ellipse(0, 0, cw * 1.1, 8 * s, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // 3D Soda Can
+        // Strawberry Red Can
         ctx.fillStyle = '#ef4444';
         ctx.beginPath();
-        ctx.roundRect(-cw, floatY - ch, cw * 2, ch, 10 * s);
+        ctx.roundRect(-cw, floatY - ch, cw * 2, ch, 12 * s);
         ctx.fill();
 
-        // Silver Rim
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(-cw, floatY - ch, cw * 2, 6 * s);
-        ctx.fillRect(-cw, floatY - 6 * s, cw * 2, 6 * s);
+        // Golden Sparkling Rims
+        ctx.fillStyle = '#fde047';
+        ctx.fillRect(-cw, floatY - ch, cw * 2, 7 * s);
+        ctx.fillRect(-cw, floatY - 7 * s, cw * 2, 7 * s);
 
         // Heart Symbol
         ctx.fillStyle = '#ffffff';
@@ -471,17 +593,22 @@ export class SodaDashRenderer {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('❤️', 0, floatY - ch * 0.5);
+
+        // Twinkling stars
+        ctx.font = `bold ${Math.max(10, (18 * s) | 0)}px sans-serif`;
+        ctx.fillText('✨', -cw * 1.2, floatY - ch * 0.8);
+        ctx.fillText('✨', cw * 1.2, floatY - ch * 0.2);
         break;
       }
 
       case 'FIZZ_TURBO':
       case 'BUBBLE_SHIELD': {
-        // Mystery Item Box
+        // Sparkling Rainbow Mystery Box
         const bw = 40 * s;
         const floatY = -48 * s + Math.sin(Date.now() * 0.005 + item.z) * 8 * s;
 
         // Shadow
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
         ctx.beginPath();
         ctx.ellipse(0, 0, bw * 1.1, 8 * s, 0, 0, Math.PI * 2);
         ctx.fill();
@@ -491,8 +618,8 @@ export class SodaDashRenderer {
         ctx.roundRect(-bw, floatY - bw * 2, bw * 2, bw * 2, 12 * s);
         ctx.fill();
 
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = Math.max(1.5, 3 * s);
+        ctx.strokeStyle = '#fde047';
+        ctx.lineWidth = Math.max(2, 4 * s);
         ctx.stroke();
 
         ctx.fillStyle = '#ffffff';
@@ -508,7 +635,7 @@ export class SodaDashRenderer {
   }
 
   // -------------------------------------------------------------
-  // 4. ANIMATED 3D RUNNERS (PLAYER & OPPONENT)
+  // 4. ANIMATED 3D RUNNERS (VIBRANT MASCOTS)
   // -------------------------------------------------------------
 
   private drawRunner(
@@ -539,7 +666,7 @@ export class SodaDashRenderer {
 
     // Dynamic Shadow
     const shadowScale = Math.max(0.3, 1.0 - runner.jumpY * 0.5);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
     ctx.beginPath();
     ctx.ellipse(0, 0, 36 * s * shadowScale, 12 * s * shadowScale, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -548,21 +675,28 @@ export class SodaDashRenderer {
     const jumpOffsetPx = -runner.jumpY * 110 * s;
     ctx.translate(0, jumpOffsetPx);
 
-    // Bubble Shield Aura
+    // Iridescent Bubble Shield
     if (runner.hasShield) {
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.16)';
+      ctx.strokeStyle = '#38bdf8';
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.22)';
       ctx.lineWidth = Math.max(2, 7 * s);
       ctx.beginPath();
       ctx.arc(0, -66 * s, 72 * s, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
+
+      // Bubble Shine Highlight
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(1.5, 4 * s);
+      ctx.beginPath();
+      ctx.arc(-26 * s, -90 * s, 26 * s, Math.PI * 1.1, Math.PI * 1.5);
+      ctx.stroke();
     }
 
-    // Colors
-    const primaryColor = isPlayer ? '#0284c7' : '#e11d48';
-    const accentColor = isPlayer ? '#38bdf8' : '#fb7185';
-    const visorColor = isPlayer ? '#fef08a' : '#38bdf8';
+    // Cheerful Mascot Colors
+    const primaryColor = isPlayer ? '#06b6d4' : '#f43f5e';
+    const accentColor = isPlayer ? '#facc15' : '#38bdf8';
+    const visorColor = '#fef08a';
 
     // Running cycle phase based on distance
     const runPhase = (runner.distance * 0.65) % (Math.PI * 2);
@@ -572,7 +706,7 @@ export class SodaDashRenderer {
       // SLIDE POSE: Low aerodynamic tuck
       ctx.fillStyle = primaryColor;
       ctx.beginPath();
-      ctx.roundRect(-42 * s, -30 * s, 84 * s, 30 * s, 10 * s);
+      ctx.roundRect(-42 * s, -30 * s, 84 * s, 30 * s, 12 * s);
       ctx.fill();
 
       // Visor
@@ -588,7 +722,7 @@ export class SodaDashRenderer {
       const torsoY = -70 * s;
 
       // Legs
-      ctx.strokeStyle = isPlayer ? '#0f172a' : '#1e293b';
+      ctx.strokeStyle = '#0f172a';
       ctx.lineWidth = Math.max(3, 10 * s);
       ctx.lineCap = 'round';
 
@@ -617,7 +751,7 @@ export class SodaDashRenderer {
       // Torso
       ctx.fillStyle = primaryColor;
       ctx.beginPath();
-      ctx.roundRect(-26 * s, torsoY - 18 * s, 52 * s, 46 * s, 11 * s);
+      ctx.roundRect(-26 * s, torsoY - 18 * s, 52 * s, 46 * s, 12 * s);
       ctx.fill();
 
       // Scarf / Speed Trail
@@ -628,7 +762,7 @@ export class SodaDashRenderer {
       ctx.lineTo(-20 * s, torsoY + 6 * s);
       ctx.fill();
 
-      // Head / Helmet
+      // Mascot Head
       ctx.fillStyle = '#0f172a';
       ctx.beginPath();
       ctx.arc(0, torsoY - 34 * s, 25 * s, 0, Math.PI * 2);
@@ -636,12 +770,14 @@ export class SodaDashRenderer {
 
       // Visor
       ctx.fillStyle = visorColor;
-      ctx.fillRect(isPlayer ? 2 * s : -4 * s, torsoY - 42 * s, 22 * s, 13 * s);
+      ctx.beginPath();
+      ctx.roundRect(isPlayer ? 2 * s : -4 * s, torsoY - 42 * s, 22 * s, 13 * s, 4 * s);
+      ctx.fill();
     }
 
     // Nametag above Opponent
     if (!isPlayer) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
       ctx.beginPath();
       ctx.roundRect(-45 * s, -145 * s, 90 * s, 26 * s, 8 * s);
       ctx.fill();

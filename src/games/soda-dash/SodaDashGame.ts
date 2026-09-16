@@ -119,7 +119,7 @@ export class SodaDashGame implements GameInstance {
             </div>
             <div class="flex items-baseline justify-between pt-0.5">
               <div id="player-dist" class="text-lg sm:text-2xl font-black font-mono text-white tracking-tight">0 m</div>
-              <div id="player-speed" class="text-[10px] sm:text-xs font-bold font-mono text-cyan-300">100 km/h</div>
+              <div id="player-speed" class="text-[10px] sm:text-xs font-bold font-mono text-cyan-300">58 km/h</div>
             </div>
           </div>
 
@@ -144,7 +144,7 @@ export class SodaDashGame implements GameInstance {
           <canvas id="dash-canvas" class="w-full h-full block"></canvas>
           
           <!-- Desktop Keyboard Hint (hidden on touch devices) -->
-          <div class="hidden sm:flex absolute bottom-4 left-6 z-10 pointer-events-none items-center space-x-2 text-[11px] font-semibold text-slate-400/80 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
+          <div class="hidden sm:flex absolute bottom-4 left-6 z-10 pointer-events-none items-center space-x-2 text-[11px] font-semibold text-slate-300 bg-slate-900/85 px-3 py-1.5 rounded-xl border border-sky-500/30 backdrop-blur-md">
             <span>Keys: [A/D] or [←/→] Lane • [W/Space] Jump • [S/↓] Slide • [E] Item</span>
           </div>
 
@@ -155,11 +155,11 @@ export class SodaDashGame implements GameInstance {
         </div>
 
         <!-- Mobile Touch Bar (Directional Tap Controls) -->
-        <div class="sm:hidden w-full px-3 py-3 z-20 grid grid-cols-4 gap-2 pointer-events-auto bg-slate-950/80 border-t border-slate-800/80 backdrop-blur-md">
-          <button id="touch-left" class="py-3 rounded-xl bg-slate-800 text-slate-200 font-bold text-lg active:bg-slate-700 active:scale-95 shadow border border-slate-700">←</button>
-          <button id="touch-jump" class="py-3 rounded-xl bg-cyan-700 text-white font-black text-xs active:bg-cyan-600 active:scale-95 shadow border border-cyan-500/60">JUMP ⬆</button>
-          <button id="touch-slide" class="py-3 rounded-xl bg-amber-700 text-white font-black text-xs active:bg-amber-600 active:scale-95 shadow border border-amber-500/60">SLIDE ⬇</button>
-          <button id="touch-right" class="py-3 rounded-xl bg-slate-800 text-slate-200 font-bold text-lg active:bg-slate-700 active:scale-95 shadow border border-slate-700">→</button>
+        <div class="sm:hidden w-full px-3 py-3 z-20 grid grid-cols-4 gap-2 pointer-events-auto bg-slate-900/90 border-t border-sky-400/30 backdrop-blur-md">
+          <button id="touch-left" class="py-3 rounded-xl bg-slate-800 text-sky-200 font-bold text-lg active:bg-slate-700 active:scale-95 shadow border border-sky-500/40">←</button>
+          <button id="touch-jump" class="py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-sky-500 text-white font-black text-xs active:scale-95 shadow border border-cyan-300/60">JUMP ⬆</button>
+          <button id="touch-slide" class="py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-black text-xs active:scale-95 shadow border border-yellow-300/60">SLIDE ⬇</button>
+          <button id="touch-right" class="py-3 rounded-xl bg-slate-800 text-sky-200 font-bold text-lg active:bg-slate-700 active:scale-95 shadow border border-sky-500/40">→</button>
         </div>
 
         <!-- Game Over Modal -->

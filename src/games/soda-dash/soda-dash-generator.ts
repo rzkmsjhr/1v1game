@@ -101,22 +101,25 @@ export class SodaTrackGenerator {
   /**
    * Generate a 50m procedural section
    */
+  /**
+   * Generate a 50m procedural section
+   */
   private generateChunk(zStart: number, zEnd: number): void {
-    // 0m - 80m: Safe zone to get initial speed
-    if (zEnd <= 80) return;
+    // 0m - 90m: Peaceful warmup runway
+    if (zEnd <= 90) return;
 
     const lanes: Lane[] = [-1, 0, 1];
     const difficultyProgress = Math.min(1.0, zStart / 1500); // 0 at start, 1 at 1500m+
 
-    // Spacing between obstacle sets scales down with distance (24m down to 14m)
-    const spacing = 24 - difficultyProgress * 10;
-    let currentZ = Math.max(zStart + 10, 80);
+    // Relaxed spacing between obstacles (42m at start down to 20m at supersonic speeds)
+    const spacing = 42 - difficultyProgress * 22;
+    let currentZ = Math.max(zStart + 10, 90);
 
     while (currentZ < zEnd - 5) {
       const roll = this.rng();
 
-      // Rare Heart (+❤️) pickup spawn (~every 250m-350m)
-      const heartChance = 0.08 + (1.0 - difficultyProgress) * 0.04;
+      // Generous Heart (+❤️) pickup spawn (~every 200m-300m)
+      const heartChance = 0.11 + (1.0 - difficultyProgress) * 0.04;
       if (roll < heartChance && currentZ > 120) {
         const heartLane = lanes[Math.floor(this.rng() * 3)];
         this.items.push({
@@ -125,12 +128,12 @@ export class SodaTrackGenerator {
           lane: heartLane,
           type: 'HEART'
         });
-        currentZ += spacing * 0.7;
+        currentZ += spacing * 0.75;
         continue;
       }
 
       // Speed Pad / Mystery Crate spawn
-      if (roll > 0.85) {
+      if (roll > 0.82) {
         const bonusLane = lanes[Math.floor(this.rng() * 3)];
         const bonusType: PickupType | 'SPEED_PAD' =
           this.rng() > 0.5 ? 'SPEED_PAD' : this.rng() > 0.5 ? 'FIZZ_TURBO' : 'BUBBLE_SHIELD';
@@ -141,19 +144,21 @@ export class SodaTrackGenerator {
           lane: bonusLane,
           type: bonusType
         });
-        currentZ += spacing * 0.7;
+        currentZ += spacing * 0.75;
         continue;
       }
 
-      // Generate Obstacle Pattern
-      // Crucial Guarantee: AT LEAST ONE LANE IS ALWAYS SAFE OR CLEARABLE
-      const patternType = this.rng();
+      // Generate Obstacle Pattern with Staged Pacing:
+      // - 0m - 250m: Only single gentle obstacles (Hurdle or Overhead) to learn jumping and sliding
+      // - 250m - 600m: Single obstacles (70%) or Double (30%)
+      // - 600m+: Full challenge with Triple synchronized barriers
+      const patternRoll = this.rng();
 
-      if (patternType < 0.4) {
-        // Single Obstacle (Hurdle, Overhead, or Dumpster)
+      if (currentZ < 250 || patternRoll < 0.65) {
+        // Single Obstacle (Playful Hurdle, Overhead Slide, or Toy Crate)
         const lane = lanes[Math.floor(this.rng() * 3)];
         const obsType: ObstacleType =
-          this.rng() < 0.45 ? 'HURDLE' : this.rng() < 0.75 ? 'OVERHEAD' : 'DUMPSTER';
+          this.rng() < 0.5 ? 'HURDLE' : this.rng() < 0.8 ? 'OVERHEAD' : 'DUMPSTER';
 
         this.items.push({
           id: `obs-${this.nextItemId++}`,
@@ -161,8 +166,8 @@ export class SodaTrackGenerator {
           lane,
           type: obsType
         });
-      } else if (patternType < 0.75) {
-        // Double Obstacle across 2 lanes (leaves 1 lane completely free)
+      } else if (currentZ < 600 || patternRoll < 0.88) {
+        // Double Obstacle across 2 lanes (leaves 1 clear escape lane)
         const freeLane = lanes[Math.floor(this.rng() * 3)];
         const blockedLanes = lanes.filter(l => l !== freeLane);
 
@@ -176,12 +181,9 @@ export class SodaTrackGenerator {
           });
         }
       } else {
-        // Triple Synchronized Barricade:
-        // All 3 lanes have an obstacle, but they are all jumpable (HURDLES) or slideable (OVERHEADS),
-        // or 2 are Dumpsters and 1 is a Hurdle/Overhead!
+        // Triple Synchronized Barricade (High distance only)
         const canPassByJump = this.rng() > 0.5;
         if (canPassByJump) {
-          // Hurdle line across all 3 lanes (Action: JUMP!)
           for (const lane of lanes) {
             this.items.push({
               id: `obs-${this.nextItemId++}`,
@@ -191,7 +193,6 @@ export class SodaTrackGenerator {
             });
           }
         } else {
-          // 2 Dumpsters + 1 Hurdle/Puddle/Overhead (Action: Find the pass lane!)
           const passableLane = lanes[Math.floor(this.rng() * 3)];
           for (const lane of lanes) {
             const type: ObstacleType = lane === passableLane ? 'OVERHEAD' : 'DUMPSTER';

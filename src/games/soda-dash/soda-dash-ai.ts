@@ -13,36 +13,36 @@ interface AIDifficultyConfig {
 
 const AI_CONFIGS: Record<AIDifficulty, AIDifficultyConfig> = {
   easy: {
-    reactionDelayMinMs: 450,
-    reactionDelayMaxMs: 650,
-    blunderChance: 0.28,
+    reactionDelayMinMs: 360,
+    reactionDelayMaxMs: 500,
+    blunderChance: 0.30,
     seeksHearts: false,
     itemAggressiveness: 0.2,
-    lookaheadMeters: 22
+    lookaheadMeters: 24
   },
   medium: {
-    reactionDelayMinMs: 260,
-    reactionDelayMaxMs: 360,
+    reactionDelayMinMs: 220,
+    reactionDelayMaxMs: 320,
     blunderChance: 0.12,
     seeksHearts: true,
     itemAggressiveness: 0.5,
-    lookaheadMeters: 28
+    lookaheadMeters: 30
   },
   hard: {
-    reactionDelayMinMs: 140,
-    reactionDelayMaxMs: 200,
+    reactionDelayMinMs: 120,
+    reactionDelayMaxMs: 180,
     blunderChance: 0.03,
     seeksHearts: true,
     itemAggressiveness: 0.8,
-    lookaheadMeters: 36
+    lookaheadMeters: 38
   },
   extreme: {
-    reactionDelayMinMs: 70,
-    reactionDelayMaxMs: 110,
+    reactionDelayMinMs: 60,
+    reactionDelayMaxMs: 100,
     blunderChance: 0.005,
     seeksHearts: true,
     itemAggressiveness: 0.95,
-    lookaheadMeters: 44
+    lookaheadMeters: 46
   }
 };
 
@@ -120,8 +120,8 @@ export class SodaDashAI {
     const nextItem = currentLaneItems[0];
     const distanceToItem = nextItem.z - currentZ;
 
-    // Check if within reaction threshold (~9m-14m depending on speed)
-    const triggerDistance = Math.max(8.0, opponent.speed * 0.35);
+    // Check if within reaction threshold (~9m-16m depending on speed)
+    const triggerDistance = Math.max(9.0, opponent.speed * 0.45);
 
     if (distanceToItem <= triggerDistance && this.lastProcessedItemId !== nextItem.id) {
       this.lastProcessedItemId = nextItem.id;
