@@ -183,6 +183,21 @@ export class WaterSortGame implements GameInstance {
 
   private mount() {
     this.container.innerHTML = `
+      <style>
+        @keyframes water-shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        .liquid-shimmer {
+          background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 35%, rgba(255,255,255,0.25) 50%, rgba(255,255,255,0.1) 65%, transparent 100%);
+          background-size: 200% 100%;
+          animation: water-shimmer 3s ease-in-out infinite;
+        }
+        @keyframes bowl-glow-pulse {
+          0%, 100% { box-shadow: 0 0 15px var(--glow-color); }
+          50% { box-shadow: 0 0 35px var(--glow-color), 0 0 60px var(--glow-color); }
+        }
+      </style>
       <div id="water-game-root" class="w-full max-w-lg min-h-full flex flex-col justify-between items-center py-3 sm:py-5 px-3 sm:px-5 select-none relative font-sans">
         
         <!-- Top Bar: Exit, Sound, Status -->
@@ -475,7 +490,20 @@ export class WaterSortGame implements GameInstance {
       this.selectedTubeIndex = null;
 
       if (result?.isCompleted) {
-        this.triggerColorCompleted(result.color);
+        const completedColorDef = this.getColorDef(result.color);
+        if (completedColorDef) {
+          // Show the bowl completion animation before rendering the cleared state
+          this.triggerColorCompleted(result.color);
+          this.animateBowlCompletion(completedColorDef, () => {
+            this.isAnimating = false;
+            this.render();
+            this.syncProgress();
+            if (this.engine.state.isWon) {
+              this.handleMatchEnd('player');
+            }
+          });
+          return; // Don't render yet — animation callback will handle it
+        }
       }
 
       this.isAnimating = false;
@@ -501,6 +529,52 @@ export class WaterSortGame implements GameInstance {
         colors: colorDef ? [colorDef.hex, '#ffffff', '#fbbf24'] : ['#fbbf24', '#ffffff']
       });
     } catch {}
+  }
+
+  /**
+   * Animate the bowl when a color is completed (3/3 filled).
+   * Shows glow → "CLEARED!" badge → liquid drains upward → callback.
+   */
+  private animateBowlCompletion(colorDef: ColorDef, onComplete: () => void) {
+    const resCard = document.getElementById('water-reservoir-card');
+    if (!resCard) { onComplete(); return; }
+
+    // Phase 1: Intense glow + pulsing border
+    resCard.style.transition = 'box-shadow 0.3s, border-color 0.3s, transform 0.3s';
+    resCard.style.boxShadow = `0 0 30px ${colorDef.hex}, 0 0 60px ${colorDef.hex}60`;
+    resCard.style.borderColor = colorDef.hex;
+    resCard.style.transform = 'scale(1.04)';
+
+    // Create a liquid overlay that shows the full 3/3 state
+    const overlay = document.createElement('div');
+    overlay.className = 'absolute inset-x-1.5 bottom-1 top-1.5 z-30 flex items-center justify-center overflow-hidden';
+    overlay.style.borderBottomLeftRadius = '32px';
+    overlay.style.borderBottomRightRadius = '32px';
+    overlay.style.background = `linear-gradient(180deg, ${colorDef.gradient[0]}, ${colorDef.gradient[1]})`;
+    overlay.style.transition = 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)';
+    overlay.innerHTML = `
+      <div class="liquid-shimmer absolute inset-0 pointer-events-none"></div>
+      <span class="relative text-white font-black text-sm sm:text-base drop-shadow-lg animate-pulse tracking-wider">
+        ✨ ${colorDef.name} CLEARED! ✨
+      </span>
+    `;
+    resCard.appendChild(overlay);
+
+    // Phase 2: After glow hold, drain the liquid upward and fade out
+    setTimeout(() => {
+      overlay.style.opacity = '0';
+      overlay.style.transform = 'translateY(-25px) scaleY(0.2)';
+      resCard.style.boxShadow = '';
+      resCard.style.borderColor = '';
+      resCard.style.transform = '';
+    }, 900);
+
+    // Phase 3: Cleanup and trigger callback
+    setTimeout(() => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      resCard.style.transition = '';
+      onComplete();
+    }, 1500);
   }
 
   private syncProgress() {
@@ -645,17 +719,22 @@ export class WaterSortGame implements GameInstance {
           <!-- Inner Liquid Basin (Gravity settles at rounded bowl bottom) -->
           <div class="absolute inset-x-1.5 bottom-1 top-1.5 flex flex-col justify-end items-center z-10 overflow-hidden" 
                style="border-bottom-left-radius: 32px; border-bottom-right-radius: 32px;">
-            ${res.color && res.count > 0 ? `
+            ${res.color && res.count > 0 ? (() => {
+              const bowlBorder = res.color === 'silver' ? 'border: 1.5px solid rgba(100,116,139,0.5);' : (res.color === 'black' ? 'border: 1.5px solid rgba(148,163,184,0.35);' : '');
+              return `
               <div class="w-full transition-all duration-300 relative overflow-hidden shadow-inner rounded-b-[30px]" 
-                   style="height: ${percent}%; background: linear-gradient(180deg, ${colorDef?.gradient[0] || '#3b82f6'}, ${colorDef?.gradient[1] || '#1d4ed8'});">
+                   style="height: ${percent}%; background: linear-gradient(180deg, ${colorDef?.gradient[0] || '#3b82f6'}, ${colorDef?.gradient[1] || '#1d4ed8'}); ${bowlBorder}">
                 <!-- Gloss highlight wave across surface -->
                 <div class="w-full h-1.5 bg-white/35 rounded-t-full"></div>
+                <!-- Shimmer animation overlay -->
+                <div class="absolute inset-0 liquid-shimmer pointer-events-none"></div>
                 <!-- Rising bubbles -->
                 <div class="absolute top-1 left-8 w-1.5 h-1.5 rounded-full bg-white/40 animate-ping"></div>
                 <div class="absolute top-1.5 right-12 w-2 h-2 rounded-full bg-white/30 animate-pulse"></div>
                 <div class="absolute bottom-1.5 left-24 w-1 h-1 rounded-full bg-white/30"></div>
               </div>
-            ` : ''}
+              `;
+            })() : ''}
           </div>
 
           <!-- Horizontal 3-Slot Volume Markers & Labels -->
@@ -726,13 +805,16 @@ export class WaterSortGame implements GameInstance {
                   const c = this.getColorDef(colorId);
                   const isTop = origIdx === tube.length - 1;
                   const isBottom = origIdx === 0;
+                  const borderStyle = colorId === 'silver' ? 'border: 1.5px solid rgba(100,116,139,0.5);' : (colorId === 'black' ? 'border: 1.5px solid rgba(148,163,184,0.35);' : '');
                   return `
                     <div class="w-full flex-1 rounded-sm transition-all duration-200 relative overflow-hidden shadow-inner ${isTop ? 'rounded-t-md' : ''} ${isBottom ? 'rounded-b-[18px]' : ''}"
-                         style="background: linear-gradient(180deg, ${c?.gradient[0] || '#999'}, ${c?.gradient[1] || '#666'});">
+                         style="background: linear-gradient(180deg, ${c?.gradient[0] || '#999'}, ${c?.gradient[1] || '#666'}); ${borderStyle}">
                       ${isTop ? `
                         <!-- Meniscus Curve on top liquid surface -->
                         <div class="w-full h-1 bg-white/35 rounded-t-full"></div>
                       ` : ''}
+                      <!-- Shimmer animation overlay -->
+                      <div class="absolute inset-0 liquid-shimmer pointer-events-none"></div>
                       <!-- Subtle liquid shine / bubbles -->
                       <div class="absolute top-1 right-1.5 w-1 h-1 rounded-full bg-white/30"></div>
                       <div class="absolute bottom-1.5 left-1.5 w-0.5 h-0.5 rounded-full bg-white/30"></div>
