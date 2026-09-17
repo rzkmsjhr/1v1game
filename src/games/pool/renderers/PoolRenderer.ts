@@ -617,7 +617,7 @@ export class PoolRenderer {
     for (const b of sorted) {
       if (b.isPotted) continue;
 
-      const scale = b.isSinking ? Math.max(0.2, 1.0 - b.pottedAnimProgress * 0.75) : 1.0;
+      const scale = b.isSinking ? Math.max(0.18, 1.0 - b.pottedAnimProgress * 0.82) : 1.0;
       const radius = b.radius * scale;
       const x = (isSimulating && b.prevX !== undefined)
         ? b.prevX + (b.x - b.prevX) * alpha
@@ -630,6 +630,11 @@ export class PoolRenderer {
       if (!def) continue;
 
       ctx.save();
+
+      // Fade sinking balls into the pocket depths
+      if (b.isSinking) {
+        ctx.globalAlpha = Math.max(0.05, 1.0 - b.pottedAnimProgress * 0.95);
+      }
 
       // 1. Soft 3D Ambient Drop Shadow
       if (!b.isSinking) {
@@ -707,6 +712,12 @@ export class PoolRenderer {
         ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
         ctx.beginPath();
         ctx.ellipse(x - radius * 0.35, y - radius * 0.38, radius * 0.3, radius * 0.18, -Math.PI / 4, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (b.pottedAnimProgress > 0.15) {
+        // Deep pocket shadow falling over sinking ball as it drops into the cavity
+        ctx.fillStyle = `rgba(0, 0, 0, ${Math.min(0.88, b.pottedAnimProgress * 0.95)})`;
+        ctx.beginPath();
+        ctx.arc(x, y, radius + 0.5, 0, Math.PI * 2);
         ctx.fill();
       }
 

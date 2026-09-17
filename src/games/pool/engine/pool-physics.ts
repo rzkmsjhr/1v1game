@@ -21,11 +21,46 @@ export interface PoolBall {
   isPotted: boolean;
   isSinking: boolean;
   pottedAnimProgress: number; // 0 to 1
+  targetPocketId?: string;
   isCue: boolean;
   isPlayerLag?: boolean;
   prevX?: number;
   prevY?: number;
 }
+
+export interface JawSegment {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+// Angled cushion jaw facings matching the visual table geometry
+export const JAW_SEGMENTS: JawSegment[] = [
+  // Top-Left corner jaws (nose to throat back)
+  { x1: PLAY_X_MIN + 22, y1: PLAY_Y_MIN, x2: PLAY_X_MIN + 12, y2: PLAY_Y_MIN - 18 },
+  { x1: PLAY_X_MIN, y1: PLAY_Y_MIN + 22, x2: PLAY_X_MIN - 18, y2: PLAY_Y_MIN + 12 },
+
+  // Top-Right corner jaws
+  { x1: PLAY_X_MAX - 22, y1: PLAY_Y_MIN, x2: PLAY_X_MAX - 12, y2: PLAY_Y_MIN - 18 },
+  { x1: PLAY_X_MAX, y1: PLAY_Y_MIN + 22, x2: PLAY_X_MAX + 18, y2: PLAY_Y_MIN + 12 },
+
+  // Bottom-Left corner jaws
+  { x1: PLAY_X_MIN + 22, y1: PLAY_Y_MAX, x2: PLAY_X_MIN + 12, y2: PLAY_Y_MAX + 18 },
+  { x1: PLAY_X_MIN, y1: PLAY_Y_MAX - 22, x2: PLAY_X_MIN - 18, y2: PLAY_Y_MAX - 12 },
+
+  // Bottom-Right corner jaws
+  { x1: PLAY_X_MAX - 22, y1: PLAY_Y_MAX, x2: PLAY_X_MAX - 12, y2: PLAY_Y_MAX + 18 },
+  { x1: PLAY_X_MAX, y1: PLAY_Y_MAX - 22, x2: PLAY_X_MAX + 18, y2: PLAY_Y_MAX - 12 },
+
+  // Top-Middle pocket jaws
+  { x1: CENTER_X - 22, y1: PLAY_Y_MIN, x2: CENTER_X - 16, y2: PLAY_Y_MIN - 18 },
+  { x1: CENTER_X + 22, y1: PLAY_Y_MIN, x2: CENTER_X + 16, y2: PLAY_Y_MIN - 18 },
+
+  // Bottom-Middle pocket jaws
+  { x1: CENTER_X - 22, y1: PLAY_Y_MAX, x2: CENTER_X - 16, y2: PLAY_Y_MAX + 18 },
+  { x1: CENTER_X + 22, y1: PLAY_Y_MAX, x2: CENTER_X + 16, y2: PLAY_Y_MAX + 18 },
+];
 
 export interface TrajectoryPreview {
   rayEndX: number;
@@ -57,17 +92,34 @@ export class PoolPhysics {
         if (b.isPotted) continue;
 
         if (b.isSinking) {
-          // Rapidly decelerate and shrink into pocket center
-          b.vx *= 0.85;
-          b.vy *= 0.85;
-          b.x += b.vx * dt;
-          b.y += b.vy * dt;
-          b.pottedAnimProgress += 0.05;
+          const p = POCKETS.find(pkt => pkt.id === b.targetPocketId) || POCKETS[0];
+          const dx = p.x - b.x;
+          const dy = p.y - b.y;
+          const dist = Math.hypot(dx, dy);
+
+          // Exponentially damp previous velocity
+          b.vx *= 0.82;
+          b.vy *= 0.82;
+
+          // Continuous gentle suction directly towards pocket center
+          if (dist > 0.3) {
+            const pullSpeed = Math.min(3.5, dist * 0.25);
+            b.vx += (dx / dist) * pullSpeed;
+            b.vy += (dy / dist) * pullSpeed;
+          }
+
+          b.x += b.vx * (dt * 60);
+          b.y += b.vy * (dt * 60);
+
+          // Advance sinking animation progress smoothly across ~16-20 frames
+          b.pottedAnimProgress += 0.008;
           if (b.pottedAnimProgress >= 1.0) {
             b.isPotted = true;
             b.isSinking = false;
             b.vx = 0;
             b.vy = 0;
+            b.x = p.x;
+            b.y = p.y;
           }
           continue;
         }
@@ -94,18 +146,18 @@ export class PoolPhysics {
           let isCaptured = false;
 
           if (p.isMiddle) {
-            // Side pocket: Must be within mouth opening width (±22px of center) AND entering the pocket recess
-            const inMouthX = Math.abs(b.x - p.x) < 22;
+            // Side pocket: within mouth opening width (±20px) AND entering the pocket recess
+            const inMouthX = Math.abs(b.x - p.x) < 20;
             const inMouthY = p.id === 'top-middle'
-              ? b.y < PLAY_Y_MIN + 3
-              : b.y > PLAY_Y_MAX - 3;
+              ? b.y < PLAY_Y_MIN + 2
+              : b.y > PLAY_Y_MAX - 2;
 
-            if ((inMouthX && inMouthY) || dist < p.radius) {
+            if ((inMouthX && inMouthY) || dist < p.radius + 1.5) {
               isCaptured = true;
             }
           } else {
-            // Corner pocket: Must enter the corner pocket aperture
-            if (dist < p.radius) {
+            // Corner pocket: aperture capture radius
+            if (dist < p.radius + 2) {
               isCaptured = true;
             }
           }
@@ -113,11 +165,12 @@ export class PoolPhysics {
           if (isCaptured) {
             b.isSinking = true;
             b.pottedAnimProgress = 0;
+            b.targetPocketId = p.id;
             // Guide velocity toward center of pocket
             const pullAngle = Math.atan2(p.y - b.y, p.x - b.x);
-            const currentSpeed = Math.max(1.5, Math.hypot(b.vx, b.vy));
-            b.vx = Math.cos(pullAngle) * currentSpeed * 0.7;
-            b.vy = Math.sin(pullAngle) * currentSpeed * 0.7;
+            const currentSpeed = Math.min(6.0, Math.max(1.5, Math.hypot(b.vx, b.vy) * 0.4));
+            b.vx = Math.cos(pullAngle) * currentSpeed;
+            b.vy = Math.sin(pullAngle) * currentSpeed;
             if (onBallPotted) onBallPotted(b, p.id);
             break;
           }
@@ -125,28 +178,6 @@ export class PoolPhysics {
       }
 
       // 3. Cushion collisions (only for non-sinking balls)
-      // Jaw tips for authentic pocket mouth deflections
-      const JAW_TIPS = [
-        // Top middle pocket jaws
-        { x: CENTER_X - 22, y: PLAY_Y_MIN },
-        { x: CENTER_X + 22, y: PLAY_Y_MIN },
-        // Bottom middle pocket jaws
-        { x: CENTER_X - 22, y: PLAY_Y_MAX },
-        { x: CENTER_X + 22, y: PLAY_Y_MAX },
-        // Top-left corner jaws
-        { x: PLAY_X_MIN + 24, y: PLAY_Y_MIN },
-        { x: PLAY_X_MIN, y: PLAY_Y_MIN + 24 },
-        // Top-right corner jaws
-        { x: PLAY_X_MAX - 24, y: PLAY_Y_MIN },
-        { x: PLAY_X_MAX, y: PLAY_Y_MIN + 24 },
-        // Bottom-left corner jaws
-        { x: PLAY_X_MIN + 24, y: PLAY_Y_MAX },
-        { x: PLAY_X_MIN, y: PLAY_Y_MAX - 24 },
-        // Bottom-right corner jaws
-        { x: PLAY_X_MAX - 24, y: PLAY_Y_MAX },
-        { x: PLAY_X_MAX, y: PLAY_Y_MAX - 24 },
-      ];
-
       for (const b of balls) {
         if (b.isPotted || b.isSinking) continue;
 
@@ -154,10 +185,10 @@ export class PoolPhysics {
         let bounced = false;
         let bounceSpeed = 0;
 
-        // Top cushion segments: [PLAY_X_MIN + 22, CENTER_X - 20] and [CENTER_X + 20, PLAY_X_MAX - 22]
+        // Top cushion segments: [PLAY_X_MIN + 22, CENTER_X - 22] and [CENTER_X + 22, PLAY_X_MAX - 22]
         if (b.y - r < PLAY_Y_MIN && b.vy < 0) {
-          const inTopLeft = b.x >= PLAY_X_MIN + 22 && b.x <= CENTER_X - 20;
-          const inTopRight = b.x >= CENTER_X + 20 && b.x <= PLAY_X_MAX - 22;
+          const inTopLeft = b.x >= PLAY_X_MIN + 22 && b.x <= CENTER_X - 22;
+          const inTopRight = b.x >= CENTER_X + 22 && b.x <= PLAY_X_MAX - 22;
           if (inTopLeft || inTopRight) {
             b.y = PLAY_Y_MIN + r;
             bounceSpeed = Math.abs(b.vy);
@@ -167,8 +198,8 @@ export class PoolPhysics {
         }
         // Bottom cushion segments
         else if (b.y + r > PLAY_Y_MAX && b.vy > 0) {
-          const inBottomLeft = b.x >= PLAY_X_MIN + 22 && b.x <= CENTER_X - 20;
-          const inBottomRight = b.x >= CENTER_X + 20 && b.x <= PLAY_X_MAX - 22;
+          const inBottomLeft = b.x >= PLAY_X_MIN + 22 && b.x <= CENTER_X - 22;
+          const inBottomRight = b.x >= CENTER_X + 22 && b.x <= PLAY_X_MAX - 22;
           if (inBottomLeft || inBottomRight) {
             b.y = PLAY_Y_MAX - r;
             bounceSpeed = Math.abs(b.vy);
@@ -196,25 +227,36 @@ export class PoolPhysics {
           }
         }
 
-        // Jaw tips point deflection (balls clipping cushion corner tips bounce off the rounded jaw)
-        for (const tip of JAW_TIPS) {
-          const tdx = b.x - tip.x;
-          const tdy = b.y - tip.y;
-          const tdist = Math.hypot(tdx, tdy);
-          if (tdist < r && tdist > 0.001) {
-            const tnx = tdx / tdist;
-            const tny = tdy / tdist;
-            const vn = b.vx * tnx + b.vy * tny;
+        // Angled jaw segments & corner pocket mouth facings
+        for (const seg of JAW_SEGMENTS) {
+          const sDx = seg.x2 - seg.x1;
+          const sDy = seg.y2 - seg.y1;
+          const lenSq = sDx * sDx + sDy * sDy;
+          const t = Math.max(0, Math.min(1, ((b.x - seg.x1) * sDx + (b.y - seg.y1) * sDy) / lenSq));
+          const cx = seg.x1 + t * sDx;
+          const cy = seg.y1 + t * sDy;
+          const cdx = b.x - cx;
+          const cdy = b.y - cy;
+          const dist = Math.hypot(cdx, cdy);
+
+          if (dist < r && dist > 0.0001) {
+            const nx = cdx / dist;
+            const ny = cdy / dist;
+            const vn = b.vx * nx + b.vy * ny;
             if (vn < 0) {
-              b.x = tip.x + tnx * r;
-              b.y = tip.y + tny * r;
-              b.vx -= (1 + CUSHION_RESTITUTION) * vn * tnx;
-              b.vy -= (1 + CUSHION_RESTITUTION) * vn * tny;
+              b.x = cx + nx * r;
+              b.y = cy + ny * r;
+              b.vx -= (1 + CUSHION_RESTITUTION) * vn * nx;
+              b.vy -= (1 + CUSHION_RESTITUTION) * vn * ny;
               bounced = true;
               bounceSpeed = Math.max(bounceSpeed, Math.abs(vn));
             }
           }
         }
+
+        // Safety table boundary clamp: active balls can never escape the table rails
+        b.x = Math.max(PLAY_X_MIN - 4, Math.min(PLAY_X_MAX + 4, b.x));
+        b.y = Math.max(PLAY_Y_MIN - 4, Math.min(PLAY_Y_MAX + 4, b.y));
 
         if (bounced && onCushionCollision && bounceSpeed > 0.4) {
           onCushionCollision(b, bounceSpeed);
