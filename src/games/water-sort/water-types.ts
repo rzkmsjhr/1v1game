@@ -10,13 +10,13 @@ export const WATER_COLORS: ColorDef[] = [
   { id: 'red', name: 'Ruby Red', hex: '#ef4444', gradient: ['#f87171', '#dc2626'], bubbleColor: '#fca5a5' },
   { id: 'yellow', name: 'Sunny Yellow', hex: '#facc15', gradient: ['#fde047', '#eab308'], bubbleColor: '#fef08a' },
   { id: 'pink', name: 'Berry Pink', hex: '#ec4899', gradient: ['#f472b6', '#db2777'], bubbleColor: '#fbcfe8' },
-  { id: 'lime', name: 'Lime Green', hex: '#84cc16', gradient: ['#a3e635', '#65a30d'], bubbleColor: '#d9f99d' },
-  { id: 'sky', name: 'Sky Blue', hex: '#0ea5e9', gradient: ['#38bdf8', '#0284c7'], bubbleColor: '#bae6fd' },
-  { id: 'blue', name: 'Ocean Blue', hex: '#2563eb', gradient: ['#60a5fa', '#1d4ed8'], bubbleColor: '#bfdbfe' },
-  { id: 'mint', name: 'Mint Teal', hex: '#10b981', gradient: ['#34d399', '#059669'], bubbleColor: '#a7f3d0' },
+  { id: 'green', name: 'Emerald Green', hex: '#16a34a', gradient: ['#22c55e', '#15803d'], bubbleColor: '#86efac' },
+  { id: 'blue', name: 'Ocean Blue', hex: '#2563eb', gradient: ['#3b82f6', '#1d4ed8'], bubbleColor: '#93c5fd' },
   { id: 'orange', name: 'Juicy Orange', hex: '#f97316', gradient: ['#fb923c', '#ea580c'], bubbleColor: '#fed7aa' },
   { id: 'choco', name: 'Cocoa Brown', hex: '#78350f', gradient: ['#92400e', '#592507'], bubbleColor: '#d97706' },
-  { id: 'purple', name: 'Grape Purple', hex: '#8b5cf6', gradient: ['#a78bfa', '#7c3aed'], bubbleColor: '#ddd6fe' }
+  { id: 'purple', name: 'Grape Purple', hex: '#8b5cf6', gradient: ['#a78bfa', '#7c3aed'], bubbleColor: '#ddd6fe' },
+  { id: 'silver', name: 'Ice Silver', hex: '#94a3b8', gradient: ['#f8fafc', '#94a3b8'], bubbleColor: '#ffffff' },
+  { id: 'black', name: 'Onyx Black', hex: '#1e293b', gradient: ['#475569', '#0f172a'], bubbleColor: '#cbd5e1' }
 ];
 
 export const TUBE_CAPACITY = 4;
