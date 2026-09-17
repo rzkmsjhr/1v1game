@@ -17,7 +17,8 @@ export class SheepFightRenderer {
     const h = SHEEP_CONSTANTS.VIEWPORT_HEIGHT;
 
     ctx.save();
-    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#064e3b';
+    ctx.fillRect(0, 0, w, h);
 
     // 1. Draw 5 Pasture Lanes (Requirement 1: Alternating dark/light green grass, thin dirt separators)
     this.renderPastureLanes();

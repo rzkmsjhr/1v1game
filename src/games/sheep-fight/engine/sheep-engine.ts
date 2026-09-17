@@ -35,7 +35,8 @@ export class SheepEngine {
         opponentStrength: 0,
         isPlayerStartBlocked: false,
         isOpponentStartBlocked: false,
-        clashY: null
+        clashY: null,
+        deadlockTimer: 0
       });
     }
 
@@ -273,12 +274,16 @@ export class SheepEngine {
       const oFront = opponentSheep[0];
       const clashDist = SHEEP_MODELS[pFront.size].radius + SHEEP_MODELS[oFront.size].radius + 2;
 
-      // Check if they have met yet
-      if (pFront.y - oFront.y > clashDist) {
-        // Not clashing yet! Both sides march forward freely
+      // Check if a clash is already active or just starting
+      const wasClashing = lane.clashY !== null;
+      const isClashing = wasClashing || (pFront.y - oFront.y <= clashDist + 1);
+
+      if (!isClashing) {
+        // Not clashing yet! Both sides march forward freely towards midfield
         lane.clashY = null;
         lane.playerStrength = 0;
         lane.opponentStrength = 0;
+        lane.deadlockTimer = 0;
 
         pFront.y -= marchSpeed * dt;
         for (let i = 1; i < playerSheep.length; i++) {
@@ -298,6 +303,17 @@ export class SheepEngine {
           if (leader.y - follower.y < minDist) follower.y = leader.y - minDist;
         }
 
+        // Did marching bring them into contact on this exact frame?
+        if (pFront.y - oFront.y <= clashDist) {
+          const midY = (pFront.y + oFront.y) / 2;
+          pFront.y = midY + clashDist / 2;
+          oFront.y = midY - clashDist / 2;
+          lane.clashY = midY;
+          if (this.callbacks.onClash) {
+            this.callbacks.onClash(lane.index, 0, midY);
+          }
+        }
+
         this.updateStartSpaceBlocked(lane);
         return;
       }
@@ -305,10 +321,8 @@ export class SheepEngine {
       // =====================================================================
       // HEADBUTT CLASH ACTIVE!
       // =====================================================================
-      const wasClashing = lane.clashY !== null;
-
-      // 1. Clamp heads at contact distance
-      const midY = (pFront.y + oFront.y) / 2;
+      // Keep front sheep locked firmly at contact distance
+      const midY = lane.clashY ?? ((pFront.y + oFront.y) / 2);
       pFront.y = midY + clashDist / 2;
       oFront.y = midY - clashDist / 2;
       lane.clashY = midY;
@@ -393,7 +407,7 @@ export class SheepEngine {
       if (moveDelta !== 0) {
         for (const s of pChain) s.y += moveDelta;
         for (const s of oChain) s.y += moveDelta;
-        lane.clashY = (pFront.y + oFront.y) / 2;
+        lane.clashY += moveDelta;
       }
 
       // 6. Check Goal Crossings
@@ -406,13 +420,31 @@ export class SheepEngine {
         return;
       }
 
-      // 7. REQUIREMENT 3: LANE FULL DRAW RULE!
-      // When the line is full with sheep from both sides such that neither player has start space
-      // left to deploy, that lane is considered a DRAW!
+      // 7. REQUIREMENT 3: FULL LANE DRAW RULE!
+      // A lane is ONLY considered a DRAW when it is FULL with sheep from both sides:
+      // - The connected push chain stretches all the way from the opponent's start space to the player's start space.
+      // - Neither side can deploy any more sheep into this lane.
+      // - And they are in deadlock stalemate (fPlayer === fOpponent).
       this.updateStartSpaceBlocked(lane);
-      if (lane.isPlayerStartBlocked && lane.isOpponentStartBlocked) {
-        this.finishLane(lane, 'draw');
-        return;
+      const pClearY = SHEEP_CONSTANTS.LANE_BOTTOM_Y - SHEEP_CONSTANTS.START_SPACE_DEPTH;
+      const oClearY = SHEEP_CONSTANTS.LANE_TOP_Y + SHEEP_CONSTANTS.START_SPACE_DEPTH;
+      const lastP = pChain[pChain.length - 1];
+      const lastO = oChain[oChain.length - 1];
+      const isPlayerChainFull = Boolean(lastP && (lastP.y + SHEEP_MODELS[lastP.size].radius >= pClearY));
+      const isOpponentChainFull = Boolean(lastO && (lastO.y - SHEEP_MODELS[lastO.size].radius <= oClearY));
+
+      if (isPlayerChainFull && isOpponentChainFull) {
+        if (fPlayer === fOpponent) {
+          lane.deadlockTimer = (lane.deadlockTimer || 0) + dt;
+          if (lane.deadlockTimer >= 1.0) {
+            this.finishLane(lane, 'draw');
+            return;
+          }
+        } else {
+          lane.deadlockTimer = 0;
+        }
+      } else {
+        lane.deadlockTimer = 0;
       }
     }
   }

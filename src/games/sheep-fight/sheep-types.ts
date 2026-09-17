@@ -78,6 +78,7 @@ export interface LaneState {
   isPlayerStartBlocked: boolean; // Whether player cannot deploy due to sheep in start zone
   isOpponentStartBlocked: boolean;
   clashY: number | null;        // Y position of current headbutt contact point, or null if no clash
+  deadlockTimer?: number;       // Accumulated seconds of full-lane stalemate before declaring draw
 }
 
 export interface SheepFightState {

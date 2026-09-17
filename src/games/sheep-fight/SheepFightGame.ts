@@ -112,18 +112,18 @@ export class SheepFightGame implements GameInstance {
 
         <!-- MAIN FIELD CANVAS WRAPPER -->
         <div class="relative flex-1 min-h-0 w-full overflow-hidden flex items-center justify-center bg-[#064e3b]">
-          <canvas id="sf-canvas" class="cursor-pointer block touch-none"></canvas>
+          <canvas id="sf-canvas" class="cursor-pointer block touch-none select-none" style="-webkit-tap-highlight-color: transparent;"></canvas>
         </div>
 
         <!-- BOTTOM DOCK: RANDOM SHEEP QUEUE & QUICK-TAP LANE BUTTONS -->
         <div class="p-2.5 flex flex-col gap-2 border-t ${
           isDark ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-slate-50'
-        } z-20 select-none shrink-0">
+        } z-20 select-none shrink-0" style="-webkit-tap-highlight-color: transparent;">
 
           <!-- Row 1: Ready Sheep Card + Upcoming Queue -->
           <div class="flex items-center justify-between gap-2">
             <!-- Active Ready Card -->
-            <div id="sf-active-card" class="relative flex-1 p-2 rounded-xl border-2 border-blue-500 bg-blue-500/10 flex items-center gap-2.5 cursor-pointer shadow-sm overflow-hidden">
+            <div id="sf-active-card" class="relative flex-1 p-2 rounded-xl border-2 border-blue-500 bg-blue-500/10 flex items-center gap-2.5 cursor-pointer shadow-sm overflow-hidden select-none" style="-webkit-tap-highlight-color: transparent;">
               <div id="sf-card-avatar" class="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center text-xl shrink-0">
                 🐑
               </div>
@@ -140,7 +140,7 @@ export class SheepFightGame implements GameInstance {
             </div>
 
             <!-- Upcoming Queue (Next 1, Next 2) -->
-            <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border ${
+            <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border select-none ${
               isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-white'
             }">
               <span class="text-[9px] font-black uppercase text-slate-400">Next:</span>
@@ -158,11 +158,11 @@ export class SheepFightGame implements GameInstance {
           <!-- Row 2: 5 Quick-Tap Lane Deployment Buttons -->
           <div class="grid grid-cols-5 gap-1.5">
             ${[0, 1, 2, 3, 4].map(i => `
-              <button data-lane="${i}" class="sf-lane-btn p-1.5 rounded-lg border font-black text-xs flex flex-col items-center gap-0.5 transition active:scale-95 cursor-pointer ${
+              <button data-lane="${i}" class="sf-lane-btn p-1 h-12 rounded-lg border font-black text-xs flex flex-col items-center justify-center gap-0.5 transition active:scale-95 cursor-pointer select-none touch-manipulation ${
                 isDark ? 'border-slate-700 bg-slate-800 hover:border-blue-500' : 'border-slate-300 bg-white hover:border-blue-500'
-              }">
-                <span class="text-[9px] font-bold text-slate-400">LANE ${i + 1}</span>
-                <span class="sf-lane-status text-[11px] text-blue-400">▲ DROP</span>
+              }" style="-webkit-tap-highlight-color: transparent;">
+                <span class="text-[9px] font-bold text-slate-400 leading-none">LANE ${i + 1}</span>
+                <span class="sf-lane-status text-[10px] text-blue-400 font-black leading-none">▲ DROP</span>
               </button>
             `).join('')}
           </div>
@@ -256,14 +256,23 @@ export class SheepFightGame implements GameInstance {
     }
 
     const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = SHEEP_CONSTANTS.VIEWPORT_WIDTH * dpr;
-    this.canvas.height = SHEEP_CONSTANTS.VIEWPORT_HEIGHT * dpr;
+    const targetW = Math.round(SHEEP_CONSTANTS.VIEWPORT_WIDTH * dpr);
+    const targetH = Math.round(SHEEP_CONSTANTS.VIEWPORT_HEIGHT * dpr);
 
-    this.canvas.style.width = `${drawW}px`;
-    this.canvas.style.height = `${drawH}px`;
+    // CRITICAL: NEVER reassign canvas.width or height if unchanged!
+    // In HTML5 canvas, assigning .width or .height immediately clears the bitmap to blank/black!
+    if (this.canvas.width !== targetW || this.canvas.height !== targetH) {
+      this.canvas.width = targetW;
+      this.canvas.height = targetH;
+      this.ctx.resetTransform();
+      this.ctx.scale(dpr, dpr);
+      this.renderer.render(this.engine.state, 0);
+    }
 
-    this.ctx.resetTransform();
-    this.ctx.scale(dpr, dpr);
+    const cssW = `${Math.floor(drawW)}px`;
+    const cssH = `${Math.floor(drawH)}px`;
+    if (this.canvas.style.width !== cssW) this.canvas.style.width = cssW;
+    if (this.canvas.style.height !== cssH) this.canvas.style.height = cssH;
   }
 
   private initControls() {
@@ -430,23 +439,23 @@ export class SheepFightGame implements GameInstance {
         btn.classList.add('opacity-40', 'cursor-not-allowed');
         btn.classList.remove('hover:border-blue-500');
         statusEl.textContent = '🔒 DRAW';
-        statusEl.className = 'sf-lane-status text-[10px] text-amber-400 font-bold';
+        statusEl.className = 'sf-lane-status text-[10px] text-amber-400 font-bold leading-none';
       } else if (lane.status === 'won_player') {
         btn.classList.add('opacity-40', 'cursor-not-allowed');
         statusEl.textContent = '👑 WON';
-        statusEl.className = 'sf-lane-status text-[10px] text-blue-400 font-bold';
+        statusEl.className = 'sf-lane-status text-[10px] text-blue-400 font-bold leading-none';
       } else if (lane.status === 'won_opponent') {
         btn.classList.add('opacity-40', 'cursor-not-allowed');
         statusEl.textContent = '💀 LOST';
-        statusEl.className = 'sf-lane-status text-[10px] text-red-400 font-bold';
+        statusEl.className = 'sf-lane-status text-[10px] text-red-400 font-bold leading-none';
       } else if (lane.isPlayerStartBlocked) {
         statusEl.textContent = '🔒 BLOCKED';
-        statusEl.className = 'sf-lane-status text-[9px] text-red-400 font-bold';
+        statusEl.className = 'sf-lane-status text-[10px] text-red-400 font-bold leading-none';
       } else {
         btn.classList.remove('opacity-40', 'cursor-not-allowed');
         btn.classList.add('hover:border-blue-500');
         statusEl.textContent = '▲ DROP';
-        statusEl.className = 'sf-lane-status text-[11px] text-blue-400 font-black';
+        statusEl.className = 'sf-lane-status text-[10px] text-blue-400 font-black leading-none';
       }
     });
   }

@@ -124,8 +124,8 @@ export class SheepRenderer {
     }
 
     const legPhase = Math.sin(walkCycle);
-    // Smooth, gentle breathing/struggle bob when pushing, trotting bob when marching
-    const bob = isPushing ? Math.sin(walkCycle * 2) * (0.5 * scale) : Math.sin(walkCycle * 2) * (1.5 * scale);
+    // Locked head-to-head contact during push (0 bob), trotting bob when marching
+    const bob = isPushing ? 0 : Math.sin(walkCycle * 2) * (1.5 * scale);
 
     ctx.save();
     ctx.translate(x, y + bob);
@@ -648,7 +648,7 @@ export class SheepRenderer {
     const r = def.radius * scale;
 
     const legPhase = Math.sin(walkCycle);
-    const bob = isPushing ? Math.sin(walkCycle * 2) * (0.6 * scale) : Math.sin(walkCycle * 2) * (2 * scale);
+    const bob = isPushing ? 0 : Math.sin(walkCycle * 2) * (2 * scale);
 
     ctx.save();
     ctx.translate(x, y + bob);
