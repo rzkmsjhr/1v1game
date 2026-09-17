@@ -43,7 +43,6 @@ export class SheepFightGame implements GameInstance {
   private gameOverModalEl!: HTMLElement;
   private gameOverTitleEl!: HTMLElement;
   private gameOverStatsEl!: HTMLElement;
-  private themeBtnEl!: HTMLElement;
 
   // HUD Dirty-Checking Caches (to prevent per-frame DOM layout recalculations)
   private lastScoreText: string = '';
@@ -60,7 +59,7 @@ export class SheepFightGame implements GameInstance {
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
     this.session = session;
-    this.currentTheme = session.theme || 'dark';
+    this.currentTheme = session.theme || (document.documentElement.classList.contains('dark') ? 'dark' : 'light');
 
     this.engine = new SheepEngine({
       onClash: () => this.playClashSound(),
@@ -132,9 +131,6 @@ export class SheepFightGame implements GameInstance {
             </span>
             <button id="sf-btn-sound" class="p-1 text-xs rounded-lg transition hover:opacity-80" title="Toggle Sound">
               🔊
-            </button>
-            <button id="sf-btn-theme" class="p-1 text-xs rounded-lg transition hover:opacity-80" title="Toggle Day/Night Theme">
-              ${isDark ? '☀️' : '🌙'}
             </button>
           </div>
         </div>
@@ -241,7 +237,6 @@ export class SheepFightGame implements GameInstance {
     this.gameOverModalEl = this.container.querySelector('#sf-game-over-modal')!;
     this.gameOverTitleEl = this.container.querySelector('#sf-game-over-title')!;
     this.gameOverStatsEl = this.container.querySelector('#sf-game-over-stats')!;
-    this.themeBtnEl = this.container.querySelector('#sf-btn-theme')!;
     this.laneButtons = Array.from(this.container.querySelectorAll('.sf-lane-btn'));
 
     // Exit Buttons (Send PLAYER_LEAVE if online and connected)
@@ -268,16 +263,6 @@ export class SheepFightGame implements GameInstance {
       this.isMuted = !this.isMuted;
       soundBtn.textContent = this.isMuted ? '🔇' : '🔊';
     });
-
-    // Day / Night Theme toggle
-    this.themeBtnEl.addEventListener('click', () => {
-      this.toggleTheme();
-    });
-  }
-
-  private toggleTheme() {
-    const nextTheme = this.currentTheme === 'dark' ? 'light' : 'dark';
-    this.setTheme(nextTheme);
   }
 
   private applyThemeToDOM() {
@@ -325,10 +310,6 @@ export class SheepFightGame implements GameInstance {
       previewBox.className = `flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border select-none ${
         isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-white'
       }`;
-    }
-
-    if (this.themeBtnEl) {
-      this.themeBtnEl.textContent = isDark ? '☀️' : '🌙';
     }
 
     const modalCard = this.container.querySelector('#sf-modal-card');
