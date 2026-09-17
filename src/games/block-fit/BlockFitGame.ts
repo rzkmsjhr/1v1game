@@ -45,6 +45,8 @@ export class BlockFitGame implements GameInstance {
   private pointerStartX: number = 0;
   private pointerStartY: number = 0;
   private hasMovedFar: boolean = false;
+  private dragFromTray: { pieceId: string; origR: number; origC: number } | null = null;
+  private trayHoldTimer: number | null = null;
 
   // Animation & Event Cleanup
   private resizeObserver: ResizeObserver | null = null;
@@ -113,6 +115,52 @@ export class BlockFitGame implements GameInstance {
             bubbles: true,
             clientX: targetX,
             clientY: targetY,
+            pointerType: 'mouse'
+          }));
+          return true;
+        },
+        dragTrayPiece: (fromR: number, fromC: number, toR: number, toC: number) => {
+          const layout = BlockFitRenderer.getTrayLayout(this.canvasTray, this.engine.currentPuzzle.tray);
+          const startX = layout.rect.left + layout.originX + (fromC + 0.5) * layout.cellSize;
+          const startY = layout.rect.top + layout.originY + (fromR + 0.5) * layout.cellSize;
+          const endX = layout.rect.left + layout.originX + (toC + 0.5) * layout.cellSize;
+          const endY = layout.rect.top + layout.originY + (toR + 0.5) * layout.cellSize;
+
+          this.canvasTray.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true,
+            clientX: startX,
+            clientY: startY,
+            pointerType: 'mouse'
+          }));
+          window.dispatchEvent(new PointerEvent('pointermove', {
+            bubbles: true,
+            clientX: endX,
+            clientY: endY,
+            pointerType: 'mouse'
+          }));
+          window.dispatchEvent(new PointerEvent('pointerup', {
+            bubbles: true,
+            clientX: endX,
+            clientY: endY,
+            pointerType: 'mouse'
+          }));
+          return true;
+        },
+        tapTrayPiece: (r: number, c: number) => {
+          const layout = BlockFitRenderer.getTrayLayout(this.canvasTray, this.engine.currentPuzzle.tray);
+          const clickX = layout.rect.left + layout.originX + (c + 0.5) * layout.cellSize;
+          const clickY = layout.rect.top + layout.originY + (r + 0.5) * layout.cellSize;
+
+          this.canvasTray.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true,
+            clientX: clickX,
+            clientY: clickY,
+            pointerType: 'mouse'
+          }));
+          window.dispatchEvent(new PointerEvent('pointerup', {
+            bubbles: true,
+            clientX: clickX,
+            clientY: clickY,
             pointerType: 'mouse'
           }));
           return true;
@@ -482,6 +530,17 @@ export class BlockFitGame implements GameInstance {
   private handleRoundWon(winner: 'player' | 'opponent') {
     if (this.engine.status !== 'playing') return;
 
+    if (this.trayHoldTimer !== null) {
+      window.clearTimeout(this.trayHoldTimer);
+      this.trayHoldTimer = null;
+    }
+    this.isPointerDown = false;
+    this.activeDragPiece = null;
+    this.activeDragElem = null;
+    this.dragFromTray = null;
+    this.dragGhost = null;
+    this.dragCanvas.classList.add('hidden');
+
     this.ai?.stop();
     const result = this.engine.claimRoundWin(winner);
     this.updateHUD();
@@ -672,19 +731,56 @@ export class BlockFitGame implements GameInstance {
     );
     if (!cell) return;
 
-    // Check if player tapped on an already-placed piece to recall it
+    // Check if player interacted with an already-placed piece
     for (const [pId, placed] of this.engine.playerBoard.placedPieces) {
       const piece = this.engine.currentPuzzle.pieces.find(p => p.id === pId);
       if (!piece) continue;
 
       const hasCell = piece.cells.some(c => placed.trayR + c.r === cell.r && placed.trayC + c.c === cell.c);
       if (hasCell) {
-        // Recall piece to dock
-        this.engine.removePiece(this.engine.playerBoard, pId);
-        sounds.playBlockRecall();
-        this.sendNetworkMsg({ type: 'FIT_PIECE_REMOVED', pieceId: pId });
-        this.renderDock();
-        this.renderAll();
+        // Deselect dock piece if one was selected
+        if (this.selectedDockPiece) {
+          this.selectedDockPiece = null;
+          this.renderDock();
+        }
+
+        e.preventDefault();
+        this.isPointerDown = true;
+        this.pointerStartX = e.clientX;
+        this.pointerStartY = e.clientY;
+        this.hasMovedFar = false;
+        this.activeDragPiece = piece;
+        this.activeDragElem = null;
+        this.dragFromTray = { pieceId: pId, origR: placed.trayR, origC: placed.trayC };
+
+        const layout = BlockFitRenderer.getTrayLayout(this.canvasTray, this.engine.currentPuzzle.tray);
+        const pieceScreenX = layout.rect.left + layout.originX + placed.trayC * layout.cellSize;
+        const pieceScreenY = layout.rect.top + layout.originY + placed.trayR * layout.cellSize;
+
+        this.dragGrabOffsetX = e.clientX - pieceScreenX;
+        this.dragGrabOffsetY = e.clientY - pieceScreenY;
+        this.dragTouchLiftY = 0; // Direct manipulation in tray: zero jump!
+        this.lastDragValidState = true;
+
+        // Pre-render floating piece on drag canvas
+        BlockFitRenderer.renderFloatingPiece(this.dragCanvas, piece, layout.cellSize, true);
+
+        // Position floating drag canvas exactly at piece screen coordinates
+        const posX = e.clientX - this.dragGrabOffsetX;
+        const posY = e.clientY - this.dragGrabOffsetY + this.dragTouchLiftY;
+        this.dragCanvas.style.transform = `translate3d(${posX}px, ${posY}px, 0)`;
+
+        // Setup touch/click hold timer: if held for 240ms without moving, lift into drag mode
+        if (this.trayHoldTimer !== null) {
+          window.clearTimeout(this.trayHoldTimer);
+        }
+        this.trayHoldTimer = window.setTimeout(() => {
+          this.trayHoldTimer = null;
+          if (this.isPointerDown && this.dragFromTray && !this.hasMovedFar) {
+            this.startTrayDrag();
+          }
+        }, 240);
+
         return;
       }
     }
@@ -709,16 +805,45 @@ export class BlockFitGame implements GameInstance {
     }
   }
 
+  private startTrayDrag() {
+    if (!this.dragFromTray || this.hasMovedFar) return;
+    this.hasMovedFar = true;
+    this.dragCanvas.classList.remove('hidden');
+
+    // Remove from board temporarily so its old cells are free for repositioning
+    this.engine.removePiece(this.engine.playerBoard, this.dragFromTray.pieceId);
+    sounds.playBlockPick();
+
+    if (this.activeDragPiece) {
+      this.dragGhost = {
+        piece: this.activeDragPiece,
+        targetR: this.dragFromTray.origR,
+        targetC: this.dragFromTray.origC,
+        isValid: true
+      };
+    }
+    this.renderAll();
+  }
+
   private onPointerMove(e: PointerEvent) {
     if (!this.isPointerDown || !this.activeDragPiece) return;
 
     const dist = Math.hypot(e.clientX - this.pointerStartX, e.clientY - this.pointerStartY);
     if (!this.hasMovedFar && dist > 5) {
-      this.hasMovedFar = true;
-      this.dragCanvas.classList.remove('hidden');
-      if (this.activeDragElem) {
-        this.activeDragElem.style.opacity = '0.2';
-        this.activeDragElem.style.filter = 'grayscale(60%)';
+      if (this.trayHoldTimer !== null) {
+        window.clearTimeout(this.trayHoldTimer);
+        this.trayHoldTimer = null;
+      }
+
+      if (this.dragFromTray) {
+        this.startTrayDrag();
+      } else {
+        this.hasMovedFar = true;
+        this.dragCanvas.classList.remove('hidden');
+        if (this.activeDragElem) {
+          this.activeDragElem.style.opacity = '0.2';
+          this.activeDragElem.style.filter = 'grayscale(60%)';
+        }
       }
     }
 
@@ -770,13 +895,21 @@ export class BlockFitGame implements GameInstance {
   }
 
   private onPointerUp(e: PointerEvent) {
+    if (this.trayHoldTimer !== null) {
+      window.clearTimeout(this.trayHoldTimer);
+      this.trayHoldTimer = null;
+    }
+
     if (!this.isPointerDown) return;
     this.isPointerDown = false;
 
     const piece = this.activeDragPiece;
     const elem = this.activeDragElem;
+    const traySource = this.dragFromTray;
+
     this.activeDragPiece = null;
     this.activeDragElem = null;
+    this.dragFromTray = null;
 
     // Hide floating drag canvas
     this.dragCanvas.classList.add('hidden');
@@ -800,21 +933,52 @@ export class BlockFitGame implements GameInstance {
 
       this.dragGhost = null;
 
+      const tray = this.engine.currentPuzzle.tray;
+      const isNearTray =
+        targetR >= -1 &&
+        targetR <= tray.rows &&
+        targetC >= -1 &&
+        targetC <= tray.cols;
+
       if (this.engine.canPlacePiece(this.engine.playerBoard, piece, targetR, targetC)) {
         this.tryPlacePieceAt(piece, targetR, targetC);
+      } else if (traySource) {
+        // Drag originated from tray, but cannot place at drop target
+        if (isNearTray) {
+          // Revert to original position in the tray
+          this.engine.placePiece(this.engine.playerBoard, piece, traySource.origR, traySource.origC);
+          sounds.playInvalidBuzz();
+          this.renderAll();
+        } else {
+          // Dragged away from tray (e.g. into dock area or off-screen): recall piece to dock!
+          sounds.playBlockRecall();
+          this.sendNetworkMsg({ type: 'FIT_PIECE_REMOVED', pieceId: piece.id });
+          this.renderDock();
+          this.renderAll();
+        }
       } else {
+        // Drag originated from dock, dropped invalidly -> stays in dock
         sounds.playInvalidBuzz();
         this.renderAll();
       }
     } else {
-      // Tap selection toggle
-      if (this.selectedDockPiece?.id === piece.id) {
-        this.selectedDockPiece = null;
+      if (traySource) {
+        // One tap/click simply removes the piece from the tray!
+        this.engine.removePiece(this.engine.playerBoard, traySource.pieceId);
+        sounds.playBlockRecall();
+        this.sendNetworkMsg({ type: 'FIT_PIECE_REMOVED', pieceId: traySource.pieceId });
+        this.renderDock();
+        this.renderAll();
       } else {
-        this.selectedDockPiece = piece;
-        sounds.playBlockPick();
+        // Tap selection toggle on dock piece
+        if (this.selectedDockPiece?.id === piece.id) {
+          this.selectedDockPiece = null;
+        } else {
+          this.selectedDockPiece = piece;
+          sounds.playBlockPick();
+        }
+        this.renderDock();
       }
-      this.renderDock();
     }
   }
 
@@ -855,6 +1019,10 @@ export class BlockFitGame implements GameInstance {
 
   public destroy() {
     this.ai?.destroy();
+    if (this.trayHoldTimer !== null) {
+      window.clearTimeout(this.trayHoldTimer);
+      this.trayHoldTimer = null;
+    }
     if (this.countdownTimer !== null) {
       window.clearInterval(this.countdownTimer);
       this.countdownTimer = null;

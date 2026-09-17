@@ -618,6 +618,7 @@ class ConsoleDashboard {
         this.renderDashboard();
       }
     });
+    (window as any).activeGameInstance = this.activeGameInstance;
   }
 
   private async hostOnlineMatch(gameDef: GameDefinition) {
