@@ -199,9 +199,11 @@ export class SheepEngine {
       .filter(s => s.side === 'opponent')
       .sort((a, b) => b.y - a.y);
 
-    // Advance walk animations
+    // Advance walk animations only for freely marching sheep (static when colliding)
     for (const s of lane.sheep) {
-      s.walkCycle += dt * 7;
+      if (!s.isPushing) {
+        s.walkCycle += dt * 6.5;
+      }
       s.isPushing = false;
       s.pushStrain = 0;
     }

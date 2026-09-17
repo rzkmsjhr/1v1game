@@ -123,33 +123,43 @@ export class SheepRenderer {
       angle = Math.PI / 2;
     }
 
-    const legPhase = Math.sin(walkCycle);
-    // Locked head-to-head contact during push (0 bob), trotting bob when marching
-    const bob = isPushing ? 0 : Math.sin(walkCycle * 2) * (1.5 * scale);
+    // REQUIREMENT: "for the sheep animation when walking, i want it like 'lungs breathing' movement of each sheep, but stop turn to static when they already colliding."
+    // When walking: rhythmic lungs-breathing expansion & contraction (chest/flank expands like inhaling air)
+    // When colliding: ALL animation turns completely static (breathScale = 1.0, strides = 0, wag = 0, bob = 0)
+    const breathRate = 0.85;
+    const breathPhase = isPushing ? 0 : Math.sin(walkCycle * breathRate);
+    const breathScaleX = isPushing ? 1.0 : (1.0 + breathPhase * 0.085);
+    const breathScaleY = isPushing ? 1.0 : (1.0 + breathPhase * 0.045);
+
+    const legPhase = isPushing ? 0 : Math.sin(walkCycle);
+    const bob = isPushing ? 0 : Math.sin(walkCycle * breathRate) * (1.2 * scale);
 
     ctx.save();
     ctx.translate(x, y + bob);
     ctx.rotate(angle);
 
-    // 1. Ground Drop Shadow (Elongated oval matching body)
+    // 1. Ground Drop Shadow (Elongated oval expanding with lung breath)
     ctx.save();
     ctx.fillStyle = 'rgba(15, 23, 42, 0.28)';
     ctx.beginPath();
-    ctx.ellipse(0, 0, r * 1.05, r * 1.25, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, r * 1.05 * breathScaleX, r * 1.25 * breathScaleY, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
-    // 2. Four Hooves (Trotting gait or braced push stance)
-    this.renderTopHooves(ctx, r, legPhase, isPushing, walkCycle);
+    // 2. Four Hooves (Trotting gait when walking, firmly static braced stance when colliding)
+    this.renderTopHooves(ctx, r, legPhase, isPushing);
 
-    // 3. Fluffy Tail (At the rear: y > 0)
-    this.renderTopTail(ctx, r, walkCycle, teamColors);
+    // 3. Fluffy Tail (At the rear: y > 0, wagging when walking, static when colliding)
+    this.renderTopTail(ctx, r, isPushing ? 0 : walkCycle, teamColors);
 
-    // 4. Main Fluffy Wool Body (Top-down cloud oval)
+    // 4. Main Fluffy Wool Body (Breathing expansion when walking, static when colliding)
+    ctx.save();
+    ctx.scale(breathScaleX, breathScaleY);
     this.renderTopWoolBody(ctx, r, size, teamColors);
+    ctx.restore();
 
     // 5. Head, Ears, Snout, and Horns (At the front: y < 0)
-    this.renderTopHead(ctx, r, size, teamColors, isPushing);
+    this.renderTopHead(ctx, r, size, teamColors, isPushing, breathPhase);
 
     ctx.restore();
   }
@@ -158,17 +168,16 @@ export class SheepRenderer {
     ctx: CanvasRenderingContext2D,
     r: number,
     legPhase: number,
-    isPushing: boolean,
-    walkCycle: number
+    isPushing: boolean
   ) {
     ctx.save();
     ctx.fillStyle = '#1e293b';
 
     const hoofW = r * 0.22;
     const hoofH = r * 0.32;
-    // Smooth trotting stride or grounded push dig stance
-    const stride1 = isPushing ? Math.sin(walkCycle * 2.5) * (r * 0.1) : legPhase * (r * 0.22);
-    const stride2 = isPushing ? -Math.sin(walkCycle * 2.5) * (r * 0.1) : -stride1;
+    // Dynamic trotting stride when marching, rock-solid static braced hooves when colliding
+    const stride1 = isPushing ? 0 : legPhase * (r * 0.20);
+    const stride2 = isPushing ? 0 : -stride1;
 
     // Front Left Hoof
     ctx.beginPath();
@@ -286,7 +295,8 @@ export class SheepRenderer {
     r: number,
     size: SheepSize,
     colors: any,
-    isPushing: boolean
+    isPushing: boolean,
+    breathPhase: number = 0
   ) {
     ctx.save();
 
@@ -294,6 +304,8 @@ export class SheepRenderer {
     let headCenterY = -r * 0.76;
     if (isPushing) {
       headCenterY -= r * 0.1;
+    } else {
+      headCenterY += breathPhase * (r * 0.025);
     }
 
     ctx.translate(0, headCenterY);
@@ -647,8 +659,13 @@ export class SheepRenderer {
     const def = SHEEP_MODELS[size];
     const r = def.radius * scale;
 
-    const legPhase = Math.sin(walkCycle);
-    const bob = isPushing ? 0 : Math.sin(walkCycle * 2) * (2 * scale);
+    const breathRate = 0.85;
+    const breathPhase = isPushing ? 0 : Math.sin(walkCycle * breathRate);
+    const breathScaleX = isPushing ? 1.0 : (1.0 + breathPhase * 0.08);
+    const breathScaleY = isPushing ? 1.0 : (1.0 + breathPhase * 0.045);
+
+    const legPhase = isPushing ? 0 : Math.sin(walkCycle);
+    const bob = isPushing ? 0 : Math.sin(walkCycle * breathRate) * (1.5 * scale);
 
     ctx.save();
     ctx.translate(x, y + bob);
@@ -657,19 +674,22 @@ export class SheepRenderer {
     ctx.save();
     ctx.fillStyle = 'rgba(15, 23, 42, 0.28)';
     ctx.beginPath();
-    const shadowStretch = isPushing ? 1.2 : 1 + Math.abs(legPhase) * 0.1;
-    ctx.ellipse(0, r * 0.85, r * 1.05 * shadowStretch, r * 0.45, 0, 0, Math.PI * 2);
+    const shadowStretch = isPushing ? 1.2 : (1 + Math.abs(legPhase) * 0.1) * breathScaleX;
+    ctx.ellipse(0, r * 0.85, r * 1.05 * shadowStretch, r * 0.45 * breathScaleY, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
-    // 2. Animated Legs / Hooves
+    // 2. Animated Legs / Hooves (dynamic stride when marching, static stance when colliding)
     this.renderFrontHooves(ctx, r, legPhase, isPushing);
 
-    // 3. Fluffy Wool Cloud Body
+    // 3. Fluffy Wool Cloud Body (lungs breathing expansion when walking, static when pushing)
+    ctx.save();
+    ctx.scale(breathScaleX, breathScaleY);
     this.renderFrontWoolBody(ctx, r, size, teamColors);
+    ctx.restore();
 
-    // 4. Little Fluffy Tail
-    this.renderFrontTail(ctx, r, walkCycle, teamColors);
+    // 4. Little Fluffy Tail (static when pushing)
+    this.renderFrontTail(ctx, r, isPushing ? 0 : walkCycle, teamColors);
 
     // 5. Head, Horns, Face, and Armor
     this.renderFrontHead(ctx, r, size, teamColors, isPushing);
