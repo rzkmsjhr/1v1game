@@ -125,26 +125,40 @@ export class SheepFightRenderer {
         ctx.fillStyle = 'rgba(239, 68, 68, 0.18)';
         ctx.fillRect(lx + 2, pStartY, laneW - 4, depth);
 
-        // Lock icon
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.6)';
-        ctx.font = '14px system-ui';
+        ctx.save();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('🔒 BLOCKED', cx, pStartY + depth / 2);
+        ctx.font = '900 24px system-ui, -apple-system, sans-serif';
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.45)';
+        ctx.fillText(`${i + 1}`, cx, pStartY + depth * 0.42);
+
+        ctx.font = 'bold 9px system-ui';
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.85)';
+        ctx.fillText('🔒 BUSY', cx, pStartY + depth * 0.74);
+        ctx.restore();
       } else {
         // Clear & Ready: Gentle pulsing guide
         const pulse = (Math.sin(this.animTimer * 4) + 1) * 0.5;
         ctx.fillStyle = `rgba(56, 189, 248, ${0.08 + pulse * 0.08})`;
         ctx.fillRect(lx + 2, pStartY, laneW - 4, depth);
 
-        // Subtle chevron arrow pointing UP into battle
-        ctx.strokeStyle = `rgba(56, 189, 248, ${0.4 + pulse * 0.4})`;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(cx - 12, pStartY + depth * 0.65);
-        ctx.lineTo(cx, pStartY + depth * 0.35);
-        ctx.lineTo(cx + 12, pStartY + depth * 0.65);
-        ctx.stroke();
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Subtle guide chevron pointing UP into battle
+        ctx.fillStyle = `rgba(56, 189, 248, ${0.5 + pulse * 0.4})`;
+        ctx.font = 'bold 10px system-ui';
+        ctx.fillText('▲', cx, pStartY + depth * 0.26);
+
+        // Prominent Athletic Lane Number (Requirement: "this should be the line number")
+        ctx.font = '900 26px "JetBrains Mono", system-ui, -apple-system, sans-serif';
+        ctx.fillStyle = `rgba(255, 255, 255, ${0.75 + pulse * 0.25})`;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetY = 1;
+        ctx.fillText(`${i + 1}`, cx, pStartY + depth * 0.6);
+        ctx.restore();
       }
 
       // Dotted boundary line for player start space
