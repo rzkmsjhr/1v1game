@@ -50,6 +50,8 @@ export type NetworkMessage =
   | { type: 'DASH_GAME_OVER'; loserId: 'player' | 'opponent'; finalDistance: number }
   | { type: 'DASH_REMATCH'; seed: number }
   | { type: 'DASH_EVENT'; title: string; message: string; icon: string }
+  | { type: 'SHEEP_DEPLOY'; laneIndex: number; size: 'small' | 'medium' | 'big' | 'giant'; id: string; timestamp: number }
+  | { type: 'SHEEP_REMATCH' }
   | { type: 'CUSTOM'; payload: any };
 
 export type NetworkQuality = 'good' | 'moderate' | 'poor' | 'stalled';

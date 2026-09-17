@@ -6,6 +6,7 @@ import { SnakeLadderGame } from './snake-ladder/SnakeLadderGame';
 import { SlingPuckGame } from './sling-puck/SlingPuckGame';
 import { BlockFitGame } from './block-fit/BlockFitGame';
 import { SodaDashGame } from './soda-dash/SodaDashGame';
+import { SheepFightGame } from './sheep-fight/SheepFightGame';
 
 export const GAMES_REGISTRY: GameDefinition[] = [
   {
@@ -334,5 +335,43 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     screenshotUrl: '/screenshots/soda-dash.png',
     supportsAI: true,
     create: (container, session) => new SodaDashGame(container, session)
+  },
+  {
+    id: 'sheep-fight',
+    title: 'Sheep Fight 1v1',
+    subtitle: 'Tactical 5-Lane Tug-of-War',
+    description: 'Deploy random sheep onto 5 pasture lanes in a head-to-head clash of strength! Overcome opponent pushes, lock stalemates into Sudden Death, and dominate 3 lanes to win.',
+    genre: 'Strategy & Physics',
+    badge: '5-Lane Tug-of-War',
+    bannerGradient: 'from-emerald-600 via-green-700 to-teal-900',
+    accentColor: '#16a34a',
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none">
+      <defs>
+        <linearGradient id="sf-horn-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#ca8a04"/>
+          <stop offset="100%" stop-color="#78350f"/>
+        </linearGradient>
+      </defs>
+      <!-- Horns curling outward -->
+      <path d="M 6 8 C 3 4 2 9 5 11" stroke="url(#sf-horn-grad)" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+      <path d="M 18 8 C 21 4 22 9 19 11" stroke="url(#sf-horn-grad)" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+      <!-- Fluffy White Wool Cloud Head -->
+      <circle cx="8.5" cy="11.5" r="3.2" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.6"/>
+      <circle cx="15.5" cy="11.5" r="3.2" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.6"/>
+      <circle cx="12" cy="8.5" r="3.5" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.6"/>
+      <circle cx="12" cy="13.5" r="4.2" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.6"/>
+      <!-- Cute Snout -->
+      <ellipse cx="12" cy="14" rx="2.8" ry="2.2" fill="#fde047"/>
+      <circle cx="11.2" cy="13.6" r="0.4" fill="#78350f"/>
+      <circle cx="12.8" cy="13.6" r="0.4" fill="#78350f"/>
+      <!-- Eyes -->
+      <circle cx="10" cy="11.2" r="0.9" fill="#0f172a"/>
+      <circle cx="14" cy="11.2" r="0.9" fill="#0f172a"/>
+      <!-- Blue Bandana Collar -->
+      <path d="M 9.5 16.5 L 14.5 16.5 L 12 19 Z" fill="#3b82f6"/>
+    </svg>`,
+    screenshotUrl: '/screenshots/sheep-fight.png',
+    supportsAI: true,
+    create: (container, session) => new SheepFightGame(container, session)
   }
 ];
