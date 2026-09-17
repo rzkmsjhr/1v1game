@@ -208,10 +208,10 @@ export class WaterSortGame implements GameInstance {
           </div>
         </div>
 
-        <!-- Central Big Reservoir Flask (Single Color Extractor) -->
+        <!-- Central Big Mixing Bowl (Single Color Extractor) -->
         <div class="w-full flex flex-col items-center justify-center my-0.5 sm:my-1">
           <div class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5 flex items-center space-x-1">
-            <span>🧪 COLOR RESERVOIR (3 UNITS TO CLEAR)</span>
+            <span>🥣 COLOR MIXING BOWL (3 UNITS TO CLEAR)</span>
           </div>
           <div id="water-reservoir-container" class="cursor-pointer transition-transform duration-200 hover:scale-105 active:scale-95">
             <!-- Rendered dynamically -->
@@ -238,9 +238,9 @@ export class WaterSortGame implements GameInstance {
           </button>
         </footer>
 
-        <!-- Victory / Match End Modal (Hidden by default) -->
-        <div id="water-modal-victory" class="hidden absolute inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div class="ps-card w-full max-w-sm rounded-3xl p-6 text-center shadow-2xl border border-white/10 animate-fadeIn">
+        <!-- Victory / Match End Modal (Fixed full-screen backdrop, no white border lines) -->
+        <div id="water-modal-victory" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div id="water-modal-card" class="w-full max-w-sm rounded-3xl p-6 text-center shadow-2xl border-0 animate-fadeIn ${this.currentTheme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}">
             <div id="water-victory-icon" class="text-5xl mb-3">🏆</div>
             <h3 id="water-victory-title" class="text-2xl font-black mb-1">VICTORY!</h3>
             <p id="water-victory-subtitle" class="text-xs text-gray-400 mb-5">You sorted all 10 colors first!</p>
@@ -522,6 +522,12 @@ export class WaterSortGame implements GameInstance {
 
     if (!modal || !title || !sub || !icon) return;
 
+    const card = document.getElementById('water-modal-card');
+    if (card) {
+      const isDark = this.currentTheme === 'dark';
+      card.className = `w-full max-w-sm rounded-3xl p-6 text-center shadow-2xl border-0 animate-fadeIn ${isDark ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`;
+    }
+
     if (winner === 'player') {
       icon.textContent = '🏆';
       title.textContent = 'YOU WIN!';
@@ -599,63 +605,83 @@ export class WaterSortGame implements GameInstance {
     // 1. Update HUD
     this.updateHUD();
 
-    // 2. Update 10-Color Capsule Ribbon
+    // 2. Update 10-Color Capsule Ribbon (Shows circle and colored text)
     if (this.colorRibbonEl) {
       this.colorRibbonEl.innerHTML = WATER_COLORS.map(color => {
         const isDone = this.engine.state.completedColors.includes(color.id);
         return `
-          <div class="flex-1 flex flex-col items-center group transition-all" title="${color.name}">
-            <div class="w-5.5 h-5.5 xs:w-6 xs:h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center shadow-sm transition-all relative ${isDone ? 'ring-2 ring-amber-400 scale-110 shadow-amber-400/40' : 'opacity-85 hover:opacity-100'}"
-                 style="background: linear-gradient(135deg, ${color.gradient[0]}, ${color.gradient[1]});">
-              ${isDone ? '<span class="text-[9px] sm:text-[10px] leading-none drop-shadow">⭐</span>' : ''}
+          <div class="flex-1 flex flex-col items-center justify-center group cursor-default" title="${color.name}">
+            <div class="w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center shadow-sm transition-all duration-200 relative border ${isDone ? 'ring-2 ring-amber-400 scale-110 shadow-amber-400/50 border-amber-300' : 'border-black/15 dark:border-white/20'}"
+                 style="background: linear-gradient(135deg, ${color.gradient[0]}, ${color.gradient[1]}); min-width: 20px; min-height: 20px;">
+              ${isDone ? '<span class="text-[10px] leading-none drop-shadow">⭐</span>' : ''}
             </div>
-            <span class="text-[7.5px] xs:text-[8px] sm:text-[9px] font-bold mt-0.5 leading-tight ${isDone ? 'text-amber-400 font-extrabold' : 'text-gray-400'}">${color.name.split(' ')[0]}</span>
+            <span class="text-[8px] sm:text-[9px] font-black mt-0.5 tracking-tight text-center truncate max-w-full"
+                  style="color: ${color.hex};">
+              ${color.name.split(' ')[0]}
+            </span>
           </div>
         `;
       }).join('');
     }
 
-    // 3. Update Central Big Reservoir Flask
+    // 3. Update Central Horizontal Mixing Bowl
     if (this.reservoirEl) {
       const res = this.engine.state.reservoir;
       const colorDef = this.getColorDef(res.color);
       const percent = (res.count / res.maxCapacity) * 100;
 
       this.reservoirEl.innerHTML = `
-        <div id="water-reservoir-card" class="relative w-40 sm:w-48 h-20 sm:h-24 rounded-2xl p-2 ps-card flex flex-col items-center justify-between border-2 transition-all shadow-md ${res.color ? 'border-blue-400 shadow-blue-500/20' : (isDark ? 'border-gray-800' : 'border-gray-200')}">
+        <div id="water-reservoir-card" 
+             class="relative w-64 xs:w-72 sm:w-80 h-16 sm:h-18 border-2 cursor-pointer transition-all duration-200 flex flex-col items-center justify-between shadow-lg overflow-hidden group ${res.color ? 'border-blue-400 shadow-blue-500/25 ring-2 ring-blue-400/40' : (isDark ? 'bg-white/[0.03] border-white/20 shadow-black/40' : 'bg-black/[0.02] border-gray-400 shadow-gray-200')}"
+             style="border-bottom-left-radius: 36px; border-bottom-right-radius: 36px;">
           
-          <!-- Liquid fill inside reservoir flask -->
-          <div class="absolute inset-x-2 bottom-1.5 rounded-xl overflow-hidden pointer-events-none transition-all duration-300 ${isDark ? 'bg-black/30' : 'bg-gray-100/80'}" style="height: 68%;">
+          <!-- Top Wide Glass Bowl Rim -->
+          <div class="absolute -top-1.5 inset-x-3 h-3 rounded-full border-2 z-30 transition-all ${res.color ? 'border-blue-400 bg-blue-500/30' : (isDark ? 'border-white/35 bg-white/10' : 'border-gray-400 bg-gray-200')}"></div>
+
+          <!-- Glass Reflection Streaks -->
+          <div class="absolute left-2.5 top-1.5 bottom-2.5 w-1 bg-white/20 rounded-full pointer-events-none z-20"></div>
+          <div class="absolute right-2.5 top-1.5 bottom-2.5 w-1 bg-white/10 rounded-full pointer-events-none z-20"></div>
+
+          <!-- Inner Liquid Basin (Gravity settles at rounded bowl bottom) -->
+          <div class="absolute inset-x-1.5 bottom-1 top-1.5 flex flex-col justify-end items-center z-10 overflow-hidden" 
+               style="border-bottom-left-radius: 32px; border-bottom-right-radius: 32px;">
             ${res.color && res.count > 0 ? `
-              <div class="absolute inset-x-0 bottom-0 transition-all duration-300" style="height: ${percent}%; background: linear-gradient(180deg, ${colorDef?.gradient[0] || '#3b82f6'}, ${colorDef?.gradient[1] || '#1d4ed8'});">
-                <!-- Gloss highlight wave -->
-                <div class="w-full h-1.5 bg-white/30 rounded-t-full"></div>
-                <!-- Rising bubble animation -->
-                <div class="absolute top-0.5 left-3 w-1.5 h-1.5 rounded-full bg-white/40 animate-ping"></div>
-                <div class="absolute top-1.5 right-4 w-1.5 h-1.5 rounded-full bg-white/30 animate-pulse"></div>
+              <div class="w-full transition-all duration-300 relative overflow-hidden shadow-inner rounded-b-[30px]" 
+                   style="height: ${percent}%; background: linear-gradient(180deg, ${colorDef?.gradient[0] || '#3b82f6'}, ${colorDef?.gradient[1] || '#1d4ed8'});">
+                <!-- Gloss highlight wave across surface -->
+                <div class="w-full h-1.5 bg-white/35 rounded-t-full"></div>
+                <!-- Rising bubbles -->
+                <div class="absolute top-1 left-8 w-1.5 h-1.5 rounded-full bg-white/40 animate-ping"></div>
+                <div class="absolute top-1.5 right-12 w-2 h-2 rounded-full bg-white/30 animate-pulse"></div>
+                <div class="absolute bottom-1.5 left-24 w-1 h-1 rounded-full bg-white/30"></div>
               </div>
             ` : ''}
-
-            <!-- Graduation tick marks -->
-            <div class="absolute inset-y-0 right-1.5 flex flex-col justify-between py-1 text-[7px] font-mono text-gray-400/60 pointer-events-none select-none">
-              <span>3</span>
-              <span>2</span>
-              <span>1</span>
-            </div>
           </div>
 
-          <!-- Top flask neck representation -->
-          <div class="w-10 h-2.5 rounded-full border border-gray-400/40 ${isDark ? 'bg-gray-800' : 'bg-gray-200'} z-10"></div>
+          <!-- Horizontal 3-Slot Volume Markers & Labels -->
+          <div class="absolute inset-x-6 top-2.5 flex items-center justify-between pointer-events-none z-20">
+            <div class="flex items-center space-x-2">
+              ${[1, 2, 3].map(slot => {
+                const isFilled = res.count >= slot;
+                return `
+                  <div class="px-2 py-0.5 rounded-full text-[8px] font-mono font-black border transition-all ${isFilled ? 'bg-white text-gray-900 border-white shadow-sm scale-105' : (isDark ? 'bg-black/30 border-white/20 text-gray-400' : 'bg-white/70 border-gray-400 text-gray-500')}">
+                    ${slot}/3
+                  </div>
+                `;
+              }).join('')}
+            </div>
+            <span class="text-[8px] font-mono font-bold ${isDark ? 'text-gray-400' : 'text-gray-500'}">3 TO CLEAR</span>
+          </div>
 
-          <!-- Bottom Label -->
-          <div class="z-10 w-full text-center mt-auto">
+          <!-- Center/Bottom Status Badge -->
+          <div class="z-20 w-full text-center mt-auto pb-1 pointer-events-none">
             ${res.color ? `
-              <span class="px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase text-white shadow-sm inline-block" style="background: ${colorDef?.hex};">
-                ${colorDef?.name}: ${res.count}/${res.maxCapacity}
+              <span class="px-3 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase text-white shadow-md inline-flex items-center space-x-1 drop-shadow" style="background: ${colorDef?.hex};">
+                <span>${colorDef?.name}: ${res.count}/${res.maxCapacity}</span>
               </span>
             ` : `
               <span class="text-[9px] sm:text-[10px] font-bold text-gray-400">
-                ${this.selectedTubeIndex !== null ? 'Tap to deposit color' : 'Empty (Tap tube to start)'}
+                ${this.selectedTubeIndex !== null ? 'Tap to deposit into bowl' : '🥣 Empty Mixing Bowl (Tap tube to start)'}
               </span>
             `}
           </div>
@@ -722,9 +748,6 @@ export class WaterSortGame implements GameInstance {
                 <span>-</span>
               </div>
             </div>
-
-            <!-- Tube Index Label at Bottom in normal flow (NO OVERLAP) -->
-            <span class="text-[9px] sm:text-[10px] font-mono font-bold text-gray-400 mt-1 select-none">${index + 1}</span>
           </div>
         `;
       };
