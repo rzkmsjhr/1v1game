@@ -94,6 +94,35 @@ html.dark body {
   box-shadow: none;
 }
 
+/* PvP Online Multiplayer Action Button */
+.ps-btn-pvp {
+  background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.28);
+  transition: all 0.2s ease;
+}
+
+.ps-btn-pvp:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(5, 150, 105, 0.42);
+}
+
+.ps-btn-pvp:active {
+  transform: translateY(1px);
+}
+
+.ps-btn-pvp:disabled,
+.ps-btn-pvp[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+  filter: none;
+  transform: none;
+  box-shadow: none;
+}
+
 /* Secondary Button */
 .ps-btn-secondary {
   background-color: var(--bg-surface);

@@ -275,29 +275,37 @@ class ConsoleDashboard {
 
             <!-- Solo vs AI -->
             <div class="p-4 rounded-2xl ${isDark ? 'bg-[#0f121d]' : 'bg-gray-50'} border ${isDark ? 'border-gray-800' : 'border-gray-200'}">
-              <div class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Solo vs AI</div>
+              <div class="flex items-center space-x-1.5 mb-2">
+                <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                <span class="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Solo vs AI</span>
+              </div>
               <div class="grid grid-cols-4 gap-1.5 mb-3">
                 <button class="ai-btn px-2 py-1.5 rounded-lg text-xs font-semibold ${this.currentAIDifficulty === 'easy' ? 'bg-blue-600 text-white' : 'ps-btn-secondary'}" data-diff="easy">Easy</button>
                 <button class="ai-btn px-2 py-1.5 rounded-lg text-xs font-semibold ${this.currentAIDifficulty === 'medium' ? 'bg-blue-600 text-white' : 'ps-btn-secondary'}" data-diff="medium">Med</button>
                 <button class="ai-btn px-2 py-1.5 rounded-lg text-xs font-semibold ${this.currentAIDifficulty === 'hard' ? 'bg-blue-600 text-white' : 'ps-btn-secondary'}" data-diff="hard">Hard</button>
                 <button class="ai-btn px-2 py-1.5 rounded-lg text-xs font-semibold ${this.currentAIDifficulty === 'extreme' ? 'bg-rose-600 text-white' : 'ps-btn-secondary'}" data-diff="extreme">Boss 🔥</button>
               </div>
-              <button id="btn-start-ai" class="ps-btn-primary w-full py-2.5 rounded-xl text-xs font-semibold">
-                Play vs AI
+              <button id="btn-start-ai" class="ps-btn-primary w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-2">
+                <span>🤖</span>
+                <span>Play vs AI</span>
               </button>
             </div>
 
             <!-- 1v1 Online Multiplayer -->
             <div class="p-4 rounded-2xl ${isDark ? 'bg-[#0f121d]' : 'bg-gray-50'} border ${isDark ? 'border-gray-800' : 'border-gray-200'}">
-              <div class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">1v1 Online Multiplayer</div>
+              <div class="flex items-center space-x-1.5 mb-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span class="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">1v1 Online Multiplayer</span>
+              </div>
               
-              <button id="btn-host-online" class="ps-btn-secondary w-full py-2.5 rounded-xl text-xs font-semibold mb-3">
-                Host New Match (Get Code)
+              <button id="btn-host-online" class="ps-btn-pvp w-full py-2.5 rounded-xl text-xs font-bold mb-3 flex items-center justify-center space-x-2 cursor-pointer">
+                <span>⚔️</span>
+                <span>Host New Match (Get Code)</span>
               </button>
 
               <div class="flex items-center space-x-2">
-                <input id="input-room-code" type="text" maxlength="6" placeholder="ENTER 6-CHAR CODE" value="${this.invitedRoomCode || ''}" class="w-full text-center font-mono text-xs uppercase px-3 py-2 rounded-xl border ${isDark ? 'bg-black/30 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'} outline-none focus:border-blue-500 transition-colors" />
-                <button id="btn-join-online" ${!this.isValidRoomCode(this.invitedRoomCode) ? 'disabled' : ''} class="ps-btn-primary px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap disabled:opacity-35 disabled:cursor-not-allowed disabled:pointer-events-none transition-all">
+                <input id="input-room-code" type="text" maxlength="6" placeholder="ENTER 6-CHAR CODE" value="${this.invitedRoomCode || ''}" class="w-full text-center font-mono text-xs uppercase px-3 py-2 rounded-xl border ${isDark ? 'bg-black/30 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'} outline-none focus:border-emerald-500 transition-colors" />
+                <button id="btn-join-online" ${!this.isValidRoomCode(this.invitedRoomCode) ? 'disabled' : ''} class="ps-btn-pvp px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap disabled:opacity-35 disabled:cursor-not-allowed disabled:pointer-events-none transition-all">
                   Join
                 </button>
               </div>
