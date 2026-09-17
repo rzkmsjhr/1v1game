@@ -359,9 +359,78 @@ export class WaterSortGame implements GameInstance {
     }
   }
 
+  private animatePour(
+    srcIndex: number,
+    targetEl: HTMLElement,
+    colorId: string,
+    onComplete: () => void
+  ) {
+    const srcEl = document.getElementById(`water-tube-${srcIndex}`);
+    if (!srcEl) {
+      onComplete();
+      return;
+    }
+
+    const srcRect = srcEl.getBoundingClientRect();
+    const dstRect = targetEl.getBoundingClientRect();
+
+    const dx = (dstRect.left + dstRect.width / 2) - (srcRect.left + srcRect.width / 2);
+    const dy = dstRect.top - srcRect.top;
+    const toRight = dx >= 0;
+    const tiltAngle = toRight ? 70 : -70;
+
+    const colorDef = this.getColorDef(colorId);
+    const gradient = colorDef ? `linear-gradient(180deg, ${colorDef.gradient[0]}, ${colorDef.gradient[1]})` : '#3b82f6';
+
+    // 1. Set transform-origin near mouth and elevate & tilt toward destination
+    srcEl.style.transformOrigin = '50% 15%';
+    srcEl.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1)';
+    srcEl.style.zIndex = '50';
+    srcEl.style.transform = `translate(${dx + (toRight ? -14 : 14)}px, ${dy - 55}px) rotate(${tiltAngle}deg)`;
+
+    // 2. Liquid pour stream overlay directly between mouth and destination
+    let streamEl: HTMLElement | null = null;
+    const streamTimer = setTimeout(() => {
+      this.playPourSound();
+
+      const streamX = dstRect.left + dstRect.width / 2;
+      const streamTop = Math.max(10, dstRect.top - 22);
+      const streamHeight = 35;
+
+      streamEl = document.createElement('div');
+      streamEl.id = 'water-pour-stream';
+      streamEl.className = 'fixed pointer-events-none z-40 rounded-full shadow-lg';
+      streamEl.style.left = `${streamX - 3}px`;
+      streamEl.style.top = `${streamTop}px`;
+      streamEl.style.width = '6px';
+      streamEl.style.height = `${streamHeight}px`;
+      streamEl.style.background = gradient;
+      streamEl.style.boxShadow = `0 0 14px ${colorDef?.hex || '#3b82f6'}`;
+
+      document.body.appendChild(streamEl);
+    }, 180);
+
+    // 3. Return source tube and finish
+    setTimeout(() => {
+      clearTimeout(streamTimer);
+      if (streamEl && streamEl.parentNode) {
+        streamEl.parentNode.removeChild(streamEl);
+      }
+
+      srcEl.style.transition = 'transform 0.22s ease-out';
+      srcEl.style.transform = '';
+      srcEl.style.zIndex = '';
+      srcEl.style.transformOrigin = '';
+
+      setTimeout(() => {
+        onComplete();
+      }, 220);
+    }, 520);
+  }
+
   private handlePourBetweenTubes(srcIndex: number, dstIndex: number) {
     const check = this.engine.canPour(srcIndex, dstIndex);
-    if (!check.valid) {
+    if (!check.valid || !check.color) {
       // If destination has liquid, switch selection to it
       if (this.engine.state.tubes[dstIndex].length > 0) {
         this.selectedTubeIndex = dstIndex;
@@ -374,40 +443,41 @@ export class WaterSortGame implements GameInstance {
       return;
     }
 
+    const dstEl = document.getElementById(`water-tube-${dstIndex}`);
+    if (!dstEl) return;
+
     this.isAnimating = true;
-    this.playPourSound();
+    const color = check.color;
 
-    // Execute pour in engine
-    this.engine.pour(srcIndex, dstIndex);
-    this.selectedTubeIndex = null;
-
-    setTimeout(() => {
+    this.animatePour(srcIndex, dstEl, color, () => {
+      this.engine.pour(srcIndex, dstIndex);
+      this.selectedTubeIndex = null;
       this.isAnimating = false;
       this.render();
-    }, 280);
+    });
   }
 
   private handlePourToReservoir(srcIndex: number) {
     const check = this.engine.canPourToReservoir(srcIndex);
-    if (!check.valid) {
+    if (!check.valid || !check.color) {
       this.shakeReservoir();
       return;
     }
 
+    const resCard = document.getElementById('water-reservoir-card');
+    if (!resCard) return;
+
     this.isAnimating = true;
-    this.playPourSound();
+    const color = check.color;
 
-    const result = this.engine.pourToReservoir(srcIndex);
-    this.selectedTubeIndex = null;
+    this.animatePour(srcIndex, resCard, color, () => {
+      const result = this.engine.pourToReservoir(srcIndex);
+      this.selectedTubeIndex = null;
 
-    if (result?.isCompleted) {
-      // Celebration when 3/3 of a color is sorted!
-      setTimeout(() => {
+      if (result?.isCompleted) {
         this.triggerColorCompleted(result.color);
-      }, 200);
-    }
+      }
 
-    setTimeout(() => {
       this.isAnimating = false;
       this.render();
       this.syncProgress();
@@ -415,7 +485,7 @@ export class WaterSortGame implements GameInstance {
       if (this.engine.state.isWon) {
         this.handleMatchEnd('player');
       }
-    }, 300);
+    });
   }
 
   private triggerColorCompleted(colorId: string) {
@@ -603,43 +673,56 @@ export class WaterSortGame implements GameInstance {
         return `
           <div id="water-tube-${index}" 
                data-index="${index}"
-               class="water-tube-item relative w-[54px] sm:w-[62px] h-36 sm:h-40 rounded-b-3xl border-2 border-t-0 p-1 cursor-pointer transition-all duration-200 flex flex-col justify-end items-center shadow-lg group ${isSelected ? '-translate-y-4 shadow-blue-500/40 border-blue-400 ring-2 ring-blue-400 scale-105' : 'hover:-translate-y-1'} ${isDark ? 'bg-white/[0.03] border-white/20' : 'bg-black/[0.02] border-gray-300'}"
-               style="border-bottom-left-radius: 24px; border-bottom-right-radius: 24px;">
+               class="water-tube-item relative w-[54px] sm:w-[62px] h-[146px] sm:h-[162px] border-2 border-t-0 p-0.5 cursor-pointer transition-transform duration-200 flex flex-col justify-end items-center shadow-lg group ${isSelected ? '-translate-y-4 shadow-blue-500/40 border-blue-400 ring-2 ring-blue-400 scale-105' : 'hover:-translate-y-1'} ${isDark ? 'bg-white/[0.03] border-white/20 shadow-black/40' : 'bg-black/[0.02] border-gray-400 shadow-gray-200'}"
+               style="border-bottom-left-radius: 26px; border-bottom-right-radius: 26px;">
             
             <!-- Glass Rim Ring at Top -->
-            <div class="absolute -top-1.5 inset-x-[-2px] h-3 rounded-full border-2 ${isSelected ? 'border-blue-400 bg-blue-500/20' : (isDark ? 'border-white/30 bg-white/10' : 'border-gray-400 bg-gray-200')}"></div>
+            <div class="absolute -top-2 inset-x-[-2px] h-3.5 rounded-full border-2 z-30 transition-all ${isSelected ? 'border-blue-400 bg-blue-500/30' : (isDark ? 'border-white/35 bg-white/10' : 'border-gray-400 bg-gray-200')}"></div>
 
             <!-- Glass Reflection Streak -->
-            <div class="absolute left-1 top-2 bottom-4 w-1 bg-white/20 rounded-full pointer-events-none z-20"></div>
+            <div class="absolute left-1.5 top-2 bottom-4 w-1 bg-white/20 rounded-full pointer-events-none z-20"></div>
 
-            <!-- Liquid Segments (Stack from bottom up, max 4 segments) -->
-            <div class="w-full flex flex-col-reverse justify-start items-center space-y-reverse space-y-0.5 z-10">
-              ${tube.map((colorId, segIdx) => {
+            <!-- Liquid & Slot Stack Container (Gravity: liquids settle at bottom!) -->
+            <div class="absolute inset-x-1 bottom-1 top-2.5 flex flex-col justify-end items-center z-10 overflow-hidden" 
+                 style="border-bottom-left-radius: 22px; border-bottom-right-radius: 22px;">
+              
+              <!-- Empty buffer slots (at the TOP of the tube!) -->
+              ${Array.from({ length: TUBE_CAPACITY - tube.length }).map(() => `
+                <div class="w-full flex-1 flex items-center justify-center opacity-20 pointer-events-none">
+                  <div class="w-2.5 h-0.5 bg-gray-400 rounded-full"></div>
+                </div>
+              `).join('')}
+
+              <!-- Liquid Segments (at the BOTTOM of the tube by gravity!) -->
+              ${tube.slice().reverse().map((colorId, revIdx) => {
+                const origIdx = tube.length - 1 - revIdx;
                 const c = this.getColorDef(colorId);
-                const isTop = segIdx === tube.length - 1;
+                const isTop = origIdx === tube.length - 1;
+                const isBottom = origIdx === 0;
                 return `
-                  <div class="w-full h-7 sm:h-8 rounded-sm transition-all duration-200 relative overflow-hidden shadow-inner ${isTop ? 'rounded-t-lg' : ''} ${segIdx === 0 ? 'rounded-b-2xl' : ''}"
+                  <div class="w-full flex-1 rounded-sm transition-all duration-200 relative overflow-hidden shadow-inner ${isTop ? 'rounded-t-lg' : ''} ${isBottom ? 'rounded-b-[20px]' : ''}"
                        style="background: linear-gradient(180deg, ${c?.gradient[0] || '#999'}, ${c?.gradient[1] || '#666'});">
                     ${isTop ? `
-                      <!-- Meniscus Curve -->
-                      <div class="w-full h-1.5 bg-white/30 rounded-t-full"></div>
+                      <!-- Meniscus Curve on top liquid surface -->
+                      <div class="w-full h-1.5 bg-white/35 rounded-t-full"></div>
                     ` : ''}
-                    <!-- Subtle liquid shimmer -->
-                    <div class="absolute top-1 right-2 w-1 h-1 rounded-full bg-white/30"></div>
+                    <!-- Subtle liquid shine / bubbles -->
+                    <div class="absolute top-1.5 right-2 w-1 h-1 rounded-full bg-white/30"></div>
+                    <div class="absolute bottom-2 left-2 w-0.5 h-0.5 rounded-full bg-white/30"></div>
                   </div>
                 `;
               }).join('')}
             </div>
 
-            <!-- Empty Capacity Markings (Dotted slots) -->
-            ${Array.from({ length: TUBE_CAPACITY - tube.length }).map(() => `
-              <div class="w-full h-7 sm:h-8 flex items-center justify-center opacity-10">
-                <div class="w-3 h-0.5 bg-gray-400 rounded-full"></div>
-              </div>
-            `).join('')}
+            <!-- Graduation tick marks on outer glass -->
+            <div class="absolute inset-y-3 right-1 flex flex-col justify-between py-1 text-[7px] font-mono text-gray-400/40 pointer-events-none select-none z-20">
+              <span>-</span>
+              <span>-</span>
+              <span>-</span>
+            </div>
 
             <!-- Tube Index Label at Bottom -->
-            <span class="absolute -bottom-5 text-[9px] font-mono font-bold text-gray-400">${index + 1}</span>
+            <span class="absolute -bottom-5 text-[9px] font-mono font-bold text-gray-400 select-none">${index + 1}</span>
           </div>
         `;
       };

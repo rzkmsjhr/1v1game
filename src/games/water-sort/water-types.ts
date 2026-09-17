@@ -15,7 +15,7 @@ export const WATER_COLORS: ColorDef[] = [
   { id: 'blue', name: 'Ocean Blue', hex: '#2563eb', gradient: ['#60a5fa', '#1d4ed8'], bubbleColor: '#bfdbfe' },
   { id: 'mint', name: 'Mint Teal', hex: '#10b981', gradient: ['#34d399', '#059669'], bubbleColor: '#a7f3d0' },
   { id: 'orange', name: 'Juicy Orange', hex: '#f97316', gradient: ['#fb923c', '#ea580c'], bubbleColor: '#fed7aa' },
-  { id: 'coral', name: 'Coral Salmon', hex: '#fb7185', gradient: ['#fda4af', '#e11d48'], bubbleColor: '#fecdd3' },
+  { id: 'choco', name: 'Cocoa Brown', hex: '#78350f', gradient: ['#92400e', '#592507'], bubbleColor: '#d97706' },
   { id: 'purple', name: 'Grape Purple', hex: '#8b5cf6', gradient: ['#a78bfa', '#7c3aed'], bubbleColor: '#ddd6fe' }
 ];
 
