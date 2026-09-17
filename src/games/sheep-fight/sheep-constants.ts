@@ -1,11 +1,11 @@
 export const SHEEP_CONSTANTS = {
   // Virtual Viewport Dimensions (Portrait mobile aspect ratio)
-  VIEWPORT_WIDTH: 440,
+  VIEWPORT_WIDTH: 460,
   VIEWPORT_HEIGHT: 860,
 
   // Lanes
   NUM_LANES: 5,
-  LANE_MARGIN_X: 10,
+  LANE_MARGIN_X: 30,
   LANE_TOP_Y: 45,        // Opponent goal line
   LANE_BOTTOM_Y: 815,    // Player goal line
   START_SPACE_DEPTH: 88, // Physical clearance required to deploy a new sheep

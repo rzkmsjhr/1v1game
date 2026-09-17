@@ -111,7 +111,7 @@ export class SheepFightGame implements GameInstance {
         </div>
 
         <!-- MAIN FIELD CANVAS WRAPPER -->
-        <div class="relative flex-1 min-h-0 w-full overflow-hidden flex items-center justify-center bg-[#064e3b]">
+        <div class="relative flex-1 min-h-0 w-full overflow-hidden flex items-center justify-center" style="background: radial-gradient(circle at 50% 50%, #065f46 0%, #064e3b 55%, #022c22 100%);">
           <canvas id="sf-canvas" class="cursor-pointer block touch-none select-none" style="-webkit-tap-highlight-color: transparent;"></canvas>
         </div>
 

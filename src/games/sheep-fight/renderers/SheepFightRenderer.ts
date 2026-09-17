@@ -23,7 +23,10 @@ export class SheepFightRenderer {
     // 1. Draw 5 Pasture Lanes (Requirement 1: Alternating dark/light green grass, thin dirt separators)
     this.renderPastureLanes();
 
-    // 2. Draw Start Spaces (Deployment Zones) & Clearance Indicators
+    // 2. Draw Sideline Pasture Decorations (Rustic Fence, Wildflowers, Bushes, Bunting, Fauna)
+    this.renderPastureSidelines();
+
+    // 3. Draw Start Spaces (Deployment Zones) & Clearance Indicators
     this.renderStartSpaces(state);
 
     // 3. Draw All Active Sheep
@@ -98,6 +101,407 @@ export class SheepFightRenderer {
     ctx.lineTo(SHEEP_CONSTANTS.VIEWPORT_WIDTH - SHEEP_CONSTANTS.LANE_MARGIN_X, midY);
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+
+  // Static sideline decoration data for zero runtime allocations
+  private static readonly BUSH_DATA: ReadonlyArray<{ side: 'left' | 'right'; y: number; size: number; hasBerries: boolean }> = [
+    { side: 'left', y: 85, size: 8, hasBerries: true },
+    { side: 'left', y: 195, size: 9, hasBerries: false },
+    { side: 'left', y: 320, size: 9, hasBerries: true },
+    { side: 'left', y: 470, size: 8, hasBerries: false },
+    { side: 'left', y: 590, size: 10, hasBerries: true },
+    { side: 'left', y: 710, size: 8, hasBerries: false },
+
+    { side: 'right', y: 110, size: 9, hasBerries: true },
+    { side: 'right', y: 240, size: 8, hasBerries: false },
+    { side: 'right', y: 370, size: 10, hasBerries: true },
+    { side: 'right', y: 530, size: 8, hasBerries: false },
+    { side: 'right', y: 650, size: 9, hasBerries: true },
+    { side: 'right', y: 765, size: 8, hasBerries: false },
+  ];
+
+  private static readonly FLOWER_DATA: ReadonlyArray<{ side: 'left' | 'right'; offsetX: number; y: number; type: 'daisy' | 'poppy' | 'violet' | 'clover' }> = [
+    { side: 'left', offsetX: 6, y: 65, type: 'daisy' },
+    { side: 'left', offsetX: 22, y: 140, type: 'poppy' },
+    { side: 'left', offsetX: 7, y: 170, type: 'violet' },
+    { side: 'left', offsetX: 21, y: 220, type: 'clover' },
+    { side: 'left', offsetX: 6, y: 260, type: 'daisy' },
+    { side: 'left', offsetX: 23, y: 350, type: 'poppy' },
+    { side: 'left', offsetX: 7, y: 415, type: 'violet' },
+    { side: 'left', offsetX: 22, y: 440, type: 'clover' },
+    { side: 'left', offsetX: 6, y: 530, type: 'daisy' },
+    { side: 'left', offsetX: 23, y: 560, type: 'poppy' },
+    { side: 'left', offsetX: 7, y: 650, type: 'violet' },
+    { side: 'left', offsetX: 21, y: 680, type: 'clover' },
+    { side: 'left', offsetX: 6, y: 740, type: 'daisy' },
+    { side: 'left', offsetX: 22, y: 790, type: 'poppy' },
+
+    { side: 'right', offsetX: 8, y: 75, type: 'violet' },
+    { side: 'right', offsetX: 23, y: 150, type: 'daisy' },
+    { side: 'right', offsetX: 7, y: 180, type: 'clover' },
+    { side: 'right', offsetX: 22, y: 285, type: 'poppy' },
+    { side: 'right', offsetX: 8, y: 330, type: 'daisy' },
+    { side: 'right', offsetX: 23, y: 445, type: 'violet' },
+    { side: 'right', offsetX: 7, y: 480, type: 'clover' },
+    { side: 'right', offsetX: 21, y: 575, type: 'poppy' },
+    { side: 'right', offsetX: 8, y: 615, type: 'daisy' },
+    { side: 'right', offsetX: 22, y: 700, type: 'violet' },
+    { side: 'right', offsetX: 7, y: 740, type: 'clover' },
+    { side: 'right', offsetX: 23, y: 800, type: 'daisy' },
+  ];
+
+  /**
+   * Renders decorative pasture sidelines:
+   * Rustic wooden paddock fence, hanging festive bunting, lush berry bushes, blooming wildflowers,
+   * animated perched songbird, and fluttering butterfly.
+   */
+  private renderPastureSidelines() {
+    const ctx = this.ctx;
+    const topY = SHEEP_CONSTANTS.LANE_TOP_Y;
+    const bottomY = SHEEP_CONSTANTS.LANE_BOTTOM_Y;
+    const leftFenceX = 15;
+    const rightFenceX = SHEEP_CONSTANTS.VIEWPORT_WIDTH - 15;
+
+    // 1. Lush Sideline Grass Bases (left: 0..30, right: 430..460)
+    ctx.fillStyle = '#0f5132';
+    ctx.fillRect(0, topY, SHEEP_CONSTANTS.LANE_MARGIN_X, bottomY - topY);
+    ctx.fillRect(rightFenceX - 15, topY, SHEEP_CONSTANTS.LANE_MARGIN_X, bottomY - topY);
+
+    // Subtle edge grass blades
+    ctx.fillStyle = '#198754';
+    for (let y = topY + 10; y < bottomY; y += 24) {
+      // Left edge tufts
+      ctx.fillRect(2, y, 3, 4);
+      ctx.fillRect(25, y + 12, 3, 3);
+      // Right edge tufts
+      ctx.fillRect(SHEEP_CONSTANTS.VIEWPORT_WIDTH - 28, y + 6, 3, 3);
+      ctx.fillRect(SHEEP_CONSTANTS.VIEWPORT_WIDTH - 5, y + 18, 3, 4);
+    }
+
+    // 2. Bushes along margins
+    for (const b of SheepFightRenderer.BUSH_DATA) {
+      const bx = b.side === 'left' ? 7 : SHEEP_CONSTANTS.VIEWPORT_WIDTH - 7;
+      this.drawSidelineBush(ctx, bx, b.y, b.size, b.hasBerries);
+    }
+
+    // 3. Blooming Wildflowers
+    for (const f of SheepFightRenderer.FLOWER_DATA) {
+      const fx = f.side === 'left' ? f.offsetX : SHEEP_CONSTANTS.VIEWPORT_WIDTH - 30 + f.offsetX;
+      this.drawWildflower(ctx, fx, f.y, f.type);
+    }
+
+    // 4. Wooden Paddock Fence with Bunting & Posts
+    const postYList: number[] = [];
+    for (let py = topY + 20; py <= bottomY - 15; py += 55) {
+      postYList.push(py);
+    }
+
+    // Draw rails & bunting connecting adjacent posts
+    for (let i = 0; i < postYList.length - 1; i++) {
+      const y1 = postYList[i];
+      const y2 = postYList[i + 1];
+
+      // Rails
+      this.drawFenceRails(ctx, leftFenceX, y1, y2);
+      this.drawFenceRails(ctx, rightFenceX, y1, y2);
+
+      // Bunting strings with pennants
+      this.drawBuntingSpan(ctx, leftFenceX, y1, y2, 4);
+      this.drawBuntingSpan(ctx, rightFenceX, y1, y2, -4);
+    }
+
+    // Draw Fence Posts
+    for (const py of postYList) {
+      this.drawFencePost(ctx, leftFenceX, py);
+      this.drawFencePost(ctx, rightFenceX, py);
+    }
+
+    // 5. Perched singing songbird on left fence
+    this.drawPerchedBird(ctx, leftFenceX, postYList[4] || 285);
+
+    // 6. Fluttering butterfly on right sideline
+    this.drawButterfly(ctx, rightFenceX, 490);
+  }
+
+  private drawFenceRails(ctx: CanvasRenderingContext2D, px: number, y1: number, y2: number) {
+    ctx.save();
+    // Two vertical wood rails
+    ctx.fillStyle = '#78350f';
+    ctx.fillRect(px - 3, y1, 2, y2 - y1);
+    ctx.fillRect(px + 1, y1, 2, y2 - y1);
+
+    // Wood highlight sheen
+    ctx.fillStyle = '#92400e';
+    ctx.fillRect(px - 2.5, y1, 1, y2 - y1);
+    ctx.fillRect(px + 1.5, y1, 1, y2 - y1);
+    ctx.restore();
+  }
+
+  private drawBuntingSpan(ctx: CanvasRenderingContext2D, px: number, y1: number, y2: number, sagX: number) {
+    ctx.save();
+    const midY = (y1 + y2) / 2;
+
+    // String
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px, y1 + 2);
+    ctx.quadraticCurveTo(px + sagX, midY, px, y2 - 2);
+    ctx.stroke();
+
+    // 2 Pennant flags along curve
+    const tValues = [0.35, 0.68];
+    for (let j = 0; j < tValues.length; j++) {
+      const t = tValues[j];
+      const fy = y1 + t * (y2 - y1);
+      const fx = px + Math.sin(t * Math.PI) * sagX;
+
+      // Color scheme based on field side: red/gold for opponent side, blue/cyan for player side
+      let flagColor = '#f59e0b';
+      if (fy < 390) {
+        flagColor = j === 0 ? '#ef4444' : '#fbbf24';
+      } else if (fy > 450) {
+        flagColor = j === 0 ? '#3b82f6' : '#38bdf8';
+      } else {
+        flagColor = j === 0 ? '#a855f7' : '#fef08a';
+      }
+
+      ctx.fillStyle = flagColor;
+      ctx.beginPath();
+      ctx.moveTo(fx, fy - 3);
+      ctx.lineTo(fx + (sagX > 0 ? 5 : -5), fy);
+      ctx.lineTo(fx, fy + 3);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  private drawFencePost(ctx: CanvasRenderingContext2D, px: number, py: number) {
+    ctx.save();
+    // Drop shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+    ctx.beginPath();
+    ctx.roundRect(px - 4, py - 4 + 2, 8, 11, 2);
+    ctx.fill();
+
+    // Post body
+    ctx.fillStyle = '#78350f';
+    ctx.beginPath();
+    ctx.roundRect(px - 4, py - 5, 8, 10, 2);
+    ctx.fill();
+
+    // Wood highlight bevel
+    ctx.fillStyle = '#92400e';
+    ctx.fillRect(px - 2, py - 5, 4, 10);
+
+    // Rounded post cap
+    ctx.fillStyle = '#b45309';
+    ctx.beginPath();
+    ctx.arc(px, py - 5, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Iron nail dot
+    ctx.fillStyle = '#292524';
+    ctx.beginPath();
+    ctx.arc(px, py - 1, 1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  private drawSidelineBush(ctx: CanvasRenderingContext2D, bx: number, by: number, size: number, hasBerries: boolean) {
+    ctx.save();
+    // Base shadow circle
+    ctx.fillStyle = '#14532d';
+    ctx.beginPath();
+    ctx.arc(bx, by + 1, size, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Main foliage circle
+    ctx.fillStyle = '#166534';
+    ctx.beginPath();
+    ctx.arc(bx - 1, by - 1, size * 0.85, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Highlight leaf puff
+    ctx.fillStyle = '#22c55e';
+    ctx.beginPath();
+    ctx.arc(bx + 1, by - 2, size * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Red berries
+    if (hasBerries) {
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(bx - 2, by - 2, 1.6, 0, Math.PI * 2);
+      ctx.arc(bx + 2, by, 1.6, 0, Math.PI * 2);
+      ctx.arc(bx, by + 3, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Berry highlight
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(bx - 2.5, by - 2.5, 0.8, 0.8);
+      ctx.fillRect(bx + 1.5, by - 0.5, 0.8, 0.8);
+    }
+    ctx.restore();
+  }
+
+  private drawWildflower(ctx: CanvasRenderingContext2D, fx: number, fy: number, type: 'daisy' | 'poppy' | 'violet' | 'clover') {
+    ctx.save();
+    if (type === 'daisy') {
+      // 5 white petals around golden center
+      ctx.fillStyle = '#ffffff';
+      for (let a = 0; a < 5; a++) {
+        const rad = (a * 72 * Math.PI) / 180;
+        ctx.beginPath();
+        ctx.arc(fx + Math.cos(rad) * 2.6, fy + Math.sin(rad) * 2.6, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath();
+      ctx.arc(fx, fy, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (type === 'poppy') {
+      // 4 crimson petals
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.arc(fx - 1.5, fy - 1.5, 2.4, 0, Math.PI * 2);
+      ctx.arc(fx + 1.5, fy - 1.5, 2.4, 0, Math.PI * 2);
+      ctx.arc(fx - 1.5, fy + 1.5, 2.4, 0, Math.PI * 2);
+      ctx.arc(fx + 1.5, fy + 1.5, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      // Center
+      ctx.fillStyle = '#1e1b4b';
+      ctx.beginPath();
+      ctx.arc(fx, fy, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (type === 'violet') {
+      // 4 lavender/purple petals
+      ctx.fillStyle = '#c084fc';
+      ctx.beginPath();
+      ctx.arc(fx - 1.5, fy - 1, 2.2, 0, Math.PI * 2);
+      ctx.arc(fx + 1.5, fy - 1, 2.2, 0, Math.PI * 2);
+      ctx.arc(fx, fy + 1.8, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      // Center
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.arc(fx, fy, 1.1, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Clover
+      ctx.fillStyle = '#4ade80';
+      ctx.beginPath();
+      ctx.arc(fx - 1.6, fy - 1.6, 1.8, 0, Math.PI * 2);
+      ctx.arc(fx + 1.6, fy - 1.6, 1.8, 0, Math.PI * 2);
+      ctx.arc(fx, fy + 1.6, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  private drawPerchedBird(ctx: CanvasRenderingContext2D, px: number, py: number) {
+    ctx.save();
+    const bob = Math.sin(this.animTimer * 3.5) * 1.2;
+    const by = py - 9 + bob;
+    const bx = px + 1;
+
+    // Tail
+    ctx.fillStyle = '#1e3a8a';
+    ctx.beginPath();
+    ctx.moveTo(bx - 3, by + 2);
+    ctx.lineTo(bx - 7, by + 5);
+    ctx.lineTo(bx - 4, by);
+    ctx.closePath();
+    ctx.fill();
+
+    // Body
+    ctx.fillStyle = '#3b82f6';
+    ctx.beginPath();
+    ctx.ellipse(bx, by, 4, 4.5, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Orange breast
+    ctx.fillStyle = '#f97316';
+    ctx.beginPath();
+    ctx.ellipse(bx + 2, by + 1, 2.5, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(bx + 2, by - 2, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(bx + 2.3, by - 2, 0.7, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Beak
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.moveTo(bx + 3.8, by - 2.5);
+    ctx.lineTo(bx + 6.5, by - 1.5);
+    ctx.lineTo(bx + 3.8, by - 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  private drawButterfly(ctx: CanvasRenderingContext2D, px: number, py: number) {
+    ctx.save();
+    const hoverX = px + Math.sin(this.animTimer * 2.2) * 4;
+    const hoverY = py + Math.cos(this.animTimer * 1.6) * 7;
+    const wingFlap = Math.cos(this.animTimer * 14);
+
+    ctx.translate(hoverX, hoverY);
+
+    // Wings (scaled by wingFlap)
+    ctx.save();
+    ctx.scale(wingFlap, 1);
+
+    // Upper wings
+    ctx.fillStyle = '#f59e0b';
+    ctx.strokeStyle = '#78350f';
+    ctx.lineWidth = 0.8;
+
+    ctx.beginPath();
+    ctx.ellipse(-4, -3, 4.5, 3, -0.4, 0, Math.PI * 2);
+    ctx.ellipse(4, -3, 4.5, 3, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Lower wings
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.ellipse(-3, 2, 3, 2.2, 0.3, 0, Math.PI * 2);
+    ctx.ellipse(3, 2, 3, 2.2, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Wing white dots
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(-6, -4, 1.2, 1.2);
+    ctx.fillRect(5, -4, 1.2, 1.2);
+    ctx.restore();
+
+    // Body
+    ctx.fillStyle = '#1c1917';
+    ctx.beginPath();
+    ctx.roundRect(-1, -4, 2, 8, 1);
+    ctx.fill();
+
+    // Antennae
+    ctx.strokeStyle = '#1c1917';
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(-0.5, -4);
+    ctx.lineTo(-2.5, -6.5);
+    ctx.moveTo(0.5, -4);
+    ctx.lineTo(2.5, -6.5);
+    ctx.stroke();
+
+    ctx.restore();
   }
 
   /**
