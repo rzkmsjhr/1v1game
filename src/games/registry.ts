@@ -7,6 +7,7 @@ import { SlingPuckGame } from './sling-puck/SlingPuckGame';
 import { BlockFitGame } from './block-fit/BlockFitGame';
 import { SodaDashGame } from './soda-dash/SodaDashGame';
 import { SheepFightGame } from './sheep-fight/SheepFightGame';
+import { WaterSortGame } from './water-sort/WaterSortGame';
 
 export const GAMES_REGISTRY: GameDefinition[] = [
   {
@@ -373,5 +374,47 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     screenshotUrl: '/screenshots/sheep-fight.png',
     supportsAI: true,
     create: (container, session) => new SheepFightGame(container, session)
+  },
+  {
+    id: 'water-sort',
+    title: 'Water Sort 1v1',
+    subtitle: 'Tactile Color Bottle Duel',
+    description: 'Pour and sort 10 vibrant liquid colors across test tubes! Extract matching colors into the central reservoir flask to score and race your opponent.',
+    genre: 'Kid-Friendly Puzzle',
+    badge: 'Color Puzzle Duel',
+    bannerGradient: 'from-cyan-500 via-blue-600 to-indigo-800',
+    accentColor: '#0ea5e9',
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none">
+      <defs>
+        <linearGradient id="ws-cyan" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#38bdf8"/>
+          <stop offset="100%" stop-color="#0284c7"/>
+        </linearGradient>
+        <linearGradient id="ws-yellow" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#fde047"/>
+          <stop offset="100%" stop-color="#eab308"/>
+        </linearGradient>
+        <linearGradient id="ws-red" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#f87171"/>
+          <stop offset="100%" stop-color="#dc2626"/>
+        </linearGradient>
+      </defs>
+      <!-- Glass Tube Outline -->
+      <path d="M 8 3 L 16 3 M 9 3 L 9 17 C 9 19.5 10.3 21 12 21 C 13.7 21 15 19.5 15 17 L 15 3" stroke="#e2e8f0" stroke-width="1.8" stroke-linecap="round"/>
+      <!-- Liquid Layers -->
+      <!-- Bottom Layer: Red -->
+      <path d="M 9.9 14.5 L 14.1 14.5 L 14.1 17 C 14.1 18.8 13.2 19.8 12 19.8 C 10.8 19.8 9.9 18.8 9.9 17 Z" fill="url(#ws-red)"/>
+      <!-- Middle Layer: Yellow -->
+      <rect x="9.9" y="10.2" width="4.2" height="4.3" fill="url(#ws-yellow)"/>
+      <!-- Top Layer: Cyan -->
+      <rect x="9.9" y="6" width="4.2" height="4.2" rx="0.8" fill="url(#ws-cyan)"/>
+      <!-- Liquid Meniscus & Bubbles -->
+      <circle cx="12" cy="7" r="0.8" fill="#ffffff" opacity="0.6"/>
+      <!-- Glass Reflection streak -->
+      <path d="M 10.6 5 L 10.6 15" stroke="#ffffff" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
+    </svg>`,
+    screenshotUrl: '/screenshots/water-sort.png',
+    supportsAI: true,
+    create: (container, session) => new WaterSortGame(container, session)
   }
 ];

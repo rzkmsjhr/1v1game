@@ -24,7 +24,8 @@ const GAME_TITLES: Record<string, string> = {
   'sling-puck': 'Fast Sling Puck',
   'block-fit': 'Block Fit Duel',
   'soda-dash': 'Soda Dash',
-  'sheep-fight': 'Sheep Fight'
+  'sheep-fight': 'Sheep Fight',
+  'water-sort': 'Water Sort 1v1'
 };
 
 function localSignalingPlugin(): Plugin {
