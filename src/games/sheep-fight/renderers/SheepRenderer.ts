@@ -170,7 +170,6 @@ export class SheepRenderer {
     legPhase: number,
     isPushing: boolean
   ) {
-    ctx.save();
     ctx.fillStyle = '#1e293b';
 
     const hoofW = r * 0.22;
@@ -182,24 +181,10 @@ export class SheepRenderer {
     // Front Left Hoof
     ctx.beginPath();
     ctx.roundRect(-r * 0.65, -r * 0.52 + stride1, hoofW, hoofH, hoofW * 0.4);
-    ctx.fill();
-
-    // Front Right Hoof
-    ctx.beginPath();
     ctx.roundRect(r * 0.65 - hoofW, -r * 0.52 + stride2, hoofW, hoofH, hoofW * 0.4);
-    ctx.fill();
-
-    // Back Left Hoof
-    ctx.beginPath();
     ctx.roundRect(-r * 0.60, r * 0.50 + stride2, hoofW, hoofH, hoofW * 0.4);
-    ctx.fill();
-
-    // Back Right Hoof
-    ctx.beginPath();
     ctx.roundRect(r * 0.60 - hoofW, r * 0.50 + stride1, hoofW, hoofH, hoofW * 0.4);
     ctx.fill();
-
-    ctx.restore();
   }
 
   private static renderTopTail(
@@ -208,7 +193,6 @@ export class SheepRenderer {
     walkCycle: number,
     colors: any
   ) {
-    ctx.save();
     const wagX = Math.sin(walkCycle * 4) * (r * 0.12);
     const tailY = r * 0.96;
 
@@ -220,8 +204,6 @@ export class SheepRenderer {
     ctx.arc(wagX, tailY, r * 0.22, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-
-    ctx.restore();
   }
 
   private static renderTopWoolBody(
@@ -230,45 +212,35 @@ export class SheepRenderer {
     size: SheepSize,
     colors: any
   ) {
-    ctx.save();
-
-    // Radial gradient for 3D spherical fluff
-    const grad = ctx.createRadialGradient(0, 0, r * 0.15, 0, 0, r * 1.1);
-    grad.addColorStop(0, '#ffffff');
-    grad.addColorStop(0.65, colors.woolTint);
-    grad.addColorStop(1, colors.woolShadow);
-
     const puffCount = size === 'small' ? 8 : size === 'medium' ? 10 : size === 'big' ? 12 : 16;
     const puffRadius = size === 'small' ? r * 0.42 : size === 'medium' ? r * 0.38 : size === 'big' ? r * 0.35 : r * 0.32;
 
-    // Shaded base ellipse
+    // 1. Shaded base ellipse
     ctx.fillStyle = colors.woolShadow;
     ctx.beginPath();
     ctx.ellipse(0, 0, r * 0.90, r * 1.05, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Perimeter puffs forming the cloud perimeter
-    ctx.fillStyle = grad;
+    // 2. Perimeter puffs forming the cloud perimeter - BATCHED into a single path!
+    ctx.fillStyle = colors.woolTint;
     ctx.strokeStyle = colors.woolShadow;
     ctx.lineWidth = Math.max(1, r * 0.04);
 
+    ctx.beginPath();
     for (let i = 0; i < puffCount; i++) {
       const a = (i / puffCount) * Math.PI * 2;
       const px = Math.cos(a) * (r * 0.72);
       const py = Math.sin(a) * (r * 0.86);
-
-      ctx.beginPath();
+      ctx.moveTo(px + puffRadius, py);
       ctx.arc(px, py, puffRadius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
     }
-
-    // Dense Center Dome
-    ctx.beginPath();
+    // Also include dense center dome in single draw call
+    ctx.moveTo(r * 0.75, 0);
     ctx.ellipse(0, 0, r * 0.75, r * 0.88, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
 
-    // Wool Swirls on the back
+    // 3. Wool Swirls on the back - BATCHED into single stroke!
     ctx.strokeStyle = colors.woolShadow;
     ctx.lineWidth = Math.max(1.2, r * 0.045);
     ctx.lineCap = 'round';
@@ -281,13 +253,13 @@ export class SheepRenderer {
       ? [{ x: -r * 0.32, y: -r * 0.25 }, { x: r * 0.32, y: -r * 0.25 }, { x: -r * 0.22, y: r * 0.22 }, { x: r * 0.22, y: r * 0.22 }]
       : [{ x: -r * 0.35, y: -r * 0.3 }, { x: r * 0.35, y: -r * 0.3 }, { x: 0, y: 0 }, { x: -r * 0.28, y: r * 0.3 }, { x: r * 0.28, y: r * 0.3 }];
 
+    ctx.beginPath();
     for (const sw of swirls) {
-      ctx.beginPath();
-      ctx.arc(sw.x, sw.y, r * 0.14, 0, Math.PI * 1.4);
-      ctx.stroke();
+      const swR = r * 0.14;
+      ctx.moveTo(sw.x + swR, sw.y);
+      ctx.arc(sw.x, sw.y, swR, 0, Math.PI * 1.4);
     }
-
-    ctx.restore();
+    ctx.stroke();
   }
 
   private static renderTopHead(
@@ -391,7 +363,6 @@ export class SheepRenderer {
     headW: number,
     headH: number
   ) {
-    ctx.save();
     const eyeX = headW * 0.44;
     const eyeY = -headH * 0.25;
 
@@ -421,7 +392,6 @@ export class SheepRenderer {
         ctx.fill();
       }
     }
-    ctx.restore();
   }
 
   private static renderTopEars(
@@ -430,7 +400,6 @@ export class SheepRenderer {
     size: SheepSize,
     skinTone: string
   ) {
-    ctx.save();
     const earW = r * 0.46;
     const earH = r * 0.22;
 
@@ -456,7 +425,6 @@ export class SheepRenderer {
 
       ctx.restore();
     }
-    ctx.restore();
   }
 
   private static renderTopHorns(
@@ -465,8 +433,6 @@ export class SheepRenderer {
     size: SheepSize,
     colors: any
   ) {
-    ctx.save();
-
     if (size === 'small') {
       // Bandana knot visible from top
       ctx.fillStyle = colors.primary;
@@ -483,7 +449,6 @@ export class SheepRenderer {
       ctx.lineTo(4, r * 0.32);
       ctx.closePath();
       ctx.fill();
-      ctx.restore();
       return;
     }
 
@@ -493,18 +458,18 @@ export class SheepRenderer {
         ctx.save();
         ctx.translate(s * (r * 0.28), -r * 0.08);
 
-        const hornGrad = ctx.createLinearGradient(0, 0, s * r * 0.4, -r * 0.3);
-        hornGrad.addColorStop(0, '#92400e');
-        hornGrad.addColorStop(0.6, '#d97706');
-        hornGrad.addColorStop(1, '#fde68a');
-
-        ctx.strokeStyle = hornGrad;
+        ctx.strokeStyle = '#b45309';
         ctx.lineWidth = r * 0.18;
         ctx.lineCap = 'round';
-
         ctx.beginPath();
-        // Curl outward, back, and forward
         ctx.arc(0, 0, r * 0.28, s === 1 ? -Math.PI * 0.7 : -Math.PI * 0.3, s === 1 ? Math.PI * 0.4 : Math.PI * 0.6, s === -1);
+        ctx.stroke();
+
+        // Highlight spine
+        ctx.strokeStyle = '#fde68a';
+        ctx.lineWidth = r * 0.05;
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.28, s === 1 ? -Math.PI * 0.6 : -Math.PI * 0.4, s === 1 ? Math.PI * 0.2 : Math.PI * 0.4, s === -1);
         ctx.stroke();
 
         ctx.restore();
@@ -515,22 +480,23 @@ export class SheepRenderer {
         ctx.save();
         ctx.translate(s * (r * 0.34), -r * 0.12);
 
-        const hornGrad = ctx.createLinearGradient(0, 0, s * r * 0.5, -r * 0.4);
-        hornGrad.addColorStop(0, '#451a03');
-        hornGrad.addColorStop(0.5, '#b45309');
-        hornGrad.addColorStop(1, '#f59e0b');
-
-        ctx.strokeStyle = hornGrad;
+        ctx.strokeStyle = '#78350f';
         ctx.lineWidth = r * 0.26;
         ctx.lineCap = 'round';
-
         ctx.beginPath();
         ctx.arc(0, 0, r * 0.38, s === 1 ? -Math.PI * 0.8 : -Math.PI * 0.2, s === 1 ? Math.PI * 0.5 : Math.PI * 0.5, s === -1);
         ctx.stroke();
 
+        // Bright ridge
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = r * 0.07;
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.38, s === 1 ? -Math.PI * 0.65 : -Math.PI * 0.35, s === 1 ? Math.PI * 0.3 : Math.PI * 0.3, s === -1);
+        ctx.stroke();
+
         // Ribbed Segments
         ctx.strokeStyle = '#292524';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.8;
         for (let seg = 0; seg < 4; seg++) {
           const a = -0.5 + (seg / 4) * 1.4;
           ctx.beginPath();
@@ -547,18 +513,18 @@ export class SheepRenderer {
         ctx.save();
         ctx.translate(s * (r * 0.40), -r * 0.15);
 
-        const megaGrad = ctx.createLinearGradient(0, 0, s * r * 0.65, -r * 0.5);
-        megaGrad.addColorStop(0, '#1c1917');
-        megaGrad.addColorStop(0.4, '#78350f');
-        megaGrad.addColorStop(0.8, '#d97706');
-        megaGrad.addColorStop(1, '#fde047');
-
-        ctx.strokeStyle = megaGrad;
+        ctx.strokeStyle = '#451a03';
         ctx.lineWidth = r * 0.35;
         ctx.lineCap = 'round';
-
         ctx.beginPath();
         ctx.arc(0, 0, r * 0.52, s === 1 ? -Math.PI * 0.85 : -Math.PI * 0.15, s === 1 ? Math.PI * 0.65 : Math.PI * 0.35, s === -1);
+        ctx.stroke();
+
+        // Warm amber midtone ridge
+        ctx.strokeStyle = '#d97706';
+        ctx.lineWidth = r * 0.12;
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.52, s === 1 ? -Math.PI * 0.75 : -Math.PI * 0.25, s === 1 ? Math.PI * 0.5 : Math.PI * 0.25, s === -1);
         ctx.stroke();
 
         // Golden Tip
@@ -568,8 +534,8 @@ export class SheepRenderer {
         ctx.fill();
 
         // Battle Ridges
-        ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+        ctx.lineWidth = 2.2;
         for (let seg = 0; seg < 6; seg++) {
           const a = -0.6 + (seg / 6) * 1.6;
           ctx.beginPath();
@@ -581,8 +547,6 @@ export class SheepRenderer {
         ctx.restore();
       }
     }
-
-    ctx.restore();
   }
 
   private static renderTopArmor(
@@ -612,13 +576,8 @@ export class SheepRenderer {
         ctx.fill();
       });
     } else if (size === 'giant') {
-      // Golden Crown War Plate & Gem
-      const goldGrad = ctx.createLinearGradient(-headW * 0.4, 0, headW * 0.4, 0);
-      goldGrad.addColorStop(0, '#b45309');
-      goldGrad.addColorStop(0.5, '#fde047');
-      goldGrad.addColorStop(1, '#b45309');
-
-      ctx.fillStyle = goldGrad;
+      // Golden Crown War Plate & Gem (High performance solid fill with gold sheen)
+      ctx.fillStyle = '#ca8a04';
       ctx.strokeStyle = '#78350f';
       ctx.lineWidth = 1.8;
 
@@ -626,6 +585,10 @@ export class SheepRenderer {
       ctx.roundRect(-headW * 0.42, -headH * 0.40, headW * 0.84, headH * 0.25, 4);
       ctx.fill();
       ctx.stroke();
+
+      // Gold top highlight
+      ctx.fillStyle = '#fef08a';
+      ctx.fillRect(-headW * 0.35, -headH * 0.38, headW * 0.70, 2);
 
       // Glowing Center Crest Gem
       ctx.fillStyle = colors.primary;
@@ -746,11 +709,6 @@ export class SheepRenderer {
   ) {
     ctx.save();
 
-    const grad = ctx.createRadialGradient(0, -r * 0.1, r * 0.2, 0, 0, r);
-    grad.addColorStop(0, '#ffffff');
-    grad.addColorStop(0.7, colors.woolTint);
-    grad.addColorStop(1, colors.woolShadow);
-
     const puffCount = size === 'small' ? 7 : size === 'medium' ? 9 : size === 'big' ? 11 : 14;
     const puffRadius = size === 'small' ? r * 0.42 : size === 'medium' ? r * 0.38 : size === 'big' ? r * 0.35 : r * 0.32;
 
@@ -759,25 +717,24 @@ export class SheepRenderer {
     ctx.ellipse(0, 0, r * 0.95, r * 0.85, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = grad;
+    ctx.fillStyle = colors.woolTint;
     ctx.strokeStyle = colors.woolShadow;
     ctx.lineWidth = Math.max(1, r * 0.04);
 
+    ctx.beginPath();
     for (let i = 0; i < puffCount; i++) {
       const angle = (i / puffCount) * Math.PI * 2;
       const dist = r * 0.72;
       const px = Math.cos(angle) * dist;
       const py = Math.sin(angle) * (dist * 0.85);
 
-      ctx.beginPath();
+      ctx.moveTo(px + puffRadius, py);
       ctx.arc(px, py, puffRadius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
     }
-
-    ctx.beginPath();
+    ctx.moveTo(r * 0.75, 0);
     ctx.arc(0, 0, r * 0.75, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
 
     ctx.restore();
   }

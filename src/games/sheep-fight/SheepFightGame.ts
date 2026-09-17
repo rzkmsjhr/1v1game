@@ -18,6 +18,7 @@ export class SheepFightGame implements GameInstance {
   private animFrameId: number | null = null;
   private lastTime: number = 0;
   private currentVirtualWidth: number = SHEEP_CONSTANTS.VIEWPORT_WIDTH;
+  private currentTheme: AppTheme = 'dark';
 
   // Sound Synth
   private audioCtx: AudioContext | null = null;
@@ -27,6 +28,9 @@ export class SheepFightGame implements GameInstance {
   // DOM Elements
   private scoreEl!: HTMLElement;
   private suddenDeathEl!: HTMLElement;
+  private cardAvatarEl!: HTMLElement;
+  private cardNameEl!: HTMLElement;
+  private cardWeightEl!: HTMLElement;
   private preview1El!: HTMLElement;
   private preview2El!: HTMLElement;
   private cooldownBarEl!: HTMLElement;
@@ -34,6 +38,14 @@ export class SheepFightGame implements GameInstance {
   private gameOverModalEl!: HTMLElement;
   private gameOverTitleEl!: HTMLElement;
   private gameOverStatsEl!: HTMLElement;
+  private themeBtnEl!: HTMLElement;
+
+  // HUD Dirty-Checking Caches (to prevent per-frame DOM layout recalculations)
+  private lastScoreText: string = '';
+  private lastSuddenDeath: boolean = false;
+  private lastQueueKey: string = '';
+  private lastCdPercent: number = -1;
+  private lastLaneStates: Array<{ status: string; blocked: boolean }> = [];
 
   // Event Listeners
   private boundKeyDown = this.handleKeyDown.bind(this);
@@ -43,6 +55,7 @@ export class SheepFightGame implements GameInstance {
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
     this.session = session;
+    this.currentTheme = session.theme || 'dark';
 
     this.engine = new SheepEngine({
       onClash: () => this.playClashSound(),
@@ -69,21 +82,21 @@ export class SheepFightGame implements GameInstance {
   // UI MOUNTING
   // =========================================================================
   private mountUI() {
-    const isDark = this.session.theme === 'dark';
+    const isDark = this.currentTheme === 'dark';
     this.container.className = 'w-full h-[100dvh] max-h-[100dvh] p-0 m-0 overflow-hidden flex justify-center items-center ' +
       (isDark ? 'bg-[#080c14]' : 'bg-slate-100');
 
     this.container.innerHTML = `
-      <div class="relative w-full max-w-[560px] sm:max-w-[620px] h-[100dvh] max-h-[100dvh] flex flex-col justify-between overflow-hidden shadow-2xl ${
+      <div id="sf-frame" class="relative w-full max-w-[560px] sm:max-w-[620px] h-[100dvh] max-h-[100dvh] flex flex-col justify-between overflow-hidden shadow-2xl ${
         isDark ? 'bg-[#0f172a] text-white' : 'bg-white text-slate-900'
       }" style="height: 100dvh; max-height: 100dvh;">
 
         <!-- TOP BAR: Header, Scores & Mode -->
-        <div class="px-3 py-2 flex items-center justify-between border-b ${
+        <div id="sf-top-bar" class="px-3 py-2 flex items-center justify-between border-b ${
           isDark ? 'border-slate-800 bg-slate-900/90' : 'border-slate-200 bg-white/95'
         } backdrop-blur z-20 select-none shrink-0">
           <button id="sf-btn-exit" class="px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
-            isDark ? 'border-slate-700 bg-slate-800 hover:bg-slate-700' : 'border-slate-300 bg-slate-100 hover:bg-slate-200'
+            isDark ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300' : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-700'
           }">
             ← Exit
           </button>
@@ -100,24 +113,29 @@ export class SheepFightGame implements GameInstance {
             </div>
           </div>
 
-          <!-- Mode & Sound Toggle -->
+          <!-- Mode, Sound & Day/Night Theme Toggles -->
           <div class="flex items-center gap-1.5">
             <span id="sf-mode-badge" class="px-2 py-0.5 text-[10px] font-black uppercase rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
               ${this.session.mode === 'online' ? '1v1 Online' : `Bot: ${(this.session.aiDifficulty || 'med').toUpperCase()}`}
             </span>
-            <button id="sf-btn-sound" class="p-1 text-xs rounded-lg transition hover:opacity-80">
+            <button id="sf-btn-sound" class="p-1 text-xs rounded-lg transition hover:opacity-80" title="Toggle Sound">
               🔊
+            </button>
+            <button id="sf-btn-theme" class="p-1 text-xs rounded-lg transition hover:opacity-80" title="Toggle Day/Night Theme">
+              ${isDark ? '☀️' : '🌙'}
             </button>
           </div>
         </div>
 
         <!-- MAIN FIELD CANVAS WRAPPER -->
-        <div class="relative flex-1 min-h-0 w-full overflow-hidden flex items-center justify-center bg-[#064e3b]">
+        <div id="sf-canvas-wrap" class="relative flex-1 min-h-0 w-full overflow-hidden flex items-center justify-center ${
+          isDark ? 'bg-[#042f2e]' : 'bg-[#15803d]'
+        }">
           <canvas id="sf-canvas" class="w-full h-full cursor-pointer block touch-none select-none" style="-webkit-tap-highlight-color: transparent;"></canvas>
         </div>
 
         <!-- BOTTOM DOCK: RANDOM SHEEP QUEUE & QUICK-TAP LANE BUTTONS -->
-        <div class="p-2.5 flex flex-col gap-2 border-t ${
+        <div id="sf-bottom-dock" class="p-2.5 flex flex-col gap-2 border-t ${
           isDark ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-slate-50'
         } z-20 select-none shrink-0" style="-webkit-tap-highlight-color: transparent;">
 
@@ -141,7 +159,7 @@ export class SheepFightGame implements GameInstance {
             </div>
 
             <!-- Upcoming Queue (Next 1, Next 2) -->
-            <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border select-none ${
+            <div id="sf-preview-box" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border select-none ${
               isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-white'
             }">
               <span class="text-[9px] font-black uppercase text-slate-400">Next:</span>
@@ -160,7 +178,7 @@ export class SheepFightGame implements GameInstance {
           <div class="grid grid-cols-5 gap-1.5">
             ${[0, 1, 2, 3, 4].map(i => `
               <button data-lane="${i}" class="sf-lane-btn p-1 h-12 rounded-lg border font-black text-xs flex flex-col items-center justify-center gap-0.5 transition active:scale-95 cursor-pointer select-none touch-manipulation ${
-                isDark ? 'border-slate-700 bg-slate-800 hover:border-blue-500' : 'border-slate-300 bg-white hover:border-blue-500'
+                isDark ? 'border-slate-700 bg-slate-800 hover:border-blue-500 text-white' : 'border-slate-300 bg-white hover:border-blue-500 text-slate-800'
               }" style="-webkit-tap-highlight-color: transparent;">
                 <span class="text-[9px] font-bold text-slate-400 leading-none">LANE ${i + 1}</span>
                 <span class="sf-lane-status text-[10px] text-blue-400 font-black leading-none">▲ DROP</span>
@@ -169,9 +187,9 @@ export class SheepFightGame implements GameInstance {
           </div>
         </div>
 
-        <!-- GAME OVER MODAL -->
-        <div id="sf-game-over-modal" class="hidden absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div class="w-full max-w-sm rounded-3xl p-6 flex flex-col items-center text-center gap-4 shadow-2xl border ${
+        <!-- GAME OVER MODAL (High-performance solid overlay without GPU backdrop-blur) -->
+        <div id="sf-game-over-modal" class="hidden absolute inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
+          <div id="sf-modal-card" class="w-full max-w-sm rounded-3xl p-6 flex flex-col items-center text-center gap-4 shadow-2xl border ${
             isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'
           }">
             <div id="sf-game-over-title" class="text-2xl font-black tracking-tight">🏆 VICTORY!</div>
@@ -197,12 +215,16 @@ export class SheepFightGame implements GameInstance {
     // Cache elements
     this.scoreEl = this.container.querySelector('#sf-score')!;
     this.suddenDeathEl = this.container.querySelector('#sf-sudden-death')!;
+    this.cardAvatarEl = this.container.querySelector('#sf-card-avatar')!;
+    this.cardNameEl = this.container.querySelector('#sf-card-name')!;
+    this.cardWeightEl = this.container.querySelector('#sf-card-weight')!;
     this.preview1El = this.container.querySelector('#sf-preview-1')!;
     this.preview2El = this.container.querySelector('#sf-preview-2')!;
     this.cooldownBarEl = this.container.querySelector('#sf-cooldown-bar')!;
     this.gameOverModalEl = this.container.querySelector('#sf-game-over-modal')!;
     this.gameOverTitleEl = this.container.querySelector('#sf-game-over-title')!;
     this.gameOverStatsEl = this.container.querySelector('#sf-game-over-stats')!;
+    this.themeBtnEl = this.container.querySelector('#sf-btn-theme')!;
     this.laneButtons = Array.from(this.container.querySelectorAll('.sf-lane-btn'));
 
     // Top Exit Button
@@ -224,12 +246,88 @@ export class SheepFightGame implements GameInstance {
       this.isMuted = !this.isMuted;
       soundBtn.textContent = this.isMuted ? '🔇' : '🔊';
     });
+
+    // Day / Night Theme toggle
+    this.themeBtnEl.addEventListener('click', () => {
+      this.toggleTheme();
+    });
+  }
+
+  private toggleTheme() {
+    const nextTheme = this.currentTheme === 'dark' ? 'light' : 'dark';
+    this.setTheme(nextTheme);
+  }
+
+  private applyThemeToDOM() {
+    const isDark = this.currentTheme === 'dark';
+    this.container.className = 'w-full h-[100dvh] max-h-[100dvh] p-0 m-0 overflow-hidden flex justify-center items-center ' +
+      (isDark ? 'bg-[#080c14]' : 'bg-slate-100');
+
+    const frame = this.container.querySelector('#sf-frame');
+    if (frame) {
+      frame.className = `relative w-full max-w-[560px] sm:max-w-[620px] h-[100dvh] max-h-[100dvh] flex flex-col justify-between overflow-hidden shadow-2xl ${
+        isDark ? 'bg-[#0f172a] text-white' : 'bg-white text-slate-900'
+      }`;
+    }
+
+    const topBar = this.container.querySelector('#sf-top-bar');
+    if (topBar) {
+      topBar.className = `px-3 py-2 flex items-center justify-between border-b ${
+        isDark ? 'border-slate-800 bg-slate-900/90' : 'border-slate-200 bg-white/95'
+      } backdrop-blur z-20 select-none shrink-0`;
+    }
+
+    const exitBtn = this.container.querySelector('#sf-btn-exit');
+    if (exitBtn) {
+      exitBtn.className = `px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
+        isDark ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300' : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-700'
+      }`;
+    }
+
+    const canvasWrap = this.container.querySelector('#sf-canvas-wrap');
+    if (canvasWrap) {
+      canvasWrap.className = `relative flex-1 min-h-0 w-full overflow-hidden flex items-center justify-center ${
+        isDark ? 'bg-[#042f2e]' : 'bg-[#15803d]'
+      }`;
+    }
+
+    const bottomDock = this.container.querySelector('#sf-bottom-dock');
+    if (bottomDock) {
+      bottomDock.className = `p-2.5 flex flex-col gap-2 border-t ${
+        isDark ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-slate-50'
+      } z-20 select-none shrink-0`;
+    }
+
+    const previewBox = this.container.querySelector('#sf-preview-box');
+    if (previewBox) {
+      previewBox.className = `flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border select-none ${
+        isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-white'
+      }`;
+    }
+
+    if (this.themeBtnEl) {
+      this.themeBtnEl.textContent = isDark ? '☀️' : '🌙';
+    }
+
+    const modalCard = this.container.querySelector('#sf-modal-card');
+    if (modalCard) {
+      modalCard.className = `w-full max-w-sm rounded-3xl p-6 flex flex-col items-center text-center gap-4 shadow-2xl border ${
+        isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'
+      }`;
+    }
+
+    const modalExitBtn = this.container.querySelector('#sf-btn-modal-exit');
+    if (modalExitBtn) {
+      modalExitBtn.className = `flex-1 py-2.5 rounded-xl text-xs font-black border transition ${
+        isDark ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300' : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-700'
+      } cursor-pointer`;
+    }
   }
 
   private initCanvasAndRenderer() {
     this.canvas = this.container.querySelector('#sf-canvas')!;
     this.ctx = this.canvas.getContext('2d')!;
-    this.renderer = new SheepFightRenderer(this.ctx);
+    this.renderer = new SheepFightRenderer(this.ctx, this.currentTheme);
     this.handleResize();
     window.addEventListener('resize', this.boundResize);
 
@@ -238,6 +336,7 @@ export class SheepFightGame implements GameInstance {
       this.resizeObserver.observe(this.canvas.parentElement);
     }
   }
+
 
   private handleResize() {
     if (!this.canvas) return;
@@ -363,6 +462,13 @@ export class SheepFightGame implements GameInstance {
       const dt = Math.min(0.1, (now - this.lastTime) / 1000);
       this.lastTime = now;
 
+      // If game has ended, stop heavy physics and AI simulation, render idle pasture
+      if (this.engine.state.winner !== null) {
+        this.renderer.render(this.engine.state, 0, this.currentVirtualWidth);
+        this.animFrameId = requestAnimationFrame(loop);
+        return;
+      }
+
       // Update AI
       if (this.ai) {
         this.ai.update(dt);
@@ -374,7 +480,7 @@ export class SheepFightGame implements GameInstance {
       // Render Field & Sheep
       this.renderer.render(this.engine.state, dt, this.currentVirtualWidth);
 
-      // Update DOM HUD
+      // Update DOM HUD with dirty checking (zero layout recalculations when state unchanged)
       this.updateHUD();
 
       this.animFrameId = requestAnimationFrame(loop);
@@ -386,65 +492,86 @@ export class SheepFightGame implements GameInstance {
   private updateHUD() {
     const state = this.engine.state;
 
-    // Score
-    this.scoreEl.innerHTML = `
-      <span class="text-blue-500">🔵 ${state.playerScore}</span>
-      <span class="text-slate-400 font-normal">:</span>
-      <span class="text-red-500">${state.opponentScore} 🔴</span>
-    `;
-
-    // Sudden Death alert
-    if (state.isSuddenDeath && state.winner === null) {
-      this.suddenDeathEl.classList.remove('hidden');
-    } else {
-      this.suddenDeathEl.classList.add('hidden');
+    // 1. Score Dirty Checking
+    const scoreText = `${state.playerScore}:${state.opponentScore}`;
+    if (scoreText !== this.lastScoreText) {
+      this.lastScoreText = scoreText;
+      this.scoreEl.innerHTML = `
+        <span class="text-blue-500">🔵 ${state.playerScore}</span>
+        <span class="text-slate-400 font-normal">:</span>
+        <span class="text-red-500">${state.opponentScore} 🔴</span>
+      `;
     }
 
-    // Active Ready Sheep Card
-    const curSize = state.playerQueue[0];
-    const def = SHEEP_MODELS[curSize];
-    const avatarEmoji = curSize === 'small' ? '👶' : curSize === 'medium' ? '🐑' : curSize === 'big' ? '🥊' : '👑';
+    // 2. Sudden Death alert Dirty Checking
+    const isSD = state.isSuddenDeath && state.winner === null;
+    if (isSD !== this.lastSuddenDeath) {
+      this.lastSuddenDeath = isSD;
+      if (isSD) {
+        this.suddenDeathEl.classList.remove('hidden');
+      } else {
+        this.suddenDeathEl.classList.add('hidden');
+      }
+    }
 
-    this.container.querySelector('#sf-card-avatar')!.textContent = avatarEmoji;
-    this.container.querySelector('#sf-card-name')!.textContent = def.name;
-    this.container.querySelector('#sf-card-weight')!.textContent = `Push: ${def.weight}x`;
+    // 3. Active Ready Sheep Card & Queue Previews Dirty Checking
+    const q0 = state.playerQueue[0];
+    const q1 = state.playerQueue[1];
+    const q2 = state.playerQueue[2];
+    const queueKey = `${q0}-${q1}-${q2}`;
+    if (queueKey !== this.lastQueueKey) {
+      this.lastQueueKey = queueKey;
+      const def = SHEEP_MODELS[q0];
+      const avatarEmoji = q0 === 'small' ? '👶' : q0 === 'medium' ? '🐑' : q0 === 'big' ? '🥊' : '👑';
 
-    // Upcoming Previews
-    const p1 = state.playerQueue[1];
-    const p2 = state.playerQueue[2];
-    const p1Emoji = p1 === 'small' ? '👶' : p1 === 'medium' ? '🐑' : p1 === 'big' ? '🥊' : '👑';
-    const p2Emoji = p2 === 'small' ? '👶' : p2 === 'medium' ? '🐑' : p2 === 'big' ? '🥊' : '👑';
-    this.preview1El.innerHTML = `<span class="text-xs">${p1Emoji}</span><span class="text-[8px] font-mono text-amber-400 font-bold">${SHEEP_MODELS[p1].weight}x</span>`;
-    this.preview2El.innerHTML = `<span class="text-xs">${p2Emoji}</span><span class="text-[8px] font-mono text-amber-400 font-bold">${SHEEP_MODELS[p2].weight}x</span>`;
+      this.cardAvatarEl.textContent = avatarEmoji;
+      this.cardNameEl.textContent = def.name;
+      this.cardWeightEl.textContent = `Push: ${def.weight}x`;
 
-    // Cooldown Progress Bar
+      const p1Emoji = q1 === 'small' ? '👶' : q1 === 'medium' ? '🐑' : q1 === 'big' ? '🥊' : '👑';
+      const p2Emoji = q2 === 'small' ? '👶' : q2 === 'medium' ? '🐑' : q2 === 'big' ? '🥊' : '👑';
+      this.preview1El.innerHTML = `<span class="text-xs">${p1Emoji}</span><span class="text-[8px] font-mono text-amber-400 font-bold">${SHEEP_MODELS[q1].weight}x</span>`;
+      this.preview2El.innerHTML = `<span class="text-xs">${p2Emoji}</span><span class="text-[8px] font-mono text-amber-400 font-bold">${SHEEP_MODELS[q2].weight}x</span>`;
+    }
+
+    // 4. Cooldown Progress Bar Dirty Checking
     const cdRatio = state.playerCooldown / SHEEP_CONSTANTS.SPAWN_COOLDOWN;
-    if (cdRatio > 0) {
-      this.cooldownBarEl.style.width = `${cdRatio * 100}%`;
-    } else {
-      this.cooldownBarEl.style.width = '0%';
+    const cdPercent = Math.min(100, Math.max(0, Math.round(cdRatio * 100)));
+    if (cdPercent !== this.lastCdPercent) {
+      this.lastCdPercent = cdPercent;
+      this.cooldownBarEl.style.width = `${cdPercent}%`;
     }
 
-    // Lane Buttons status
-    this.laneButtons.forEach((btn, idx) => {
+    // 5. Lane Buttons Status Dirty Checking
+    for (let idx = 0; idx < this.laneButtons.length; idx++) {
+      const btn = this.laneButtons[idx];
       const lane = state.lanes[idx];
-      const statusEl = btn.querySelector('.sf-lane-status') as HTMLElement;
-      if (!statusEl) return;
+      const prevState = this.lastLaneStates[idx];
+      const curStatus = lane.status;
+      const curBlocked = lane.isPlayerStartBlocked;
 
-      if (lane.status === 'draw') {
+      if (prevState && prevState.status === curStatus && prevState.blocked === curBlocked) {
+        continue;
+      }
+      this.lastLaneStates[idx] = { status: curStatus, blocked: curBlocked };
+
+      const statusEl = btn.querySelector('.sf-lane-status') as HTMLElement;
+      if (!statusEl) continue;
+
+      if (curStatus === 'draw') {
         btn.classList.add('opacity-40', 'cursor-not-allowed');
         btn.classList.remove('hover:border-blue-500');
         statusEl.textContent = '🔒 DRAW';
         statusEl.className = 'sf-lane-status text-[10px] text-amber-400 font-bold leading-none';
-      } else if (lane.status === 'won_player') {
+      } else if (curStatus === 'won_player') {
         btn.classList.add('opacity-40', 'cursor-not-allowed');
         statusEl.textContent = '👑 WON';
         statusEl.className = 'sf-lane-status text-[10px] text-blue-400 font-bold leading-none';
-      } else if (lane.status === 'won_opponent') {
+      } else if (curStatus === 'won_opponent') {
         btn.classList.add('opacity-40', 'cursor-not-allowed');
         statusEl.textContent = '💀 LOST';
         statusEl.className = 'sf-lane-status text-[10px] text-red-400 font-bold leading-none';
-      } else if (lane.isPlayerStartBlocked) {
+      } else if (curBlocked) {
         statusEl.textContent = '🔒 BLOCKED';
         statusEl.className = 'sf-lane-status text-[10px] text-red-400 font-bold leading-none';
       } else {
@@ -453,7 +580,7 @@ export class SheepFightGame implements GameInstance {
         statusEl.textContent = '▲ DROP';
         statusEl.className = 'sf-lane-status text-[10px] text-blue-400 font-black leading-none';
       }
-    });
+    }
   }
 
   private handleMatchEnd(winner: 'player' | 'opponent' | 'draw') {
@@ -461,7 +588,13 @@ export class SheepFightGame implements GameInstance {
 
     if (winner === 'player') {
       this.playVictorySound();
-      confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
+      confetti({
+        particleCount: 45,
+        spread: 60,
+        origin: { y: 0.6 },
+        ticks: 150,
+        disableForReducedMotion: true
+      });
       this.gameOverTitleEl.textContent = '🏆 VICTORY!';
       this.gameOverTitleEl.className = 'text-3xl font-black text-blue-400 tracking-tight';
       this.gameOverStatsEl.textContent = `You dominated the pasture, claiming ${this.engine.state.playerScore} lanes to win the match!`;
@@ -626,7 +759,24 @@ export class SheepFightGame implements GameInstance {
   // CLEANUP & LIFECYCLE
   // =========================================================================
   public setTheme(theme: AppTheme) {
+    this.currentTheme = theme;
     this.session.theme = theme;
+    try {
+      localStorage.setItem('hub_theme_v2', theme);
+      localStorage.setItem('hub_theme', theme);
+    } catch {}
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.classList.add('light');
+    }
+    this.applyThemeToDOM();
+    if (this.renderer) {
+      this.renderer.setTheme(theme);
+      this.renderer.render(this.engine.state, 0, this.currentVirtualWidth);
+    }
   }
 
   public destroy() {

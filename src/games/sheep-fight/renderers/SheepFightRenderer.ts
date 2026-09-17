@@ -1,13 +1,24 @@
 import type { SheepFightState } from '../sheep-types';
+import type { AppTheme } from '../../types';
 import { SHEEP_CONSTANTS } from '../sheep-constants';
 import { SheepRenderer } from './SheepRenderer';
 
 export class SheepFightRenderer {
   private ctx: CanvasRenderingContext2D;
   private animTimer: number = 0;
+  private currentTheme: AppTheme = 'light';
 
-  constructor(ctx: CanvasRenderingContext2D) {
+  constructor(ctx: CanvasRenderingContext2D, theme: AppTheme = 'light') {
     this.ctx = ctx;
+    this.currentTheme = theme;
+  }
+
+  public setTheme(theme: AppTheme) {
+    this.currentTheme = theme;
+  }
+
+  public getTheme(): AppTheme {
+    return this.currentTheme;
   }
 
   public getLanesTotalWidth(vw: number = SHEEP_CONSTANTS.VIEWPORT_WIDTH): number {
@@ -27,13 +38,15 @@ export class SheepFightRenderer {
     const ctx = this.ctx;
     const vw = viewportWidth;
     const h = SHEEP_CONSTANTS.VIEWPORT_HEIGHT;
+    const isLight = this.currentTheme === 'light';
 
     const lanesTotalW = this.getLanesTotalWidth(vw);
     const laneW = lanesTotalW / SHEEP_CONSTANTS.NUM_LANES;
     const laneMarginX = this.getLaneMarginX(vw);
 
     ctx.save();
-    ctx.fillStyle = '#064e3b';
+    // Theme-based pasture field background
+    ctx.fillStyle = isLight ? '#15803d' : '#042f2e';
     ctx.fillRect(0, 0, vw, h);
 
     // 1. Draw 5 Pasture Lanes (Requirement 1: Alternating dark/light green grass, thin dirt separators)
@@ -70,9 +83,15 @@ export class SheepFightRenderer {
     const topY = SHEEP_CONSTANTS.LANE_TOP_Y;
     const bottomY = SHEEP_CONSTANTS.LANE_BOTTOM_Y;
     const laneH = bottomY - topY;
+    const isLight = this.currentTheme === 'light';
+
+    const darkGrass = isLight ? '#16a34a' : '#064e3b';
+    const lightGrass = isLight ? '#22c55e' : '#047857';
+    const dirtSep = isLight ? '#92400e' : '#451a03';
+    const dirtHi = isLight ? '#b45309' : '#78350f';
 
     // Background base across entire viewport
-    ctx.fillStyle = '#064e3b';
+    ctx.fillStyle = isLight ? '#15803d' : '#042f2e';
     ctx.fillRect(0, 0, vw, SHEEP_CONSTANTS.VIEWPORT_HEIGHT);
 
     for (let i = 0; i < numLanes; i++) {
@@ -80,11 +99,13 @@ export class SheepFightRenderer {
       const isDark = (i % 2 === 0);
 
       // Grass base color
-      ctx.fillStyle = isDark ? SHEEP_CONSTANTS.COLORS.DARK_GRASS : SHEEP_CONSTANTS.COLORS.LIGHT_GRASS;
+      ctx.fillStyle = isDark ? darkGrass : lightGrass;
       ctx.fillRect(lx, topY, laneW, laneH);
 
       // Subtle mowed grass striping texture
-      ctx.fillStyle = isDark ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)';
+      ctx.fillStyle = isDark
+        ? (isLight ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.12)')
+        : (isLight ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.04)');
       const stripeH = 30;
       for (let sy = topY; sy < bottomY; sy += stripeH * 2) {
         ctx.fillRect(lx, sy, laneW, stripeH);
@@ -92,23 +113,23 @@ export class SheepFightRenderer {
 
       // Thin Dirt Separators between lanes
       if (i > 0) {
-        ctx.fillStyle = SHEEP_CONSTANTS.COLORS.DIRT_SEPARATOR;
+        ctx.fillStyle = dirtSep;
         ctx.fillRect(lx - 2, topY, 4, laneH);
 
         // Highlight line on dirt
-        ctx.fillStyle = SHEEP_CONSTANTS.COLORS.DIRT_HIGHLIGHT;
+        ctx.fillStyle = dirtHi;
         ctx.fillRect(lx - 0.5, topY, 1, laneH);
       }
     }
 
     // Outer Borders
-    ctx.strokeStyle = SHEEP_CONSTANTS.COLORS.DIRT_SEPARATOR;
+    ctx.strokeStyle = dirtSep;
     ctx.lineWidth = 3;
     ctx.strokeRect(laneMarginX, topY, lanesTotalW, laneH);
 
     // Center Midfield Line (Dotted white)
     const midY = (topY + bottomY) / 2;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.strokeStyle = isLight ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.22)';
     ctx.lineWidth = 2;
     ctx.setLineDash([8, 8]);
     ctx.beginPath();
@@ -165,10 +186,27 @@ export class SheepFightRenderer {
     { side: 'right', offsetX: 23, y: 800, type: 'daisy' },
   ];
 
+  // Pre-calculated fence post positions (zero per-frame array allocations)
+  private static readonly POST_Y_LIST: readonly number[] = [
+    65, 120, 175, 230, 285, 340, 395, 450, 505, 560, 615, 670, 725, 780
+  ];
+
+  // Night Mode glowing fireflies along pasture sidelines
+  private static readonly FIREFLY_DATA: ReadonlyArray<{ side: 'left' | 'right'; baseY: number; speed: number; phase: number }> = [
+    { side: 'left', baseY: 130, speed: 1.2, phase: 0.0 },
+    { side: 'left', baseY: 290, speed: 0.9, phase: 1.8 },
+    { side: 'left', baseY: 480, speed: 1.4, phase: 3.2 },
+    { side: 'left', baseY: 680, speed: 1.1, phase: 4.7 },
+    { side: 'right', baseY: 180, speed: 1.3, phase: 0.9 },
+    { side: 'right', baseY: 360, speed: 1.0, phase: 2.4 },
+    { side: 'right', baseY: 560, speed: 1.5, phase: 4.1 },
+    { side: 'right', baseY: 740, speed: 0.8, phase: 5.3 }
+  ];
+
   /**
    * Renders decorative pasture sidelines:
    * Rustic wooden paddock fence, hanging festive bunting, lush berry bushes, blooming wildflowers,
-   * natural orchard trees, mossy field stones, animated perched songbird, and fluttering butterfly.
+   * natural orchard trees, mossy field stones, animated perched songbird, fluttering butterfly, and night fireflies.
    */
   private renderPastureSidelines(vw: number, laneMarginX: number, _laneW: number, lanesTotalW: number) {
     const ctx = this.ctx;
@@ -176,32 +214,35 @@ export class SheepFightRenderer {
     const bottomY = SHEEP_CONSTANTS.LANE_BOTTOM_Y;
     const leftFenceX = Math.max(12, laneMarginX - 12);
     const rightFenceX = Math.min(vw - 12, laneMarginX + lanesTotalW + 12);
+    const isLight = this.currentTheme === 'light';
 
     // 1. Lush Sideline Grass Bases (covers full left margin 0..laneMarginX and right margin)
-    ctx.fillStyle = '#0f5132';
+    ctx.fillStyle = isLight ? '#15803d' : '#042f2e';
     ctx.fillRect(0, topY, laneMarginX, bottomY - topY);
     ctx.fillRect(laneMarginX + lanesTotalW, topY, vw - (laneMarginX + lanesTotalW), bottomY - topY);
 
     // Mowed lawn shade stripes
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.035)';
+    ctx.fillStyle = isLight ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.12)';
     for (let sy = topY; sy < bottomY; sy += 36) {
       ctx.fillRect(0, sy, laneMarginX, 18);
       ctx.fillRect(laneMarginX + lanesTotalW, sy, vw - (laneMarginX + lanesTotalW), 18);
     }
 
     // Dirt verge trim next to the active lanes
-    ctx.fillStyle = 'rgba(120, 53, 15, 0.25)';
+    ctx.fillStyle = isLight ? 'rgba(146, 64, 14, 0.3)' : 'rgba(69, 26, 3, 0.4)';
     ctx.fillRect(laneMarginX - 3, topY, 3, bottomY - topY);
     ctx.fillRect(laneMarginX + lanesTotalW, topY, 3, bottomY - topY);
 
-    // Subtle edge grass tufts
-    ctx.fillStyle = '#198754';
+    // Subtle edge grass tufts - BATCHED into a single draw call
+    ctx.fillStyle = isLight ? '#22c55e' : '#059669';
+    ctx.beginPath();
     for (let y = topY + 10; y < bottomY; y += 28) {
-      ctx.fillRect(2, y, 3, 4);
-      if (laneMarginX > 16) ctx.fillRect(laneMarginX - 6, y + 14, 3, 3);
-      ctx.fillRect(vw - 5, y + 18, 3, 4);
-      if (laneMarginX > 16) ctx.fillRect(laneMarginX + lanesTotalW + 3, y + 8, 3, 3);
+      ctx.rect(2, y, 3, 4);
+      if (laneMarginX > 16) ctx.rect(laneMarginX - 6, y + 14, 3, 3);
+      ctx.rect(vw - 5, y + 18, 3, 4);
+      if (laneMarginX > 16) ctx.rect(laneMarginX + lanesTotalW + 3, y + 8, 3, 3);
     }
+    ctx.fill();
 
     // 2. Natural Farm Trees in the wider margin areas
     if (laneMarginX >= 36) {
@@ -210,15 +251,15 @@ export class SheepFightRenderer {
       const treeRadius = Math.min(22, Math.max(13, laneMarginX * 0.32));
 
       // Left Trees
-      this.drawFarmTree(ctx, leftTreeX, 110, treeRadius);
-      this.drawFarmTree(ctx, leftTreeX + 3, 330, treeRadius * 1.1);
-      this.drawFarmTree(ctx, leftTreeX - 2, 540, treeRadius);
-      this.drawFarmTree(ctx, leftTreeX + 2, 730, treeRadius * 0.95);
+      this.drawFarmTree(ctx, leftTreeX, 110, treeRadius, isLight);
+      this.drawFarmTree(ctx, leftTreeX + 3, 330, treeRadius * 1.1, isLight);
+      this.drawFarmTree(ctx, leftTreeX - 2, 540, treeRadius, isLight);
+      this.drawFarmTree(ctx, leftTreeX + 2, 730, treeRadius * 0.95, isLight);
 
       // Right Trees
-      this.drawFarmTree(ctx, rightTreeX, 150, treeRadius * 1.05);
-      this.drawFarmTree(ctx, rightTreeX - 3, 390, treeRadius);
-      this.drawFarmTree(ctx, rightTreeX + 2, 630, treeRadius * 1.1);
+      this.drawFarmTree(ctx, rightTreeX, 150, treeRadius * 1.05, isLight);
+      this.drawFarmTree(ctx, rightTreeX - 3, 390, treeRadius, isLight);
+      this.drawFarmTree(ctx, rightTreeX + 2, 630, treeRadius * 1.1, isLight);
 
       // Mossy field stones
       this.drawFieldStone(ctx, Math.round(laneMarginX * 0.5), 220, 7);
@@ -235,7 +276,7 @@ export class SheepFightRenderer {
       } else {
         bx = laneMarginX >= 36 ? Math.round(rightFenceX + 8) : Math.round(vw - laneMarginX * 0.35);
       }
-      this.drawSidelineBush(ctx, bx, b.y, b.size, b.hasBerries);
+      this.drawSidelineBush(ctx, bx, b.y, b.size, b.hasBerries, isLight);
     }
 
     // 4. Blooming Wildflowers
@@ -249,11 +290,8 @@ export class SheepFightRenderer {
       this.drawWildflower(ctx, fx, f.y, f.type);
     }
 
-    // 5. Wooden Paddock Fence with Bunting & Posts
-    const postYList: number[] = [];
-    for (let py = topY + 20; py <= bottomY - 15; py += 55) {
-      postYList.push(py);
-    }
+    // 5. Wooden Paddock Fence with Bunting & Posts (Using pre-calculated static array)
+    const postYList = SheepFightRenderer.POST_Y_LIST;
 
     // Draw rails & bunting connecting adjacent posts
     for (let i = 0; i < postYList.length - 1; i++) {
@@ -261,8 +299,8 @@ export class SheepFightRenderer {
       const y2 = postYList[i + 1];
 
       // Rails
-      this.drawFenceRails(ctx, leftFenceX, y1, y2);
-      this.drawFenceRails(ctx, rightFenceX, y1, y2);
+      this.drawFenceRails(ctx, leftFenceX, y1, y2, isLight);
+      this.drawFenceRails(ctx, rightFenceX, y1, y2, isLight);
 
       // Bunting strings with pennants
       this.drawBuntingSpan(ctx, leftFenceX, y1, y2, 4);
@@ -271,19 +309,42 @@ export class SheepFightRenderer {
 
     // Draw Fence Posts
     for (const py of postYList) {
-      this.drawFencePost(ctx, leftFenceX, py);
-      this.drawFencePost(ctx, rightFenceX, py);
+      this.drawFencePost(ctx, leftFenceX, py, isLight);
+      this.drawFencePost(ctx, rightFenceX, py, isLight);
     }
 
-    // 6. Perched singing songbird on left fence
-    this.drawPerchedBird(ctx, leftFenceX, postYList[4] || 285);
-
-    // 7. Fluttering butterfly on right sideline
-    this.drawButterfly(ctx, rightFenceX, 490);
+    if (isLight) {
+      // 6. Day features: singing songbird on left fence & fluttering butterfly on right sideline
+      this.drawPerchedBird(ctx, leftFenceX, postYList[4] || 285);
+      this.drawButterfly(ctx, rightFenceX, 490);
+    } else {
+      // 7. Night feature: Enchanted glowing fireflies drifting along pasture sidelines
+      this.drawFireflies(ctx, vw, laneMarginX);
+    }
   }
 
-  private drawFarmTree(ctx: CanvasRenderingContext2D, tx: number, ty: number, radius: number) {
-    ctx.save();
+  private drawFireflies(ctx: CanvasRenderingContext2D, vw: number, laneMarginX: number) {
+    for (const ff of SheepFightRenderer.FIREFLY_DATA) {
+      const baseX = ff.side === 'left' ? (laneMarginX >= 36 ? laneMarginX * 0.45 : 12) : (laneMarginX >= 36 ? vw - laneMarginX * 0.45 : vw - 12);
+      const fx = baseX + Math.sin(this.animTimer * ff.speed + ff.phase) * 6;
+      const fy = ff.baseY + Math.cos(this.animTimer * (ff.speed * 0.8) + ff.phase) * 8;
+      const pulse = (Math.sin(this.animTimer * 3 + ff.phase) + 1) * 0.5;
+
+      // Glow halo
+      ctx.fillStyle = `rgba(250, 204, 21, ${0.12 + pulse * 0.20})`;
+      ctx.beginPath();
+      ctx.arc(fx, fy, 6 + pulse * 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Bright inner core
+      ctx.fillStyle = `rgba(254, 240, 138, ${0.7 + pulse * 0.3})`;
+      ctx.beginPath();
+      ctx.arc(fx, fy, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  private drawFarmTree(ctx: CanvasRenderingContext2D, tx: number, ty: number, radius: number, isLight: boolean) {
     // Tree ground shadow
     ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
     ctx.beginPath();
@@ -305,13 +366,13 @@ export class SheepFightRenderer {
     ctx.fillRect(tx - radius * 0.1, ty + 2, radius * 0.2, radius * 0.7);
 
     // Deep foliage base
-    ctx.fillStyle = '#14532d';
+    ctx.fillStyle = isLight ? '#14532d' : '#022c22';
     ctx.beginPath();
     ctx.arc(tx, ty - 2, radius, 0, Math.PI * 2);
     ctx.fill();
 
     // Midtone leafy puffs
-    ctx.fillStyle = '#15803d';
+    ctx.fillStyle = isLight ? '#15803d' : '#064e3b';
     ctx.beginPath();
     ctx.arc(tx - radius * 0.4, ty - radius * 0.2, radius * 0.68, 0, Math.PI * 2);
     ctx.arc(tx + radius * 0.4, ty - radius * 0.2, radius * 0.68, 0, Math.PI * 2);
@@ -319,7 +380,7 @@ export class SheepFightRenderer {
     ctx.fill();
 
     // Highlight canopy puffs
-    ctx.fillStyle = '#22c55e';
+    ctx.fillStyle = isLight ? '#22c55e' : '#047857';
     ctx.beginPath();
     ctx.arc(tx - radius * 0.2, ty - radius * 0.45, radius * 0.48, 0, Math.PI * 2);
     ctx.arc(tx + radius * 0.2, ty - radius * 0.4, radius * 0.45, 0, Math.PI * 2);
@@ -327,23 +388,16 @@ export class SheepFightRenderer {
     ctx.fill();
 
     // Red orchard apples / fruit dots
-    ctx.fillStyle = '#ef4444';
+    ctx.fillStyle = isLight ? '#ef4444' : '#b91c1c';
     ctx.beginPath();
     ctx.arc(tx - radius * 0.45, ty - radius * 0.1, 2, 0, Math.PI * 2);
     ctx.arc(tx + radius * 0.35, ty - radius * 0.3, 2, 0, Math.PI * 2);
     ctx.arc(tx - radius * 0.1, ty - radius * 0.5, 1.8, 0, Math.PI * 2);
     ctx.arc(tx + radius * 0.2, ty + radius * 0.1, 1.8, 0, Math.PI * 2);
     ctx.fill();
-
-    // Tiny apple highlights
-    ctx.fillStyle = '#fef08a';
-    ctx.fillRect(tx - radius * 0.45 - 0.5, ty - radius * 0.1 - 1, 0.9, 0.9);
-    ctx.fillRect(tx + radius * 0.35 - 0.5, ty - radius * 0.3 - 1, 0.9, 0.9);
-    ctx.restore();
   }
 
   private drawFieldStone(ctx: CanvasRenderingContext2D, sx: number, sy: number, size: number) {
-    ctx.save();
     // Drop shadow
     ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
     ctx.beginPath();
@@ -374,25 +428,21 @@ export class SheepFightRenderer {
     ctx.beginPath();
     ctx.arc(sx + size * 0.9, sy + size * 0.3, size * 0.35, 0, Math.PI * 2);
     ctx.fill();
-    ctx.restore();
   }
 
-  private drawFenceRails(ctx: CanvasRenderingContext2D, px: number, y1: number, y2: number) {
-    ctx.save();
+  private drawFenceRails(ctx: CanvasRenderingContext2D, px: number, y1: number, y2: number, isLight: boolean) {
     // Two vertical wood rails
-    ctx.fillStyle = '#78350f';
+    ctx.fillStyle = isLight ? '#854d0e' : '#451a03';
     ctx.fillRect(px - 3, y1, 2, y2 - y1);
     ctx.fillRect(px + 1, y1, 2, y2 - y1);
 
     // Wood highlight sheen
-    ctx.fillStyle = '#92400e';
+    ctx.fillStyle = isLight ? '#a16207' : '#78350f';
     ctx.fillRect(px - 2.5, y1, 1, y2 - y1);
     ctx.fillRect(px + 1.5, y1, 1, y2 - y1);
-    ctx.restore();
   }
 
   private drawBuntingSpan(ctx: CanvasRenderingContext2D, px: number, y1: number, y2: number, sagX: number) {
-    ctx.save();
     const midY = (y1 + y2) / 2;
 
     // String
@@ -428,11 +478,9 @@ export class SheepFightRenderer {
       ctx.closePath();
       ctx.fill();
     }
-    ctx.restore();
   }
 
-  private drawFencePost(ctx: CanvasRenderingContext2D, px: number, py: number) {
-    ctx.save();
+  private drawFencePost(ctx: CanvasRenderingContext2D, px: number, py: number, isLight: boolean) {
     // Drop shadow
     ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
     ctx.beginPath();
@@ -440,45 +488,43 @@ export class SheepFightRenderer {
     ctx.fill();
 
     // Post body
-    ctx.fillStyle = '#78350f';
+    ctx.fillStyle = isLight ? '#854d0e' : '#451a03';
     ctx.beginPath();
     ctx.roundRect(px - 4, py - 5, 8, 10, 2);
     ctx.fill();
 
     // Wood highlight bevel
-    ctx.fillStyle = '#92400e';
+    ctx.fillStyle = isLight ? '#a16207' : '#78350f';
     ctx.fillRect(px - 2, py - 5, 4, 10);
 
     // Rounded post cap
-    ctx.fillStyle = '#b45309';
+    ctx.fillStyle = isLight ? '#b45309' : '#92400e';
     ctx.beginPath();
     ctx.arc(px, py - 5, 3.5, 0, Math.PI * 2);
     ctx.fill();
 
     // Iron nail dot
-    ctx.fillStyle = '#292524';
+    ctx.fillStyle = '#1c1917';
     ctx.beginPath();
     ctx.arc(px, py - 1, 1, 0, Math.PI * 2);
     ctx.fill();
-    ctx.restore();
   }
 
-  private drawSidelineBush(ctx: CanvasRenderingContext2D, bx: number, by: number, size: number, hasBerries: boolean) {
-    ctx.save();
+  private drawSidelineBush(ctx: CanvasRenderingContext2D, bx: number, by: number, size: number, hasBerries: boolean, isLight: boolean) {
     // Base shadow circle
-    ctx.fillStyle = '#14532d';
+    ctx.fillStyle = isLight ? '#14532d' : '#022c22';
     ctx.beginPath();
     ctx.arc(bx, by + 1, size, 0, Math.PI * 2);
     ctx.fill();
 
     // Main foliage circle
-    ctx.fillStyle = '#166534';
+    ctx.fillStyle = isLight ? '#166534' : '#064e3b';
     ctx.beginPath();
     ctx.arc(bx - 1, by - 1, size * 0.85, 0, Math.PI * 2);
     ctx.fill();
 
     // Highlight leaf puff
-    ctx.fillStyle = '#22c55e';
+    ctx.fillStyle = isLight ? '#22c55e' : '#047857';
     ctx.beginPath();
     ctx.arc(bx + 1, by - 2, size * 0.6, 0, Math.PI * 2);
     ctx.fill();
@@ -491,17 +537,10 @@ export class SheepFightRenderer {
       ctx.arc(bx + 2, by, 1.6, 0, Math.PI * 2);
       ctx.arc(bx, by + 3, 1.4, 0, Math.PI * 2);
       ctx.fill();
-
-      // Berry highlight
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(bx - 2.5, by - 2.5, 0.8, 0.8);
-      ctx.fillRect(bx + 1.5, by - 0.5, 0.8, 0.8);
     }
-    ctx.restore();
   }
 
   private drawWildflower(ctx: CanvasRenderingContext2D, fx: number, fy: number, type: 'daisy' | 'poppy' | 'violet' | 'clover') {
-    ctx.save();
     if (type === 'daisy') {
       // 5 white petals around golden center
       ctx.fillStyle = '#ffffff';
@@ -551,7 +590,6 @@ export class SheepFightRenderer {
       ctx.arc(fx, fy + 1.6, 1.8, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.restore();
   }
 
   private drawPerchedBird(ctx: CanvasRenderingContext2D, px: number, py: number) {
@@ -962,27 +1000,28 @@ export class SheepFightRenderer {
   private renderFieldHeaders(state: SheepFightState, vw: number) {
     const ctx = this.ctx;
     const w = vw;
+    const isLight = this.currentTheme === 'light';
 
     // 1. Top Opponent Goal Bar
-    ctx.fillStyle = SHEEP_CONSTANTS.COLORS.OPPONENT_GOAL;
+    ctx.fillStyle = isLight ? '#991b1b' : SHEEP_CONSTANTS.COLORS.OPPONENT_GOAL;
     ctx.fillRect(0, 0, w, SHEEP_CONSTANTS.LANE_TOP_Y);
     ctx.fillStyle = SHEEP_CONSTANTS.COLORS.OPPONENT_GOAL_LINE;
     ctx.fillRect(0, SHEEP_CONSTANTS.LANE_TOP_Y - 3, w, 3);
 
     // Opponent Goal text
-    ctx.fillStyle = '#fca5a5';
+    ctx.fillStyle = isLight ? '#fecaca' : '#fca5a5';
     ctx.font = '900 11px system-ui';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('🔴 OPPONENT GOAL LINE', w / 2, 22);
 
     // 2. Bottom Player Goal Bar
-    ctx.fillStyle = SHEEP_CONSTANTS.COLORS.PLAYER_GOAL;
+    ctx.fillStyle = isLight ? '#1d4ed8' : SHEEP_CONSTANTS.COLORS.PLAYER_GOAL;
     ctx.fillRect(0, SHEEP_CONSTANTS.LANE_BOTTOM_Y, w, SHEEP_CONSTANTS.VIEWPORT_HEIGHT - SHEEP_CONSTANTS.LANE_BOTTOM_Y);
     ctx.fillStyle = SHEEP_CONSTANTS.COLORS.PLAYER_GOAL_LINE;
     ctx.fillRect(0, SHEEP_CONSTANTS.LANE_BOTTOM_Y, w, 3);
 
-    ctx.fillStyle = '#93c5fd';
+    ctx.fillStyle = isLight ? '#bfdbfe' : '#93c5fd';
     ctx.font = '900 11px system-ui';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
