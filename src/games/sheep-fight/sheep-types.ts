@@ -65,6 +65,25 @@ export interface ActiveSheep {
   walkCycle: number;       // Leg/tail oscillation phase
   isPushing: boolean;      // In contact with opposing chain or stationary
   pushStrain: number;      // 0 to 1 vibration strain
+  createdAt?: number;      // Timestamp when sheep was spawned
+}
+
+export interface SheepSyncSnapshot {
+  lanes: Array<{
+    index: number;
+    status: LaneStatus;
+    clashY: number | null;
+    sheep: Array<{
+      id: string;
+      size: SheepSize;
+      side: SheepSide;
+      y: number;
+    }>;
+  }>;
+  playerScore: number;
+  opponentScore: number;
+  isSuddenDeath: boolean;
+  winner: SheepSide | 'draw' | null;
 }
 
 export type LaneStatus = 'active' | 'won_player' | 'won_opponent' | 'draw';

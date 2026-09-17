@@ -1,4 +1,5 @@
 import type { AppTheme, GameInstance, GameSession } from '../types';
+import type { NetworkHealth, NetworkMessage } from '../../network/webrtc-peer';
 import { SHEEP_MODELS } from './sheep-types';
 import { SHEEP_CONSTANTS } from './sheep-constants';
 import { SheepEngine } from './engine/sheep-engine';
@@ -24,6 +25,10 @@ export class SheepFightGame implements GameInstance {
   private audioCtx: AudioContext | null = null;
   private isMuted: boolean = false;
   private lastClashSoundTime: number = 0;
+
+  // Rematch & Networking State
+  private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
+  private lastSyncBroadcastTime: number = 0;
 
   // DOM Elements
   private scoreEl!: HTMLElement;
@@ -69,10 +74,13 @@ export class SheepFightGame implements GameInstance {
       this.ai = new SheepAI(this.engine, session.aiDifficulty || 'medium');
     }
 
+    const isHost = this.session.peer?.role === 'host';
+    this.engine.isAuthoritative = this.session.mode !== 'online' || isHost;
+
     this.mountUI();
     this.initCanvasAndRenderer();
     this.initControls();
-    this.initNetworking();
+    this.setupNetwork();
 
     this.lastTime = performance.now();
     this.startLoop();
@@ -113,8 +121,12 @@ export class SheepFightGame implements GameInstance {
             </div>
           </div>
 
-          <!-- Mode, Sound & Day/Night Theme Toggles -->
-          <div class="flex items-center gap-1.5">
+          <!-- Network Ping, Mode, Sound & Day/Night Theme Toggles -->
+          <div class="flex items-center gap-1 sm:gap-1.5">
+            <span id="sf-net-ping" class="${this.session.mode === 'online' ? 'inline-flex' : 'hidden'} items-center gap-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5">
+              <span id="sf-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span id="sf-net-text">30ms</span>
+            </span>
             <span id="sf-mode-badge" class="px-2 py-0.5 text-[10px] font-black uppercase rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
               ${this.session.mode === 'online' ? '1v1 Online' : `Bot: ${(this.session.aiDifficulty || 'med').toUpperCase()}`}
             </span>
@@ -125,6 +137,11 @@ export class SheepFightGame implements GameInstance {
               ${isDark ? '☀️' : '🌙'}
             </button>
           </div>
+        </div>
+
+        <!-- Inactive Tab / Opponent Away Banner -->
+        <div id="sf-peer-away-banner" class="hidden w-full text-center py-1 px-2 bg-amber-500/20 border-b border-amber-500/40 text-amber-300 font-bold text-[10px] tracking-wide animate-pulse z-30 select-none shrink-0">
+          ⚠️ Opponent is tabbed out / minimized
         </div>
 
         <!-- MAIN FIELD CANVAS WRAPPER -->
@@ -227,17 +244,22 @@ export class SheepFightGame implements GameInstance {
     this.themeBtnEl = this.container.querySelector('#sf-btn-theme')!;
     this.laneButtons = Array.from(this.container.querySelectorAll('.sf-lane-btn'));
 
-    // Top Exit Button
-    this.container.querySelector('#sf-btn-exit')?.addEventListener('click', () => this.session.onExit());
-    this.container.querySelector('#sf-btn-modal-exit')?.addEventListener('click', () => this.session.onExit());
+    // Exit Buttons (Send PLAYER_LEAVE if online and connected)
+    const handleExit = () => {
+      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        try {
+          this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+        } catch {}
+      }
+      this.session.onExit();
+    };
+
+    this.container.querySelector('#sf-btn-exit')?.addEventListener('click', handleExit);
+    this.container.querySelector('#sf-btn-modal-exit')?.addEventListener('click', handleExit);
 
     // Rematch Button
     this.container.querySelector('#sf-btn-rematch')?.addEventListener('click', () => {
-      this.engine.reset();
-      this.gameOverModalEl.classList.add('hidden');
-      if (this.session.mode === 'online' && this.session.peer) {
-        this.session.peer.sendMessage({ type: 'SHEEP_REMATCH' });
-      }
+      this.handleRematchClick();
     });
 
     // Sound toggle
@@ -414,21 +436,110 @@ export class SheepFightGame implements GameInstance {
     }
   }
 
-  private initNetworking() {
+  private setupNetwork() {
     if (this.session.mode !== 'online' || !this.session.peer) return;
 
-    this.session.peer.events = {
-      ...this.session.peer.events,
-      onMessage: (msg: any) => {
-        if (msg.type === 'SHEEP_DEPLOY') {
-          this.engine.deploySheep(msg.laneIndex, 'opponent', msg.size, msg.id);
-          this.playSpawnSound();
-        } else if (msg.type === 'SHEEP_REMATCH') {
-          this.engine.reset();
-          this.gameOverModalEl.classList.add('hidden');
+    const origOnMessage = this.session.peer.events?.onMessage;
+    const origOnStatusChange = this.session.peer.events?.onStatusChange;
+    const origOnHealthChange = this.session.peer.events?.onHealthChange;
+
+    this.session.peer = Object.assign(this.session.peer, {
+      events: {
+        ...this.session.peer.events,
+        onMessage: (msg: NetworkMessage) => {
+          origOnMessage?.(msg);
+          this.handleNetworkMessage(msg);
+        },
+        onStatusChange: (status: string, message?: string) => {
+          origOnStatusChange?.(status as any, message);
+          if (status === 'disconnected') {
+            this.handleOpponentDisconnect();
+          }
+        },
+        onHealthChange: (health: NetworkHealth) => {
+          origOnHealthChange?.(health);
+          this.updateNetworkHealthHUD(health);
         }
       }
-    };
+    });
+
+    this.session.peer.flushEarlyMessages();
+    if (this.session.peer.isConnected) {
+      this.updateNetworkHealthHUD({
+        rtt: this.session.peer.currentRtt,
+        status: this.session.peer.networkQuality,
+        isPeerVisible: this.session.peer.isPeerVisible
+      });
+    }
+  }
+
+  private updateNetworkHealthHUD(health: NetworkHealth) {
+    const pingEl = this.container.querySelector('#sf-net-ping') as HTMLElement | null;
+    const dotEl = this.container.querySelector('#sf-net-dot') as HTMLElement | null;
+    const textEl = this.container.querySelector('#sf-net-text') as HTMLElement | null;
+    const awayBanner = this.container.querySelector('#sf-peer-away-banner') as HTMLElement | null;
+
+    if (pingEl && dotEl && textEl) {
+      if (health.status === 'stalled') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+        textEl.textContent = 'Lag ⚠️';
+        pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+      } else if (health.status === 'poor') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+        textEl.textContent = `${health.rtt}ms`;
+        pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+      } else if (health.status === 'moderate') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+        textEl.textContent = `${health.rtt}ms`;
+        pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5';
+      } else {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+        textEl.textContent = `${health.rtt || 25}ms`;
+        pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5';
+      }
+    }
+
+    if (awayBanner) {
+      if (!health.isPeerVisible) {
+        awayBanner.classList.remove('hidden');
+      } else {
+        awayBanner.classList.add('hidden');
+      }
+    }
+  }
+
+  private handleNetworkMessage(msg: any) {
+    switch (msg.type) {
+      case 'SHEEP_DEPLOY': {
+        // Deploy as opponent sheep at received laneIndex (already inverted by sender)
+        this.engine.deploySheep(msg.laneIndex, 'opponent', msg.size, msg.id);
+        this.playSpawnSound();
+        break;
+      }
+      case 'SHEEP_SYNC': {
+        // Only guest client reconciles against host snapshot
+        if (this.session.peer?.role === 'guest') {
+          this.engine.applyHostSync(msg);
+        }
+        break;
+      }
+      case 'PLAYER_LEAVE': {
+        this.handleOpponentForfeit('Opponent forfeited the match.');
+        break;
+      }
+      case 'REMATCH_REQUEST': {
+        this.showRematchOffer();
+        break;
+      }
+      case 'REMATCH_ACCEPT': {
+        this.startNewMatch();
+        break;
+      }
+      case 'SHEEP_REMATCH': {
+        this.startNewMatch();
+        break;
+      }
+    }
   }
 
   private tryDeploy(laneIndex: number) {
@@ -441,11 +552,12 @@ export class SheepFightGame implements GameInstance {
     if (success) {
       this.playSpawnSound();
 
-      // Sync online if in p2p mode
-      if (this.session.mode === 'online' && this.session.peer) {
+      // Sync online if in p2p mode with inverted lane index for opposite player
+      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        const remoteLaneIndex = SHEEP_CONSTANTS.NUM_LANES - 1 - laneIndex;
         this.session.peer.sendMessage({
           type: 'SHEEP_DEPLOY',
-          laneIndex,
+          laneIndex: remoteLaneIndex,
           size,
           id,
           timestamp: Date.now()
@@ -467,6 +579,23 @@ export class SheepFightGame implements GameInstance {
         this.renderer.render(this.engine.state, 0, this.currentVirtualWidth);
         this.animFrameId = requestAnimationFrame(loop);
         return;
+      }
+
+      // Host Authoritative Sync Heartbeat (10Hz / 100ms)
+      if (
+        this.session.mode === 'online' &&
+        this.session.peer?.isConnected &&
+        this.session.peer.role === 'host' &&
+        this.engine.state.winner === null
+      ) {
+        if (now - this.lastSyncBroadcastTime > 100) {
+          this.lastSyncBroadcastTime = now;
+          this.session.peer.sendMessage({
+            type: 'SHEEP_SYNC',
+            ...this.engine.getSyncSnapshot(),
+            timestamp: Date.now()
+          });
+        }
       }
 
       // Update AI
@@ -586,6 +715,15 @@ export class SheepFightGame implements GameInstance {
   private handleMatchEnd(winner: 'player' | 'opponent' | 'draw') {
     this.gameOverModalEl.classList.remove('hidden');
 
+    // Broadcast definitive final state if host
+    if (this.session.mode === 'online' && this.session.peer?.isConnected && this.session.peer.role === 'host') {
+      this.session.peer.sendMessage({
+        type: 'SHEEP_SYNC',
+        ...this.engine.getSyncSnapshot(),
+        timestamp: Date.now()
+      });
+    }
+
     if (winner === 'player') {
       this.playVictorySound();
       confetti({
@@ -607,6 +745,98 @@ export class SheepFightGame implements GameInstance {
       this.gameOverTitleEl.textContent = '🤝 HONORABLE DRAW';
       this.gameOverTitleEl.className = 'text-3xl font-black text-amber-400 tracking-tight';
       this.gameOverStatsEl.textContent = 'All lanes locked in a fierce stalemate. Neither flock surrendered an inch!';
+    }
+  }
+
+  // =========================================================================
+  // REMATCH & FORFEIT HANDLING
+  // =========================================================================
+  private handleRematchClick() {
+    const btn = this.container.querySelector('#sf-btn-rematch') as HTMLButtonElement | null;
+    if (!btn) return;
+
+    if (this.session.mode === 'ai') {
+      this.startNewMatch();
+      return;
+    }
+
+    if (this.rematchState === 'offer_received') {
+      this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT' });
+      this.startNewMatch();
+    } else if (this.rematchState === 'idle') {
+      this.rematchState = 'requested';
+      btn.textContent = 'Waiting for Opponent...';
+      btn.classList.add('opacity-70', 'cursor-not-allowed');
+      this.session.peer?.sendMessage({ type: 'REMATCH_REQUEST' });
+    }
+  }
+
+  private showRematchOffer() {
+    this.rematchState = 'offer_received';
+    const btn = this.container.querySelector('#sf-btn-rematch') as HTMLButtonElement | null;
+    if (btn) {
+      btn.textContent = 'Accept Rematch!';
+      btn.classList.remove('opacity-70', 'cursor-not-allowed', 'hidden');
+      btn.className = 'flex-1 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all cursor-pointer animate-pulse';
+    }
+  }
+
+  private startNewMatch() {
+    this.rematchState = 'idle';
+    this.gameOverModalEl.classList.add('hidden');
+
+    const btn = this.container.querySelector('#sf-btn-rematch') as HTMLButtonElement | null;
+    if (btn) {
+      btn.textContent = 'Play Again';
+      btn.className = 'flex-1 py-2.5 rounded-xl text-xs font-black bg-blue-600 hover:bg-blue-500 text-white transition shadow-lg cursor-pointer';
+      btn.classList.remove('opacity-70', 'cursor-not-allowed', 'hidden');
+    }
+
+    this.engine.reset();
+    const isHost = this.session.peer?.role === 'host';
+    this.engine.isAuthoritative = this.session.mode !== 'online' || isHost;
+
+    // Reset HUD dirty-check caches
+    this.lastScoreText = '';
+    this.lastSuddenDeath = false;
+    this.lastQueueKey = '';
+    this.lastCdPercent = -1;
+    this.lastLaneStates = [];
+
+    // Host sends immediate state sync upon reset
+    if (this.session.mode === 'online' && this.session.peer?.isConnected && isHost) {
+      this.session.peer.sendMessage({
+        type: 'SHEEP_SYNC',
+        ...this.engine.getSyncSnapshot(),
+        timestamp: Date.now()
+      });
+    }
+  }
+
+  private handleOpponentDisconnect() {
+    if (this.engine.state.winner !== null) return;
+    this.handleOpponentForfeit('Opponent disconnected. You win by forfeit!');
+  }
+
+  private handleOpponentForfeit(reason: string) {
+    this.engine.state.winner = 'player';
+    this.playVictorySound();
+    confetti({
+      particleCount: 45,
+      spread: 60,
+      origin: { y: 0.6 },
+      ticks: 150,
+      disableForReducedMotion: true
+    });
+
+    this.gameOverModalEl.classList.remove('hidden');
+    this.gameOverTitleEl.textContent = '🏆 VICTORY!';
+    this.gameOverTitleEl.className = 'text-3xl font-black text-blue-400 tracking-tight';
+    this.gameOverStatsEl.textContent = reason;
+
+    const btn = this.container.querySelector('#sf-btn-rematch') as HTMLButtonElement | null;
+    if (btn) {
+      btn.classList.add('hidden');
     }
   }
 
@@ -780,6 +1010,11 @@ export class SheepFightGame implements GameInstance {
   }
 
   public destroy() {
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      try {
+        this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+      } catch {}
+    }
     if (this.animFrameId !== null) {
       cancelAnimationFrame(this.animFrameId);
       this.animFrameId = null;

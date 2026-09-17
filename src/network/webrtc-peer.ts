@@ -52,6 +52,25 @@ export type NetworkMessage =
   | { type: 'DASH_EVENT'; title: string; message: string; icon: string }
   | { type: 'SHEEP_DEPLOY'; laneIndex: number; size: 'small' | 'medium' | 'big' | 'giant'; id: string; timestamp: number }
   | { type: 'SHEEP_REMATCH' }
+  | {
+      type: 'SHEEP_SYNC';
+      lanes: Array<{
+        index: number;
+        status: 'active' | 'won_player' | 'won_opponent' | 'draw';
+        clashY: number | null;
+        sheep: Array<{
+          id: string;
+          size: 'small' | 'medium' | 'big' | 'giant';
+          side: 'player' | 'opponent';
+          y: number;
+        }>;
+      }>;
+      playerScore: number;
+      opponentScore: number;
+      isSuddenDeath: boolean;
+      winner: 'player' | 'opponent' | 'draw' | null;
+      timestamp: number;
+    }
   | { type: 'CUSTOM'; payload: any };
 
 export type NetworkQuality = 'good' | 'moderate' | 'poor' | 'stalled';

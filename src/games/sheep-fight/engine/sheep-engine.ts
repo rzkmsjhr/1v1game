@@ -1,4 +1,4 @@
-import type { ActiveSheep, LaneState, SheepFightState, SheepSide, SheepSize } from '../sheep-types';
+import type { ActiveSheep, LaneState, LaneStatus, SheepFightState, SheepSide, SheepSize, SheepSyncSnapshot } from '../sheep-types';
 import { SHEEP_MODELS } from '../sheep-types';
 import { SHEEP_CONSTANTS } from '../sheep-constants';
 
@@ -12,6 +12,7 @@ export interface SheepEngineCallbacks {
 
 export class SheepEngine {
   public state: SheepFightState;
+  public isAuthoritative: boolean = true;
   private callbacks: SheepEngineCallbacks;
   private nextId: number = 1;
 
@@ -123,7 +124,8 @@ export class SheepEngine {
       y: spawnY,
       walkCycle: 0,
       isPushing: false,
-      pushStrain: 0
+      pushStrain: 0,
+      createdAt: performance.now()
     };
 
     lane.sheep.push(sheep);
@@ -231,6 +233,10 @@ export class SheepEngine {
 
       // Check if Player front sheep crosses opponent goal line
       if (playerSheep[0].y - SHEEP_MODELS[playerSheep[0].size].radius <= SHEEP_CONSTANTS.LANE_TOP_Y) {
+        if (!this.isAuthoritative) {
+          playerSheep[0].y = SHEEP_CONSTANTS.LANE_TOP_Y + SHEEP_MODELS[playerSheep[0].size].radius;
+          return;
+        }
         this.finishLane(lane, 'won_player');
         return;
       }
@@ -262,6 +268,10 @@ export class SheepEngine {
 
       // Check if Opponent front sheep crosses player goal line
       if (opponentSheep[0].y + SHEEP_MODELS[opponentSheep[0].size].radius >= SHEEP_CONSTANTS.LANE_BOTTOM_Y) {
+        if (!this.isAuthoritative) {
+          opponentSheep[0].y = SHEEP_CONSTANTS.LANE_BOTTOM_Y - SHEEP_MODELS[opponentSheep[0].size].radius;
+          return;
+        }
         this.finishLane(lane, 'won_opponent');
         return;
       }
@@ -414,10 +424,18 @@ export class SheepEngine {
 
       // 6. Check Goal Crossings
       if (pFront.y - SHEEP_MODELS[pFront.size].radius <= SHEEP_CONSTANTS.LANE_TOP_Y) {
+        if (!this.isAuthoritative) {
+          pFront.y = SHEEP_CONSTANTS.LANE_TOP_Y + SHEEP_MODELS[pFront.size].radius;
+          return;
+        }
         this.finishLane(lane, 'won_player');
         return;
       }
       if (oFront.y + SHEEP_MODELS[oFront.size].radius >= SHEEP_CONSTANTS.LANE_BOTTOM_Y) {
+        if (!this.isAuthoritative) {
+          oFront.y = SHEEP_CONSTANTS.LANE_BOTTOM_Y - SHEEP_MODELS[oFront.size].radius;
+          return;
+        }
         this.finishLane(lane, 'won_opponent');
         return;
       }
@@ -439,6 +457,7 @@ export class SheepEngine {
         if (fPlayer === fOpponent) {
           lane.deadlockTimer = (lane.deadlockTimer || 0) + dt;
           if (lane.deadlockTimer >= 1.0) {
+            if (!this.isAuthoritative) return;
             this.finishLane(lane, 'draw');
             return;
           }
@@ -481,6 +500,7 @@ export class SheepEngine {
    */
   private checkMatchConditions() {
     if (this.state.winner !== null) return;
+    if (!this.isAuthoritative) return;
 
     // Normal win: first to 3 lanes
     if (!this.state.isSuddenDeath) {
@@ -520,6 +540,144 @@ export class SheepEngine {
         this.state.winner = 'draw';
       }
       if (this.callbacks.onMatchEnd) this.callbacks.onMatchEnd(this.state.winner);
+    }
+  }
+
+  /**
+   * Serializes current engine state into a lightweight sync payload for peer replication
+   */
+  public getSyncSnapshot(): SheepSyncSnapshot {
+    return {
+      lanes: this.state.lanes.map(l => ({
+        index: l.index,
+        status: l.status,
+        clashY: l.clashY !== null ? Math.round(l.clashY * 10) / 10 : null,
+        sheep: l.sheep.map(s => ({
+          id: s.id,
+          size: s.size,
+          side: s.side,
+          y: Math.round(s.y * 10) / 10
+        }))
+      })),
+      playerScore: this.state.playerScore,
+      opponentScore: this.state.opponentScore,
+      isSuddenDeath: this.state.isSuddenDeath,
+      winner: this.state.winner
+    };
+  }
+
+  /**
+   * Applies authoritative Host state onto Guest engine with coordinate & lane inversion
+   */
+  public applyHostSync(sync: SheepSyncSnapshot, now: number = performance.now()) {
+    const TOTAL_Y = SHEEP_CONSTANTS.LANE_TOP_Y + SHEEP_CONSTANTS.LANE_BOTTOM_Y; // 45 + 815 = 860
+
+    // 1. Authoritative match scores (inverted: host's playerScore is guest's opponentScore)
+    this.state.playerScore = sync.opponentScore;
+    this.state.opponentScore = sync.playerScore;
+    this.state.isSuddenDeath = sync.isSuddenDeath;
+
+    // 2. Authoritative match winner
+    if (sync.winner !== null && this.state.winner === null) {
+      const mappedWinner: SheepSide | 'draw' =
+        sync.winner === 'player' ? 'opponent' : sync.winner === 'opponent' ? 'player' : 'draw';
+      this.state.winner = mappedWinner;
+      if (this.callbacks.onMatchEnd) {
+        this.callbacks.onMatchEnd(mappedWinner);
+      }
+    }
+
+    // 3. Reconcile each lane (Host lane i -> Guest lane 4 - i)
+    for (const hostLane of sync.lanes) {
+      const guestLaneIndex = SHEEP_CONSTANTS.NUM_LANES - 1 - hostLane.index;
+      const guestLane = this.state.lanes[guestLaneIndex];
+      if (!guestLane) continue;
+
+      // Status mapping: Host won_player -> Guest won_opponent, Host won_opponent -> Guest won_player
+      const mappedStatus: LaneStatus =
+        hostLane.status === 'won_player'
+          ? 'won_opponent'
+          : hostLane.status === 'won_opponent'
+          ? 'won_player'
+          : hostLane.status;
+
+      // If host finalized the lane but guest hasn't yet
+      if (mappedStatus !== 'active' && guestLane.status === 'active') {
+        guestLane.status = mappedStatus;
+        guestLane.clashY = null;
+        if (mappedStatus === 'won_player') {
+          if (this.callbacks.onLaneWin) this.callbacks.onLaneWin(guestLaneIndex, 'player');
+        } else if (mappedStatus === 'won_opponent') {
+          if (this.callbacks.onLaneWin) this.callbacks.onLaneWin(guestLaneIndex, 'opponent');
+        } else if (mappedStatus === 'draw') {
+          this.state.drawLanesCount++;
+          if (this.callbacks.onLaneDraw) this.callbacks.onLaneDraw(guestLaneIndex);
+        }
+      } else if (guestLane.status !== 'active') {
+        continue;
+      }
+
+      // Reconcile clash position
+      if (hostLane.clashY !== null) {
+        const targetClashY = TOTAL_Y - hostLane.clashY;
+        if (guestLane.clashY === null) {
+          guestLane.clashY = targetClashY;
+        } else {
+          guestLane.clashY += (targetClashY - guestLane.clashY) * 0.35;
+        }
+      } else {
+        guestLane.clashY = null;
+      }
+
+      // Map of sheep from Host snapshot
+      const hostSheepMap = new Map<string, { id: string; size: SheepSize; side: SheepSide; y: number }>();
+      for (const hs of hostLane.sheep) {
+        hostSheepMap.set(hs.id, hs);
+      }
+
+      // Update existing sheep with smooth interpolation
+      for (const gs of guestLane.sheep) {
+        const hs = hostSheepMap.get(gs.id);
+        if (hs) {
+          const targetY = TOTAL_Y - hs.y;
+          const diff = targetY - gs.y;
+          if (Math.abs(diff) > 50) {
+            gs.y = targetY;
+          } else {
+            gs.y += diff * 0.35;
+          }
+        }
+      }
+
+      // Add sheep present in host snapshot but missing locally
+      for (const hs of hostLane.sheep) {
+        const exists = guestLane.sheep.some(s => s.id === hs.id);
+        if (!exists) {
+          const mappedSide: SheepSide = hs.side === 'player' ? 'opponent' : 'player';
+          guestLane.sheep.push({
+            id: hs.id,
+            size: hs.size,
+            side: mappedSide,
+            laneIndex: guestLaneIndex,
+            y: TOTAL_Y - hs.y,
+            walkCycle: 0,
+            isPushing: false,
+            pushStrain: 0,
+            createdAt: now
+          });
+        }
+      }
+
+      // Cull sheep removed on host, preserving recently deployed local sheep (< 1000ms)
+      guestLane.sheep = guestLane.sheep.filter(gs => {
+        if (hostSheepMap.has(gs.id)) return true;
+        if (gs.side === 'player' && gs.createdAt && (now - gs.createdAt < 1000)) {
+          return true;
+        }
+        return false;
+      });
+
+      this.updateStartSpaceBlocked(guestLane);
     }
   }
 }
