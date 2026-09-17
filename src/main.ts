@@ -1,6 +1,7 @@
 import { GAMES_REGISTRY } from './games/registry';
 import type { GameDefinition, GameInstance, AIDifficulty, AppTheme } from './games/types';
 import { WebRTCPeer } from './network/webrtc-peer';
+import { SignalingClient } from './network/signaling';
 import { sounds } from './engine/sound';
 import { wakeLock } from './engine/wake-lock';
 
@@ -40,6 +41,8 @@ class ConsoleDashboard {
   private peer: WebRTCPeer | null = null;
   private roomCode: string | null = null;
   private invitedRoomCode: string | null = null;
+  private invitedGameTitle: string | null = null;
+  private inviteExpiredNotice: { code: string; message: string } | null = null;
   private currentAIDifficulty: AIDifficulty = 'medium';
   private currentPoolVariant: '8ball' | '9ball' = '8ball';
 
@@ -113,19 +116,49 @@ class ConsoleDashboard {
     }
   }
 
-  private checkUrlRoomParam() {
+  private async checkUrlRoomParam() {
     try {
       const params = new URLSearchParams(window.location.search);
       const room = params.get('room');
-      if (room) {
-        const clean = room.trim().toUpperCase();
-        if (/^[A-Z0-9]{6}$/.test(clean)) {
-          this.invitedRoomCode = clean;
-          this.roomCode = clean;
+      if (!room) return;
+
+      const clean = room.trim().toUpperCase();
+      if (!/^[A-Z0-9]{6}$/.test(clean)) return;
+
+      const signaling = new SignalingClient();
+      const info = await signaling.getRoomInfo(clean);
+
+      if (info.exists && info.isWaiting) {
+        this.invitedRoomCode = clean;
+        this.roomCode = clean;
+        if (info.gameId) {
+          const idx = GAMES_REGISTRY.findIndex(g => g.id === info.gameId);
+          if (idx !== -1) {
+            this.selectedGameIndex = idx;
+            this.invitedGameTitle = GAMES_REGISTRY[idx].title;
+          }
         }
+        if (info.gameVariant && info.gameId === 'pool') {
+          this.currentPoolVariant = info.gameVariant as '8ball' | '9ball';
+        }
+      } else {
+        // Host has left or room is expired
+        const url = new URL(window.location.href);
+        url.searchParams.delete('room');
+        window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
+        this.invitedRoomCode = null;
+        this.roomCode = null;
+        this.inviteExpiredNotice = {
+          code: clean,
+          message: 'The host is no longer waiting. This match invitation has expired.'
+        };
+      }
+
+      if (!this.activeGameInstance) {
+        this.renderDashboard();
       }
     } catch (e) {
-      console.warn('Could not parse room URL param:', e);
+      console.warn('Could not verify room param:', e);
     }
   }
 
@@ -172,19 +205,37 @@ class ConsoleDashboard {
       <!-- Main Showcase & Carousel Area -->
       <main class="w-full max-w-6xl px-3 sm:px-8 flex-1 flex flex-col justify-start py-4 sm:py-6">
         
+        <!-- Expired Match Notice -->
+        ${this.inviteExpiredNotice ? `
+          <div class="mb-4 p-4 rounded-2xl ${isDark ? 'bg-amber-950/40 border-amber-500/40 text-amber-200' : 'bg-amber-50 border-amber-300 text-amber-900'} border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+            <div class="flex items-center space-x-3">
+              <div class="w-10 h-10 rounded-xl ${isDark ? 'bg-amber-800/50 text-amber-300' : 'bg-amber-200 text-amber-800'} flex items-center justify-center font-bold text-lg shrink-0">
+                ⏱️
+              </div>
+              <div>
+                <div class="text-xs font-bold uppercase tracking-wider ${isDark ? 'text-amber-400' : 'text-amber-700'}">Match Invite Expired</div>
+                <div class="text-sm font-semibold">Room <span class="font-mono font-bold">${this.inviteExpiredNotice.code}</span> is no longer available. The host has left or cancelled the match.</div>
+              </div>
+            </div>
+            <button id="btn-banner-dismiss-expired" class="ps-btn-secondary px-4 py-2 rounded-xl text-xs font-semibold shrink-0">
+              Dismiss
+            </button>
+          </div>
+        ` : ''}
+
         <!-- Match Invitation Banner if invited via URL -->
         ${this.invitedRoomCode ? `
           <div class="mb-4 p-4 rounded-2xl ${isDark ? 'bg-blue-950/40 border-blue-500/40' : 'bg-blue-50 border-blue-200'} border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
             <div class="flex items-center space-x-3">
-              <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold">
+              <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold shrink-0">
                 🎮
               </div>
               <div>
                 <div class="text-xs font-bold text-blue-500 uppercase tracking-wider">Match Invitation Detected</div>
-                <div class="text-sm font-semibold">You were invited to 1v1 Room: <span class="font-mono text-blue-500 font-bold">${this.invitedRoomCode}</span></div>
+                <div class="text-sm font-semibold">You were invited to play <span class="font-bold text-blue-500">${this.invitedGameTitle || currentGame.title}</span> in 1v1 Room: <span class="font-mono text-blue-500 font-bold">${this.invitedRoomCode}</span></div>
               </div>
             </div>
-            <div class="flex items-center space-x-2">
+            <div class="flex items-center space-x-2 shrink-0">
               <button id="btn-banner-join" class="ps-btn-primary px-5 py-2 rounded-xl text-xs font-semibold">
                 Join Match Now
               </button>
@@ -497,6 +548,12 @@ class ConsoleDashboard {
       this.renderDashboard();
     });
 
+    // Expired Banner Dismiss
+    document.getElementById('btn-banner-dismiss-expired')?.addEventListener('click', () => {
+      this.inviteExpiredNotice = null;
+      this.renderDashboard();
+    });
+
     // Modal Close
     document.getElementById('btn-modal-close')?.addEventListener('click', () => {
       document.getElementById('modal-launch')?.classList.add('hidden');
@@ -618,9 +675,13 @@ class ConsoleDashboard {
       peer,
       theme: this.currentTheme,
       gameVariant: effectiveVariant,
-      onExit: () => {
+      onExit: async () => {
         wakeLock.release();
-        this.peer?.cleanup();
+        if (this.peer?.role === 'host') {
+          await this.peer?.closeRoom();
+        } else {
+          this.peer?.cleanup();
+        }
         this.roomCode = null;
         this.invitedRoomCode = null;
         this.renderDashboard();
@@ -661,9 +722,31 @@ class ConsoleDashboard {
   }
 
   private async joinOnlineMatch(code: string) {
+    const cleanCode = code.trim().toUpperCase();
     wakeLock.request();
+
+    // Verify room liveness before mounting guest waiting screen
+    const signaling = new SignalingClient();
+    const info = await signaling.getRoomInfo(cleanCode);
+    if (!info.exists || !info.isWaiting) {
+      alert('This match invitation has expired or the host is no longer waiting.');
+      this.roomCode = null;
+      this.invitedRoomCode = null;
+      this.inviteExpiredNotice = {
+        code: cleanCode,
+        message: 'The host is no longer waiting. This match invitation has expired.'
+      };
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('room')) {
+        url.searchParams.delete('room');
+        window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
+      }
+      this.renderDashboard();
+      return;
+    }
+
     this.invitedRoomCode = null;
-    this.roomCode = code;
+    this.roomCode = cleanCode;
     this.renderWaitingRoom('guest');
 
     this.peer = new WebRTCPeer({
@@ -682,7 +765,7 @@ class ConsoleDashboard {
     });
 
     try {
-      await this.peer.joinRoom(code);
+      await this.peer.joinRoom(cleanCode);
     } catch (e: any) {
       alert(`Error joining match: ${e.message}`);
       this.roomCode = null;
@@ -733,9 +816,13 @@ class ConsoleDashboard {
       </div>
     `;
 
-    document.getElementById('btn-cancel-waiting')?.addEventListener('click', () => {
+    document.getElementById('btn-cancel-waiting')?.addEventListener('click', async () => {
       wakeLock.release();
-      this.peer?.cleanup();
+      if (role === 'host') {
+        await this.peer?.closeRoom();
+      } else {
+        this.peer?.cleanup();
+      }
       this.roomCode = null;
       this.invitedRoomCode = null;
       this.renderDashboard();

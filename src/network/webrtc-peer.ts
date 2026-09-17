@@ -114,6 +114,7 @@ export class WebRTCPeer {
   private heartbeatInterval: number | null = null;
   private watchdogInterval: number | null = null;
   private boundVisibilityHandler: (() => void) | null = null;
+  private boundHostUnloadHandler: (() => void) | null = null;
   private pollingInterval: number | null = null;
   private earlyMessageQueue: NetworkMessage[] = [];
   private _events: WebRTCEvents;
@@ -177,6 +178,17 @@ export class WebRTCPeer {
     this.roomCode = await this.signaling.createRoom(gameId, this.peer.localDescription!, localIceCandidates, gameVariant);
     this.events.onRoomCreated?.(this.roomCode);
     this.events.onStatusChange?.('connecting', `Room code: ${this.roomCode}`);
+
+    // Immediately expire room if host abruptly unloads / navigates away while waiting
+    this.boundHostUnloadHandler = () => {
+      if (this.roomCode && !this.isConnected) {
+        this.signaling.expireRoom(this.roomCode);
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', this.boundHostUnloadHandler);
+      window.addEventListener('pagehide', this.boundHostUnloadHandler);
+    }
 
     this.startHostPolling();
     return this.roomCode;
@@ -370,6 +382,11 @@ export class WebRTCPeer {
     const handleOpen = () => {
       this.isConnected = true;
       this.stopPolling();
+      if (this.boundHostUnloadHandler && typeof window !== 'undefined') {
+        window.removeEventListener('beforeunload', this.boundHostUnloadHandler);
+        window.removeEventListener('pagehide', this.boundHostUnloadHandler);
+        this.boundHostUnloadHandler = null;
+      }
       this.flushEarlyMessages();
       this.startHeartbeat();
       this.notifyHealth();
@@ -470,9 +487,24 @@ export class WebRTCPeer {
     }
   }
 
+  public async closeRoom(): Promise<void> {
+    const code = this.roomCode;
+    const wasHostWaiting = this.role === 'host' && !this.isConnected;
+    this.cleanup();
+    if (code && wasHostWaiting) {
+      await this.signaling.expireRoom(code);
+    }
+  }
+
   public cleanup() {
     this.stopPolling();
     this.stopHeartbeat();
+    if (this.boundHostUnloadHandler && typeof window !== 'undefined') {
+      window.removeEventListener('beforeunload', this.boundHostUnloadHandler);
+      window.removeEventListener('pagehide', this.boundHostUnloadHandler);
+      this.boundHostUnloadHandler = null;
+    }
+    const codeToExpire = (this.role === 'host' && !this.isConnected && this.roomCode) ? this.roomCode : null;
     this.earlyMessageQueue = [];
     if (this.dataChannel) {
       this.dataChannel.close();
@@ -490,5 +522,8 @@ export class WebRTCPeer {
     this.currentRtt = 0;
     this.networkQuality = 'good';
     this.isPeerVisible = true;
+    if (codeToExpire) {
+      this.signaling.expireRoom(codeToExpire);
+    }
   }
 }

@@ -73,14 +73,45 @@ export class SignalingClient {
     return await res.json();
   }
 
-  public async getRoomInfo(code: string): Promise<{ exists: boolean; gameId?: string; gameVariant?: string }> {
+  public async expireRoom(code: string): Promise<void> {
+    if (!code) return;
+    const cleanCode = code.toUpperCase();
+    const url = `${this.baseUrl}/api/room/${cleanCode}/expire`;
     try {
-      const res = await fetch(`${this.baseUrl}/api/room/${code}`);
-      if (!res.ok) return { exists: false };
-      const data = await res.json();
-      return { exists: true, gameId: data.gameId, gameVariant: data.gameVariant };
+      if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+        navigator.sendBeacon(url);
+      } else {
+        await fetch(url, { method: 'POST', keepalive: true });
+      }
     } catch {
-      return { exists: false };
+      fetch(url, { method: 'POST' }).catch(() => {});
+    }
+  }
+
+  public async getRoomInfo(code: string): Promise<{
+    exists: boolean;
+    isWaiting: boolean;
+    expired?: boolean;
+    gameId?: string;
+    gameVariant?: string;
+    error?: string;
+  }> {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/room/${code.toUpperCase()}`);
+      if (res.status === 410) {
+        return { exists: false, isWaiting: false, expired: true };
+      }
+      if (!res.ok) return { exists: false, isWaiting: false };
+      const data = await res.json();
+      return {
+        exists: !!data.exists,
+        isWaiting: !!data.isWaiting,
+        expired: !!data.expired,
+        gameId: data.gameId,
+        gameVariant: data.gameVariant
+      };
+    } catch {
+      return { exists: false, isWaiting: false };
     }
   }
 }

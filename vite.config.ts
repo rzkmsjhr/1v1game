@@ -4,18 +4,69 @@ import http from 'http';
 // In-memory room store for local development preview
 interface RoomData {
   gameId: string;
+  gameVariant?: string | null;
   hostOffer?: any;
   guestAnswer?: any;
   hostIce: any[];
   guestIce: any[];
   createdAt: number;
+  lastHostSeen: number;
+  status: 'waiting' | 'active' | 'expired';
 }
 
 const localRooms = new Map<string, RoomData>();
 
+const GAME_TITLES: Record<string, string> = {
+  'tetris': 'Tetris 1v1 Battle',
+  'othello': 'Othello (Reversi)',
+  'pool': '8-Ball & 9-Ball Pool',
+  'snake-ladder': 'Snakes & Ladders',
+  'sling-puck': 'Fast Sling Puck',
+  'block-fit': 'Block Fit Duel',
+  'soda-dash': 'Soda Dash',
+  'sheep-fight': 'Sheep Fight'
+};
+
 function localSignalingPlugin(): Plugin {
+  const isHostWaiting = (r?: RoomData | null): boolean => {
+    if (!r) return false;
+    if (r.status === 'expired') return false;
+    if (r.guestAnswer) return false;
+    const lastSeen = r.lastHostSeen || r.createdAt || 0;
+    return (Date.now() - lastSeen) <= 12000;
+  };
+
   return {
     name: 'local-signaling',
+    transformIndexHtml(html, ctx) {
+      const url = new URL(ctx.originalUrl || ctx.path, 'http://localhost');
+      const roomCode = url.searchParams.get('room')?.trim().toUpperCase();
+      if (!roomCode) return html;
+
+      const room = localRooms.get(roomCode);
+      const waiting = isHostWaiting(room);
+
+      if (waiting && room) {
+        const gameId = room.gameId || 'tetris';
+        const gameTitle = GAME_TITLES[gameId] || '1v1 Match';
+        const title = `🎮 You're Invited to Play ${gameTitle}! (Room: ${roomCode})`;
+        const desc = `Your friend is waiting for you in 1v1 Battle Hub! Click to join room ${roomCode} and battle now.`;
+        const img = `/screenshots/${gameId}.png`;
+
+        return html
+          .replace(/<title>.*?<\/title>/, `<title>${title}</title>`)
+          .replace(/content="1v1 Battle Hub • Instant 1v1 Multiplayer Games"/g, `content="${title}"`)
+          .replace(/content="Play instant 1v1 multiplayer games directly in your browser[^"]*"/g, `content="${desc}"`)
+          .replace(/content="\/screenshots\/pool\.png"/g, `content="${img}"`);
+      } else {
+        const title = `1v1 Battle Hub • Match Invitation Expired`;
+        const desc = `Room ${roomCode} has expired or the host is no longer waiting. Visit the hub to start a new game!`;
+        return html
+          .replace(/<title>.*?<\/title>/, `<title>${title}</title>`)
+          .replace(/content="1v1 Battle Hub • Instant 1v1 Multiplayer Games"/g, `content="${title}"`)
+          .replace(/content="Play instant 1v1 multiplayer games directly in your browser[^"]*"/g, `content="${desc}"`);
+      }
+    },
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         if (!req.url?.startsWith('/api/room')) {
@@ -27,7 +78,7 @@ function localSignalingPlugin(): Plugin {
 
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
         if (req.method === 'OPTIONS') {
@@ -62,29 +113,54 @@ function localSignalingPlugin(): Plugin {
         if (req.method === 'POST' && pathParts[0] === 'create') {
           const body = await readBody();
           const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+          const curNow = Date.now();
           localRooms.set(code, {
             gameId: body.gameId || 'tetris',
             gameVariant: body.gameVariant || null,
             hostOffer: body.offer,
             hostIce: body.ice || [],
             guestIce: [],
-            createdAt: Date.now()
+            createdAt: curNow,
+            lastHostSeen: curNow,
+            status: 'waiting'
           });
           res.statusCode = 200;
           return res.end(JSON.stringify({ success: true, code, gameId: body.gameId || 'tetris', gameVariant: body.gameVariant || null }));
         }
 
         const roomCode = pathParts[0]?.toUpperCase();
-        if (!roomCode || !localRooms.has(roomCode)) {
-          res.statusCode = 404;
-          return res.end(JSON.stringify({ error: 'Room not found or expired' }));
+        if (!roomCode) {
+          res.statusCode = 400;
+          return res.end(JSON.stringify({ error: 'Room code missing' }));
+        }
+
+        // POST /api/room/:code/expire or DELETE /api/room/:code
+        if ((req.method === 'POST' && pathParts[1] === 'expire') || req.method === 'DELETE') {
+          localRooms.delete(roomCode);
+          res.statusCode = 200;
+          return res.end(JSON.stringify({ success: true, expired: true }));
+        }
+
+        if (!localRooms.has(roomCode)) {
+          res.statusCode = 410;
+          return res.end(JSON.stringify({ error: 'Room not found or expired', exists: false, isWaiting: false, expired: true }));
         }
 
         const room = localRooms.get(roomCode)!;
 
         // POST /api/room/:code/join
         if (req.method === 'POST' && pathParts[1] === 'join') {
+          if (!isHostWaiting(room)) {
+            res.statusCode = 410;
+            return res.end(JSON.stringify({ error: 'Host is no longer waiting. This match invitation has expired.' }));
+          }
+          if (room.guestAnswer) {
+            res.statusCode = 409;
+            return res.end(JSON.stringify({ error: 'Match is already full or in progress.' }));
+          }
+
           const body = await readBody();
+          room.status = 'active';
           room.guestAnswer = body.answer;
           if (body.ice) room.guestIce.push(...body.ice);
           res.statusCode = 200;
@@ -103,6 +179,7 @@ function localSignalingPlugin(): Plugin {
           const role = body.role; // 'host' | 'guest'
           if (role === 'host' && body.candidate) {
             room.hostIce.push(body.candidate);
+            room.lastHostSeen = Date.now();
           } else if (role === 'guest' && body.candidate) {
             room.guestIce.push(body.candidate);
           }
@@ -114,6 +191,7 @@ function localSignalingPlugin(): Plugin {
         if (req.method === 'GET' && pathParts[1] === 'poll') {
           const role = url.searchParams.get('role');
           if (role === 'host') {
+            room.lastHostSeen = Date.now();
             return res.end(JSON.stringify({
               gameId: room.gameId,
               gameVariant: room.gameVariant || null,
@@ -121,6 +199,12 @@ function localSignalingPlugin(): Plugin {
               guestIce: room.guestIce
             }));
           } else {
+            // Guest polling: check if host stopped waiting
+            if (room.status === 'waiting' && !isHostWaiting(room)) {
+              localRooms.delete(roomCode);
+              res.statusCode = 410;
+              return res.end(JSON.stringify({ error: 'Host is no longer waiting. Room has expired.' }));
+            }
             return res.end(JSON.stringify({
               gameId: room.gameId,
               gameVariant: room.gameVariant || null,
@@ -131,9 +215,23 @@ function localSignalingPlugin(): Plugin {
         }
 
         // GET /api/room/:code
-        if (req.method === 'GET') {
+        if (req.method === 'GET' && pathParts.length === 1) {
+          const waiting = isHostWaiting(room);
+          if (!waiting) {
+            res.statusCode = 410;
+            return res.end(JSON.stringify({
+              exists: false,
+              isWaiting: false,
+              expired: true,
+              gameId: room.gameId,
+              error: 'Host is no longer waiting. Room has expired.'
+            }));
+          }
+
           return res.end(JSON.stringify({
             exists: true,
+            isWaiting: true,
+            expired: false,
             gameId: room.gameId,
             gameVariant: room.gameVariant || null,
             hasOffer: !!room.hostOffer,
