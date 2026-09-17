@@ -183,10 +183,10 @@ export class WaterSortGame implements GameInstance {
 
   private mount() {
     this.container.innerHTML = `
-      <div id="water-game-root" class="w-full max-w-lg min-h-full flex flex-col justify-between items-center py-1 sm:py-2 px-1.5 sm:px-3 select-none relative font-sans">
+      <div id="water-game-root" class="w-full max-w-lg min-h-full flex flex-col justify-between items-center py-3 sm:py-5 px-3 sm:px-5 select-none relative font-sans">
         
         <!-- Top Bar: Exit, Sound, Status -->
-        <header class="w-full flex items-center justify-between py-1 px-1 mb-0.5">
+        <header class="w-full flex items-center justify-between py-2 px-1 mb-3 sm:mb-4">
           <button id="water-btn-exit" class="px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center space-x-1 shadow-sm ps-btn-secondary">
             <span>← Exit</span>
           </button>
@@ -202,15 +202,15 @@ export class WaterSortGame implements GameInstance {
         </header>
 
         <!-- 10-Color Capsule Ribbon (Fits mobile width with zero scrollbar) -->
-        <div class="w-full max-w-sm py-1 mb-1">
+        <div class="w-full max-w-sm py-2 mb-3 sm:mb-4">
           <div id="water-color-ribbon" class="flex items-center justify-between px-0.5">
             <!-- Rendered dynamically -->
           </div>
         </div>
 
         <!-- Central Big Mixing Bowl (Single Color Extractor) -->
-        <div class="w-full flex flex-col items-center justify-center my-0.5 sm:my-1">
-          <div class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5 flex items-center space-x-1">
+        <div class="w-full flex flex-col items-center justify-center my-2 sm:my-4">
+          <div class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center space-x-1">
             <span>🥣 COLOR MIXING BOWL (3 UNITS TO CLEAR)</span>
           </div>
           <div id="water-reservoir-container" class="cursor-pointer transition-transform duration-200 hover:scale-105 active:scale-95">
@@ -219,14 +219,14 @@ export class WaterSortGame implements GameInstance {
         </div>
 
         <!-- 10 Test Tubes Grid (2 Rows of 5 Tubes) -->
-        <div class="w-full flex-1 flex flex-col justify-center items-center my-1">
-          <div id="water-tubes-container" class="w-full flex flex-col space-y-1.5 sm:space-y-2.5">
+        <div class="w-full flex-1 flex flex-col justify-center items-center my-3 sm:my-5">
+          <div id="water-tubes-container" class="w-full flex flex-col space-y-3 sm:space-y-5">
             <!-- Rendered dynamically: Row 1 (5 tubes) & Row 2 (5 tubes) -->
           </div>
         </div>
 
         <!-- Bottom Action Bar: Undo, Hint, Reset -->
-        <footer class="w-full max-w-sm flex items-center justify-between space-x-2 py-1.5 px-1 mt-0.5">
+        <footer class="w-full max-w-sm flex items-center justify-between space-x-3 py-2.5 px-2 mt-3 sm:mt-4">
           <button id="water-btn-undo" class="flex-1 py-2 sm:py-2.5 rounded-xl text-xs font-bold ps-btn-secondary flex items-center justify-center space-x-1 shadow-sm transition-all disabled:opacity-40">
             <span>↩️ Undo</span>
           </button>
