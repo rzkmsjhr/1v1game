@@ -10,36 +10,52 @@ export class SheepFightRenderer {
     this.ctx = ctx;
   }
 
-  public render(state: SheepFightState, dt: number = 0.016) {
+  public getLanesTotalWidth(vw: number = SHEEP_CONSTANTS.VIEWPORT_WIDTH): number {
+    return Math.min(430, Math.max(360, vw - 50));
+  }
+
+  public getLaneWidth(vw: number = SHEEP_CONSTANTS.VIEWPORT_WIDTH): number {
+    return this.getLanesTotalWidth(vw) / SHEEP_CONSTANTS.NUM_LANES;
+  }
+
+  public getLaneMarginX(vw: number = SHEEP_CONSTANTS.VIEWPORT_WIDTH): number {
+    return Math.round((vw - this.getLanesTotalWidth(vw)) / 2);
+  }
+
+  public render(state: SheepFightState, dt: number = 0.016, viewportWidth: number = SHEEP_CONSTANTS.VIEWPORT_WIDTH) {
     this.animTimer += dt;
     const ctx = this.ctx;
-    const w = SHEEP_CONSTANTS.VIEWPORT_WIDTH;
+    const vw = viewportWidth;
     const h = SHEEP_CONSTANTS.VIEWPORT_HEIGHT;
+
+    const lanesTotalW = this.getLanesTotalWidth(vw);
+    const laneW = lanesTotalW / SHEEP_CONSTANTS.NUM_LANES;
+    const laneMarginX = this.getLaneMarginX(vw);
 
     ctx.save();
     ctx.fillStyle = '#064e3b';
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(0, 0, vw, h);
 
     // 1. Draw 5 Pasture Lanes (Requirement 1: Alternating dark/light green grass, thin dirt separators)
-    this.renderPastureLanes();
+    this.renderPastureLanes(vw, laneMarginX, laneW, lanesTotalW);
 
-    // 2. Draw Sideline Pasture Decorations (Rustic Fence, Wildflowers, Bushes, Bunting, Fauna)
-    this.renderPastureSidelines();
+    // 2. Draw Sideline Pasture Decorations (Fences, Farm Trees, Rocks, Wildflowers, Bushes, Bunting, Fauna)
+    this.renderPastureSidelines(vw, laneMarginX, laneW, lanesTotalW);
 
     // 3. Draw Start Spaces (Deployment Zones) & Clearance Indicators
-    this.renderStartSpaces(state);
+    this.renderStartSpaces(state, laneMarginX, laneW);
 
-    // 3. Draw All Active Sheep
-    this.renderSheepEntities(state);
+    // 4. Draw All Active Sheep
+    this.renderSheepEntities(state, laneMarginX, laneW);
 
-    // 4. Draw Clash Sparks & Live Strength Badges
-    this.renderClashEffectsAndBadges(state);
+    // 5. Draw Clash Sparks & Live Strength Badges
+    this.renderClashEffectsAndBadges(state, laneMarginX, laneW);
 
-    // 5. Draw Lane Completed / Draw Barricades
-    this.renderLaneOverlays(state);
+    // 6. Draw Lane Completed / Draw Barricades
+    this.renderLaneOverlays(state, laneMarginX, laneW, lanesTotalW);
 
-    // 6. Draw Goal Headers & Sudden Death Alert
-    this.renderFieldHeaders(state);
+    // 7. Draw Goal Headers & Sudden Death Alert
+    this.renderFieldHeaders(state, vw);
 
     ctx.restore();
   }
@@ -48,20 +64,19 @@ export class SheepFightRenderer {
    * REQUIREMENT 1: 5 lanes, all green grass view, 1 lane dark green, 1 lane light green,
    * separated with thin line of dirt color
    */
-  private renderPastureLanes() {
+  private renderPastureLanes(vw: number, laneMarginX: number, laneW: number, lanesTotalW: number) {
     const ctx = this.ctx;
     const numLanes = SHEEP_CONSTANTS.NUM_LANES;
-    const laneW = (SHEEP_CONSTANTS.VIEWPORT_WIDTH - 2 * SHEEP_CONSTANTS.LANE_MARGIN_X) / numLanes;
     const topY = SHEEP_CONSTANTS.LANE_TOP_Y;
     const bottomY = SHEEP_CONSTANTS.LANE_BOTTOM_Y;
     const laneH = bottomY - topY;
 
-    // Background base
+    // Background base across entire viewport
     ctx.fillStyle = '#064e3b';
-    ctx.fillRect(0, 0, SHEEP_CONSTANTS.VIEWPORT_WIDTH, SHEEP_CONSTANTS.VIEWPORT_HEIGHT);
+    ctx.fillRect(0, 0, vw, SHEEP_CONSTANTS.VIEWPORT_HEIGHT);
 
     for (let i = 0; i < numLanes; i++) {
-      const lx = SHEEP_CONSTANTS.LANE_MARGIN_X + i * laneW;
+      const lx = laneMarginX + i * laneW;
       const isDark = (i % 2 === 0);
 
       // Grass base color
@@ -89,7 +104,7 @@ export class SheepFightRenderer {
     // Outer Borders
     ctx.strokeStyle = SHEEP_CONSTANTS.COLORS.DIRT_SEPARATOR;
     ctx.lineWidth = 3;
-    ctx.strokeRect(SHEEP_CONSTANTS.LANE_MARGIN_X, topY, numLanes * laneW, laneH);
+    ctx.strokeRect(laneMarginX, topY, lanesTotalW, laneH);
 
     // Center Midfield Line (Dotted white)
     const midY = (topY + bottomY) / 2;
@@ -97,8 +112,8 @@ export class SheepFightRenderer {
     ctx.lineWidth = 2;
     ctx.setLineDash([8, 8]);
     ctx.beginPath();
-    ctx.moveTo(SHEEP_CONSTANTS.LANE_MARGIN_X, midY);
-    ctx.lineTo(SHEEP_CONSTANTS.VIEWPORT_WIDTH - SHEEP_CONSTANTS.LANE_MARGIN_X, midY);
+    ctx.moveTo(laneMarginX, midY);
+    ctx.lineTo(laneMarginX + lanesTotalW, midY);
     ctx.stroke();
     ctx.setLineDash([]);
   }
@@ -153,44 +168,88 @@ export class SheepFightRenderer {
   /**
    * Renders decorative pasture sidelines:
    * Rustic wooden paddock fence, hanging festive bunting, lush berry bushes, blooming wildflowers,
-   * animated perched songbird, and fluttering butterfly.
+   * natural orchard trees, mossy field stones, animated perched songbird, and fluttering butterfly.
    */
-  private renderPastureSidelines() {
+  private renderPastureSidelines(vw: number, laneMarginX: number, _laneW: number, lanesTotalW: number) {
     const ctx = this.ctx;
     const topY = SHEEP_CONSTANTS.LANE_TOP_Y;
     const bottomY = SHEEP_CONSTANTS.LANE_BOTTOM_Y;
-    const leftFenceX = 15;
-    const rightFenceX = SHEEP_CONSTANTS.VIEWPORT_WIDTH - 15;
+    const leftFenceX = Math.max(12, laneMarginX - 12);
+    const rightFenceX = Math.min(vw - 12, laneMarginX + lanesTotalW + 12);
 
-    // 1. Lush Sideline Grass Bases (left: 0..30, right: 430..460)
+    // 1. Lush Sideline Grass Bases (covers full left margin 0..laneMarginX and right margin)
     ctx.fillStyle = '#0f5132';
-    ctx.fillRect(0, topY, SHEEP_CONSTANTS.LANE_MARGIN_X, bottomY - topY);
-    ctx.fillRect(rightFenceX - 15, topY, SHEEP_CONSTANTS.LANE_MARGIN_X, bottomY - topY);
+    ctx.fillRect(0, topY, laneMarginX, bottomY - topY);
+    ctx.fillRect(laneMarginX + lanesTotalW, topY, vw - (laneMarginX + lanesTotalW), bottomY - topY);
 
-    // Subtle edge grass blades
-    ctx.fillStyle = '#198754';
-    for (let y = topY + 10; y < bottomY; y += 24) {
-      // Left edge tufts
-      ctx.fillRect(2, y, 3, 4);
-      ctx.fillRect(25, y + 12, 3, 3);
-      // Right edge tufts
-      ctx.fillRect(SHEEP_CONSTANTS.VIEWPORT_WIDTH - 28, y + 6, 3, 3);
-      ctx.fillRect(SHEEP_CONSTANTS.VIEWPORT_WIDTH - 5, y + 18, 3, 4);
+    // Mowed lawn shade stripes
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.035)';
+    for (let sy = topY; sy < bottomY; sy += 36) {
+      ctx.fillRect(0, sy, laneMarginX, 18);
+      ctx.fillRect(laneMarginX + lanesTotalW, sy, vw - (laneMarginX + lanesTotalW), 18);
     }
 
-    // 2. Bushes along margins
+    // Dirt verge trim next to the active lanes
+    ctx.fillStyle = 'rgba(120, 53, 15, 0.25)';
+    ctx.fillRect(laneMarginX - 3, topY, 3, bottomY - topY);
+    ctx.fillRect(laneMarginX + lanesTotalW, topY, 3, bottomY - topY);
+
+    // Subtle edge grass tufts
+    ctx.fillStyle = '#198754';
+    for (let y = topY + 10; y < bottomY; y += 28) {
+      ctx.fillRect(2, y, 3, 4);
+      if (laneMarginX > 16) ctx.fillRect(laneMarginX - 6, y + 14, 3, 3);
+      ctx.fillRect(vw - 5, y + 18, 3, 4);
+      if (laneMarginX > 16) ctx.fillRect(laneMarginX + lanesTotalW + 3, y + 8, 3, 3);
+    }
+
+    // 2. Natural Farm Trees in the wider margin areas
+    if (laneMarginX >= 36) {
+      const leftTreeX = Math.round(laneMarginX * 0.38);
+      const rightTreeX = Math.round(vw - laneMarginX * 0.38);
+      const treeRadius = Math.min(22, Math.max(13, laneMarginX * 0.32));
+
+      // Left Trees
+      this.drawFarmTree(ctx, leftTreeX, 110, treeRadius);
+      this.drawFarmTree(ctx, leftTreeX + 3, 330, treeRadius * 1.1);
+      this.drawFarmTree(ctx, leftTreeX - 2, 540, treeRadius);
+      this.drawFarmTree(ctx, leftTreeX + 2, 730, treeRadius * 0.95);
+
+      // Right Trees
+      this.drawFarmTree(ctx, rightTreeX, 150, treeRadius * 1.05);
+      this.drawFarmTree(ctx, rightTreeX - 3, 390, treeRadius);
+      this.drawFarmTree(ctx, rightTreeX + 2, 630, treeRadius * 1.1);
+
+      // Mossy field stones
+      this.drawFieldStone(ctx, Math.round(laneMarginX * 0.5), 220, 7);
+      this.drawFieldStone(ctx, Math.round(laneMarginX * 0.45), 640, 8);
+      this.drawFieldStone(ctx, Math.round(vw - laneMarginX * 0.5), 270, 7.5);
+      this.drawFieldStone(ctx, Math.round(vw - laneMarginX * 0.45), 510, 8);
+    }
+
+    // 3. Dense Berry Bushes along margins
     for (const b of SheepFightRenderer.BUSH_DATA) {
-      const bx = b.side === 'left' ? 7 : SHEEP_CONSTANTS.VIEWPORT_WIDTH - 7;
+      let bx: number;
+      if (b.side === 'left') {
+        bx = laneMarginX >= 36 ? Math.round(leftFenceX - 8) : Math.round(laneMarginX * 0.35);
+      } else {
+        bx = laneMarginX >= 36 ? Math.round(rightFenceX + 8) : Math.round(vw - laneMarginX * 0.35);
+      }
       this.drawSidelineBush(ctx, bx, b.y, b.size, b.hasBerries);
     }
 
-    // 3. Blooming Wildflowers
+    // 4. Blooming Wildflowers
     for (const f of SheepFightRenderer.FLOWER_DATA) {
-      const fx = f.side === 'left' ? f.offsetX : SHEEP_CONSTANTS.VIEWPORT_WIDTH - 30 + f.offsetX;
+      let fx: number;
+      if (f.side === 'left') {
+        fx = laneMarginX >= 36 ? Math.round(f.offsetX * (laneMarginX / 30)) : f.offsetX;
+      } else {
+        fx = laneMarginX >= 36 ? Math.round(vw - laneMarginX + f.offsetX * (laneMarginX / 30)) : vw - 30 + f.offsetX;
+      }
       this.drawWildflower(ctx, fx, f.y, f.type);
     }
 
-    // 4. Wooden Paddock Fence with Bunting & Posts
+    // 5. Wooden Paddock Fence with Bunting & Posts
     const postYList: number[] = [];
     for (let py = topY + 20; py <= bottomY - 15; py += 55) {
       postYList.push(py);
@@ -216,11 +275,106 @@ export class SheepFightRenderer {
       this.drawFencePost(ctx, rightFenceX, py);
     }
 
-    // 5. Perched singing songbird on left fence
+    // 6. Perched singing songbird on left fence
     this.drawPerchedBird(ctx, leftFenceX, postYList[4] || 285);
 
-    // 6. Fluttering butterfly on right sideline
+    // 7. Fluttering butterfly on right sideline
     this.drawButterfly(ctx, rightFenceX, 490);
+  }
+
+  private drawFarmTree(ctx: CanvasRenderingContext2D, tx: number, ty: number, radius: number) {
+    ctx.save();
+    // Tree ground shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    ctx.beginPath();
+    ctx.ellipse(tx, ty + radius * 0.9, radius * 1.1, radius * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Wooden trunk
+    ctx.fillStyle = '#451a03';
+    ctx.beginPath();
+    ctx.moveTo(tx - radius * 0.2, ty);
+    ctx.lineTo(tx - radius * 0.35, ty + radius * 0.85);
+    ctx.lineTo(tx + radius * 0.35, ty + radius * 0.85);
+    ctx.lineTo(tx + radius * 0.2, ty);
+    ctx.closePath();
+    ctx.fill();
+
+    // Trunk wood highlight
+    ctx.fillStyle = '#78350f';
+    ctx.fillRect(tx - radius * 0.1, ty + 2, radius * 0.2, radius * 0.7);
+
+    // Deep foliage base
+    ctx.fillStyle = '#14532d';
+    ctx.beginPath();
+    ctx.arc(tx, ty - 2, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Midtone leafy puffs
+    ctx.fillStyle = '#15803d';
+    ctx.beginPath();
+    ctx.arc(tx - radius * 0.4, ty - radius * 0.2, radius * 0.68, 0, Math.PI * 2);
+    ctx.arc(tx + radius * 0.4, ty - radius * 0.2, radius * 0.68, 0, Math.PI * 2);
+    ctx.arc(tx, ty - radius * 0.5, radius * 0.72, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Highlight canopy puffs
+    ctx.fillStyle = '#22c55e';
+    ctx.beginPath();
+    ctx.arc(tx - radius * 0.2, ty - radius * 0.45, radius * 0.48, 0, Math.PI * 2);
+    ctx.arc(tx + radius * 0.2, ty - radius * 0.4, radius * 0.45, 0, Math.PI * 2);
+    ctx.arc(tx, ty - radius * 0.2, radius * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Red orchard apples / fruit dots
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(tx - radius * 0.45, ty - radius * 0.1, 2, 0, Math.PI * 2);
+    ctx.arc(tx + radius * 0.35, ty - radius * 0.3, 2, 0, Math.PI * 2);
+    ctx.arc(tx - radius * 0.1, ty - radius * 0.5, 1.8, 0, Math.PI * 2);
+    ctx.arc(tx + radius * 0.2, ty + radius * 0.1, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tiny apple highlights
+    ctx.fillStyle = '#fef08a';
+    ctx.fillRect(tx - radius * 0.45 - 0.5, ty - radius * 0.1 - 1, 0.9, 0.9);
+    ctx.fillRect(tx + radius * 0.35 - 0.5, ty - radius * 0.3 - 1, 0.9, 0.9);
+    ctx.restore();
+  }
+
+  private drawFieldStone(ctx: CanvasRenderingContext2D, sx: number, sy: number, size: number) {
+    ctx.save();
+    // Drop shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.beginPath();
+    ctx.ellipse(sx, sy + 2, size * 1.1, size * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Main boulder body
+    ctx.fillStyle = '#475569';
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, size, size * 0.7, -0.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Top highlight bevel
+    ctx.fillStyle = '#64748b';
+    ctx.beginPath();
+    ctx.ellipse(sx - size * 0.15, sy - size * 0.2, size * 0.65, size * 0.4, -0.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Green moss patch on top
+    ctx.fillStyle = '#22c55e';
+    ctx.beginPath();
+    ctx.arc(sx + size * 0.25, sy - size * 0.25, size * 0.3, 0, Math.PI * 2);
+    ctx.arc(sx - size * 0.2, sy - size * 0.3, size * 0.25, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Small companion pebble
+    ctx.fillStyle = '#334155';
+    ctx.beginPath();
+    ctx.arc(sx + size * 0.9, sy + size * 0.3, size * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   private drawFenceRails(ctx: CanvasRenderingContext2D, px: number, y1: number, y2: number) {
@@ -507,17 +661,16 @@ export class SheepFightRenderer {
   /**
    * REQUIREMENT 3: Deployment "Start" space visualization
    */
-  private renderStartSpaces(state: SheepFightState) {
+  private renderStartSpaces(state: SheepFightState, laneMarginX: number, laneW: number) {
     const ctx = this.ctx;
     const numLanes = SHEEP_CONSTANTS.NUM_LANES;
-    const laneW = (SHEEP_CONSTANTS.VIEWPORT_WIDTH - 2 * SHEEP_CONSTANTS.LANE_MARGIN_X) / numLanes;
     const topY = SHEEP_CONSTANTS.LANE_TOP_Y;
     const bottomY = SHEEP_CONSTANTS.LANE_BOTTOM_Y;
     const depth = SHEEP_CONSTANTS.START_SPACE_DEPTH;
 
     for (let i = 0; i < numLanes; i++) {
       const lane = state.lanes[i];
-      const lx = SHEEP_CONSTANTS.LANE_MARGIN_X + i * laneW;
+      const lx = laneMarginX + i * laneW;
       const cx = lx + laneW / 2;
 
       if (lane.status !== 'active') continue;
@@ -597,14 +750,13 @@ export class SheepFightRenderer {
   /**
    * Renders all active sheep entities in top-down perspective
    */
-  private renderSheepEntities(state: SheepFightState) {
+  private renderSheepEntities(state: SheepFightState, laneMarginX: number, laneW: number) {
     const ctx = this.ctx;
     const numLanes = SHEEP_CONSTANTS.NUM_LANES;
-    const laneW = (SHEEP_CONSTANTS.VIEWPORT_WIDTH - 2 * SHEEP_CONSTANTS.LANE_MARGIN_X) / numLanes;
 
     for (let i = 0; i < numLanes; i++) {
       const lane = state.lanes[i];
-      const cx = SHEEP_CONSTANTS.LANE_MARGIN_X + i * laneW + laneW / 2;
+      const cx = laneMarginX + i * laneW + laneW / 2;
 
       // Draw all sheep in lane
       for (const s of lane.sheep) {
@@ -627,58 +779,59 @@ export class SheepFightRenderer {
   /**
    * Renders clashing headbutt sparks, dust, and dynamic force badges
    */
-  private renderClashEffectsAndBadges(state: SheepFightState) {
+  private renderClashEffectsAndBadges(state: SheepFightState, laneMarginX: number, laneW: number) {
     const ctx = this.ctx;
     const numLanes = SHEEP_CONSTANTS.NUM_LANES;
-    const laneW = (SHEEP_CONSTANTS.VIEWPORT_WIDTH - 2 * SHEEP_CONSTANTS.LANE_MARGIN_X) / numLanes;
 
     for (let i = 0; i < numLanes; i++) {
       const lane = state.lanes[i];
       if (lane.status !== 'active' || lane.clashY === null) continue;
 
-      const cx = SHEEP_CONSTANTS.LANE_MARGIN_X + i * laneW + laneW / 2;
+      const cx = laneMarginX + i * laneW + laneW / 2;
       const cy = lane.clashY;
 
       // 1. Clash Sparks & Starburst
       ctx.save();
       const sparkCount = 8;
       const radius = 12 + Math.sin(this.animTimer * 8) * 3;
+      for (let s = 0; s < sparkCount; s++) {
+        const ang = (s * Math.PI * 2) / sparkCount + this.animTimer * 2;
+        const sx = cx + Math.cos(ang) * radius;
+        const sy = cy + Math.sin(ang) * (radius * 0.6);
+        ctx.fillStyle = s % 2 === 0 ? '#fde047' : '#f97316';
+        ctx.beginPath();
+        ctx.arc(sx, sy, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
-      ctx.fillStyle = '#fbbf24';
+      // Central clash flash star
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
       ctx.beginPath();
       ctx.arc(cx, cy, 5, 0, Math.PI * 2);
       ctx.fill();
-
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 2;
-      for (let s = 0; s < sparkCount; s++) {
-        const a = (s / sparkCount) * Math.PI * 2 + this.animTimer * 2;
-        ctx.beginPath();
-        ctx.moveTo(cx + Math.cos(a) * 3, cy + Math.sin(a) * 3);
-        ctx.lineTo(cx + Math.cos(a) * radius, cy + Math.sin(a) * radius);
-        ctx.stroke();
-      }
       ctx.restore();
 
-      // 2. Dynamic Live Tug-of-War Strength Pill Badge
+      // 2. LIVE STRENGTH FORCES BADGE (e.g. "3x vs 2x")
       ctx.save();
       const fP = lane.playerStrength;
       const fO = lane.opponentStrength;
-      const badgeW = 64;
-      const badgeH = 18;
-      const badgeX = cx - badgeW / 2;
-      // Position badge floating just above clash
-      const badgeY = cy - 28;
 
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-      ctx.strokeStyle = fP > fO ? '#3b82f6' : fO > fP ? '#ef4444' : '#94a3b8';
+      const badgeW = 76;
+      const badgeH = 20;
+      const badgeX = cx - badgeW / 2;
+      const badgeY = cy - 30;
+
+      // Pill Background
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+      ctx.strokeStyle = fP > fO ? '#3b82f6' : fO > fP ? '#ef4444' : '#eab308';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 9);
+      ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 10);
       ctx.fill();
       ctx.stroke();
 
-      ctx.font = 'bold 9.5px monospace';
+      // Text: Player vs Opponent
+      ctx.font = '900 9px system-ui';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
@@ -686,13 +839,13 @@ export class SheepFightRenderer {
       ctx.fillStyle = '#60a5fa';
       ctx.fillText(`${fP}x`, badgeX + 15, badgeY + badgeH / 2);
 
-      // VS indicator
+      // VS Separator
       ctx.fillStyle = '#94a3b8';
-      ctx.font = '8px system-ui';
-      ctx.fillText('vs', cx, badgeY + badgeH / 2);
+      ctx.font = '700 7px system-ui';
+      ctx.fillText('VS', badgeX + badgeW / 2, badgeY + badgeH / 2);
 
       // Opponent force (Red)
-      ctx.font = 'bold 9.5px monospace';
+      ctx.font = '900 9px system-ui';
       ctx.fillStyle = '#f87171';
       ctx.fillText(`${fO}x`, badgeX + badgeW - 15, badgeY + badgeH / 2);
 
@@ -703,10 +856,9 @@ export class SheepFightRenderer {
   /**
    * REQUIREMENT 3 & 4: Barricades for DRAW lanes and victory flags for won lanes
    */
-  private renderLaneOverlays(state: SheepFightState) {
+  private renderLaneOverlays(state: SheepFightState, laneMarginX: number, laneW: number, _lanesTotalW: number) {
     const ctx = this.ctx;
     const numLanes = SHEEP_CONSTANTS.NUM_LANES;
-    const laneW = (SHEEP_CONSTANTS.VIEWPORT_WIDTH - 2 * SHEEP_CONSTANTS.LANE_MARGIN_X) / numLanes;
     const topY = SHEEP_CONSTANTS.LANE_TOP_Y;
     const bottomY = SHEEP_CONSTANTS.LANE_BOTTOM_Y;
     const laneH = bottomY - topY;
@@ -715,7 +867,7 @@ export class SheepFightRenderer {
       const lane = state.lanes[i];
       if (lane.status === 'active') continue;
 
-      const lx = SHEEP_CONSTANTS.LANE_MARGIN_X + i * laneW;
+      const lx = laneMarginX + i * laneW;
       const cx = lx + laneW / 2;
       const cy = (topY + bottomY) / 2;
 
@@ -807,9 +959,9 @@ export class SheepFightRenderer {
   /**
    * Renders Field Headers: Goal lines, scores, and Sudden Death alert
    */
-  private renderFieldHeaders(state: SheepFightState) {
+  private renderFieldHeaders(state: SheepFightState, vw: number) {
     const ctx = this.ctx;
-    const w = SHEEP_CONSTANTS.VIEWPORT_WIDTH;
+    const w = vw;
 
     // 1. Top Opponent Goal Bar
     ctx.fillStyle = SHEEP_CONSTANTS.COLORS.OPPONENT_GOAL;
@@ -840,7 +992,7 @@ export class SheepFightRenderer {
     if (state.isSuddenDeath && state.winner === null) {
       ctx.save();
       const pulse = (Math.sin(this.animTimer * 8) + 1) * 0.5;
-      const bannerW = 380;
+      const bannerW = Math.min(380, w - 40);
       const bannerH = 34;
       const bx = w / 2 - bannerW / 2;
       const by = (SHEEP_CONSTANTS.LANE_TOP_Y + SHEEP_CONSTANTS.LANE_BOTTOM_Y) / 2 - bannerH / 2;

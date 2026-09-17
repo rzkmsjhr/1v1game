@@ -17,6 +17,7 @@ export class SheepFightGame implements GameInstance {
   private ctx!: CanvasRenderingContext2D;
   private animFrameId: number | null = null;
   private lastTime: number = 0;
+  private currentVirtualWidth: number = SHEEP_CONSTANTS.VIEWPORT_WIDTH;
 
   // Sound Synth
   private audioCtx: AudioContext | null = null;
@@ -73,7 +74,7 @@ export class SheepFightGame implements GameInstance {
       (isDark ? 'bg-[#080c14]' : 'bg-slate-100');
 
     this.container.innerHTML = `
-      <div class="relative w-full max-w-[480px] h-[100dvh] max-h-[100dvh] flex flex-col justify-between overflow-hidden shadow-2xl ${
+      <div class="relative w-full max-w-[560px] sm:max-w-[620px] h-[100dvh] max-h-[100dvh] flex flex-col justify-between overflow-hidden shadow-2xl ${
         isDark ? 'bg-[#0f172a] text-white' : 'bg-white text-slate-900'
       }" style="height: 100dvh; max-height: 100dvh;">
 
@@ -111,8 +112,8 @@ export class SheepFightGame implements GameInstance {
         </div>
 
         <!-- MAIN FIELD CANVAS WRAPPER -->
-        <div class="relative flex-1 min-h-0 w-full overflow-hidden flex items-center justify-center" style="background: radial-gradient(circle at 50% 50%, #065f46 0%, #064e3b 55%, #022c22 100%);">
-          <canvas id="sf-canvas" class="cursor-pointer block touch-none select-none" style="-webkit-tap-highlight-color: transparent;"></canvas>
+        <div class="relative flex-1 min-h-0 w-full overflow-hidden flex items-center justify-center bg-[#064e3b]">
+          <canvas id="sf-canvas" class="w-full h-full cursor-pointer block touch-none select-none" style="-webkit-tap-highlight-color: transparent;"></canvas>
         </div>
 
         <!-- BOTTOM DOCK: RANDOM SHEEP QUEUE & QUICK-TAP LANE BUTTONS -->
@@ -245,19 +246,15 @@ export class SheepFightGame implements GameInstance {
 
     const parentW = parent.clientWidth;
     const parentH = parent.clientHeight;
-    const targetRatio = SHEEP_CONSTANTS.VIEWPORT_WIDTH / SHEEP_CONSTANTS.VIEWPORT_HEIGHT;
+    if (parentW <= 0 || parentH <= 0) return;
 
-    let drawW = parentW;
-    let drawH = parentW / targetRatio;
-
-    if (drawH > parentH) {
-      drawH = parentH;
-      drawW = parentH * targetRatio;
-    }
+    const vH = SHEEP_CONSTANTS.VIEWPORT_HEIGHT;
+    const vW = Math.max(460, Math.round(vH * (parentW / parentH)));
+    this.currentVirtualWidth = vW;
 
     const dpr = window.devicePixelRatio || 1;
-    const targetW = Math.round(SHEEP_CONSTANTS.VIEWPORT_WIDTH * dpr);
-    const targetH = Math.round(SHEEP_CONSTANTS.VIEWPORT_HEIGHT * dpr);
+    const targetW = Math.round(vW * dpr);
+    const targetH = Math.round(vH * dpr);
 
     // CRITICAL: NEVER reassign canvas.width or height if unchanged!
     // In HTML5 canvas, assigning .width or .height immediately clears the bitmap to blank/black!
@@ -266,24 +263,23 @@ export class SheepFightGame implements GameInstance {
       this.canvas.height = targetH;
       this.ctx.resetTransform();
       this.ctx.scale(dpr, dpr);
-      this.renderer.render(this.engine.state, 0);
+      this.renderer.render(this.engine.state, 0, this.currentVirtualWidth);
     }
 
-    const cssW = `${Math.floor(drawW)}px`;
-    const cssH = `${Math.floor(drawH)}px`;
-    if (this.canvas.style.width !== cssW) this.canvas.style.width = cssW;
-    if (this.canvas.style.height !== cssH) this.canvas.style.height = cssH;
+    if (this.canvas.style.width !== '100%') this.canvas.style.width = '100%';
+    if (this.canvas.style.height !== '100%') this.canvas.style.height = '100%';
   }
 
   private initControls() {
     // 1. Direct Canvas Tapping / Clicking
     const handleCanvasInput = (clientX: number) => {
       const rect = this.canvas.getBoundingClientRect();
-      const scaleX = SHEEP_CONSTANTS.VIEWPORT_WIDTH / rect.width;
+      const scaleX = this.currentVirtualWidth / rect.width;
       const x = (clientX - rect.left) * scaleX;
 
-      const laneW = (SHEEP_CONSTANTS.VIEWPORT_WIDTH - 2 * SHEEP_CONSTANTS.LANE_MARGIN_X) / SHEEP_CONSTANTS.NUM_LANES;
-      const laneIndex = Math.floor((x - SHEEP_CONSTANTS.LANE_MARGIN_X) / laneW);
+      const laneMarginX = this.renderer.getLaneMarginX(this.currentVirtualWidth);
+      const laneW = this.renderer.getLaneWidth(this.currentVirtualWidth);
+      const laneIndex = Math.floor((x - laneMarginX) / laneW);
 
       if (laneIndex >= 0 && laneIndex < SHEEP_CONSTANTS.NUM_LANES) {
         this.tryDeploy(laneIndex);
@@ -376,7 +372,7 @@ export class SheepFightGame implements GameInstance {
       this.engine.update(dt);
 
       // Render Field & Sheep
-      this.renderer.render(this.engine.state, dt);
+      this.renderer.render(this.engine.state, dt, this.currentVirtualWidth);
 
       // Update DOM HUD
       this.updateHUD();
