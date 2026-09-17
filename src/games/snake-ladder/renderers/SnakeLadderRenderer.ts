@@ -82,6 +82,20 @@ export function getTokenCoord(
   }
 }
 
+/**
+ * Helper to get the correct rendered coordinate for a player's token given their own position
+ * and the other player's position, ensuring correct offset when sharing a tile.
+ */
+export function getMyTokenCoord(
+  playerId: 'player' | 'opponent',
+  myPos: number,
+  otherPos: number
+): { x: number; y: number } {
+  return playerId === 'player'
+    ? getTokenCoord('player', myPos, otherPos)
+    : getTokenCoord('opponent', otherPos, myPos);
+}
+
 export class SnakeLadderRenderer {
   public renderSVG(
     board: BoardConfig,

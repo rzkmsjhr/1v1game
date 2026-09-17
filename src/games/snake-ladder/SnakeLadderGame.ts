@@ -3,7 +3,7 @@ import { GameInstance, GameSession, AppTheme } from '../types';
 import type { NetworkMessage } from '../../network/webrtc-peer';
 import { sounds } from '../../engine/sound';
 import { SnakeLadderEngine, generateBoard, getTileCoord } from './snake-ladder-engine';
-import { SnakeLadderRenderer, getSnakeBezier, evaluateCubicBezier, getTokenCoord } from './renderers/SnakeLadderRenderer';
+import { SnakeLadderRenderer, getSnakeBezier, evaluateCubicBezier, getTokenCoord, getMyTokenCoord } from './renderers/SnakeLadderRenderer';
 import { SnakeLadderAI } from './ai/snake-ladder-ai';
 import { DiceRoll, PlayerId, BoardConfig, Ladder, Snake } from './snake-ladder-types';
 
@@ -170,6 +170,7 @@ export class SnakeLadderGame implements GameInstance {
 
   // Active animation handles
   private activeHopRaf: number | null = null;
+  private activeRepositionRaf: number | null = null;
   private activeDiceInterval: number | null = null;
 
   // Cached state for zero thrashing
@@ -237,6 +238,10 @@ export class SnakeLadderGame implements GameInstance {
     if (this.activeHopRaf !== null) {
       cancelAnimationFrame(this.activeHopRaf);
       this.activeHopRaf = null;
+    }
+    if (this.activeRepositionRaf !== null) {
+      cancelAnimationFrame(this.activeRepositionRaf);
+      this.activeRepositionRaf = null;
     }
     if (this.activeDiceInterval !== null) {
       clearInterval(this.activeDiceInterval);
@@ -713,9 +718,49 @@ export class SnakeLadderGame implements GameInstance {
     });
   }
 
+  private smoothRepositionToken(
+    playerId: PlayerId,
+    fromCoord: { x: number; y: number },
+    toCoord: { x: number; y: number },
+    durationMs: number = 180
+  ): Promise<void> {
+    return new Promise(resolve => {
+      if (!this.tokenPlayerEl || !this.tokenOpponentEl) {
+        this.cacheTokenElements();
+      }
+      const el = playerId === 'player' ? this.tokenPlayerEl : this.tokenOpponentEl;
+      if (!el) {
+        resolve();
+        return;
+      }
+      if (this.activeRepositionRaf !== null) {
+        cancelAnimationFrame(this.activeRepositionRaf);
+        this.activeRepositionRaf = null;
+      }
+      const startTime = performance.now();
+      const step = (now: number) => {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / durationMs);
+        const ease = 1 - Math.pow(1 - progress, 2);
+        const currentX = fromCoord.x + (toCoord.x - fromCoord.x) * ease;
+        const currentY = fromCoord.y + (toCoord.y - fromCoord.y) * ease;
+        el.setAttribute('transform', `translate(${currentX.toFixed(1)}, ${currentY.toFixed(1)}) scale(1, 1)`);
+        if (progress < 1) {
+          this.activeRepositionRaf = requestAnimationFrame(step);
+        } else {
+          el.setAttribute('transform', `translate(${toCoord.x.toFixed(1)}, ${toCoord.y.toFixed(1)}) scale(1, 1)`);
+          this.activeRepositionRaf = null;
+          resolve();
+        }
+      };
+      this.activeRepositionRaf = requestAnimationFrame(step);
+    });
+  }
+
   private animateLadderClimb(
     playerId: PlayerId,
     ladder: Ladder,
+    targetCoord: { x: number; y: number },
     durationMs: number = 550
   ): Promise<void> {
     return new Promise(resolve => {
@@ -728,7 +773,7 @@ export class SnakeLadderGame implements GameInstance {
         return;
       }
       const c1 = getTileCoord(ladder.from);
-      const c2 = getTileCoord(ladder.to);
+      const c2 = targetCoord;
       const startTime = performance.now();
 
       const step = (now: number) => {
@@ -760,6 +805,7 @@ export class SnakeLadderGame implements GameInstance {
   private animateSnakeSlide(
     playerId: PlayerId,
     snake: Snake,
+    targetCoord: { x: number; y: number },
     durationMs: number = 650
   ): Promise<void> {
     return new Promise(resolve => {
@@ -773,6 +819,8 @@ export class SnakeLadderGame implements GameInstance {
       }
       const bezier = getSnakeBezier(snake);
       const startTime = performance.now();
+      const dxTarget = targetCoord.x - bezier.p3.x;
+      const dyTarget = targetCoord.y - bezier.p3.y;
 
       const step = (now: number) => {
         const elapsed = now - startTime;
@@ -782,14 +830,16 @@ export class SnakeLadderGame implements GameInstance {
           : 1 - Math.pow(-2 * progress + 2, 2) / 2;
 
         const pos = evaluateCubicBezier(bezier, ease);
+        const currentX = pos.x + dxTarget * ease;
+        const currentY = pos.y + dyTarget * ease;
         const wiggle = Math.sin(progress * Math.PI * 8) * 3;
 
-        el.setAttribute('transform', `translate(${(pos.x + wiggle).toFixed(1)}, ${pos.y.toFixed(1)}) scale(0.95, 0.95)`);
+        el.setAttribute('transform', `translate(${(currentX + wiggle).toFixed(1)}, ${currentY.toFixed(1)}) scale(0.95, 0.95)`);
 
         if (progress < 1) {
           this.activeHopRaf = requestAnimationFrame(step);
         } else {
-          el.setAttribute('transform', `translate(${bezier.p3.x.toFixed(1)}, ${bezier.p3.y.toFixed(1)}) scale(1, 1)`);
+          el.setAttribute('transform', `translate(${targetCoord.x.toFixed(1)}, ${targetCoord.y.toFixed(1)}) scale(1, 1)`);
           this.activeHopRaf = null;
           resolve();
         }
@@ -1145,14 +1195,39 @@ export class SnakeLadderGame implements GameInstance {
     const normalSteps = result.steps.filter(s => s.type === 'step' || s.type === 'bounce');
 
     let runningPos = startTile;
+    const otherPlayerId: PlayerId = playerId === 'player' ? 'opponent' : 'player';
     const otherPos = playerId === 'player' ? this.engine.opponentPos : this.engine.playerPos;
 
-    for (const st of normalSteps) {
+    // If both players started on the exact same tile, smoothly shift resting token to tile center as we depart
+    if (startTile === otherPos && normalSteps.length > 0) {
+      const otherTileCenter = getTileCoord(otherPos);
+      const otherCurrentOffset = getMyTokenCoord(otherPlayerId, otherPos, startTile);
+      this.smoothRepositionToken(otherPlayerId, otherCurrentOffset, otherTileCenter, 150);
+    }
+
+    for (let i = 0; i < normalSteps.length; i++) {
+      const st = normalSteps[i];
       const nextTile = st.tile;
+      const isLastNormalStep = i === normalSteps.length - 1;
+      const willHitLadderOrSnake = isLastNormalStep && (Boolean(result.hitLadder) || Boolean(result.hitSnake));
+
       const fromCoord = runningPos === startTile
-        ? getTokenCoord(playerId, runningPos, otherPos)
+        ? getMyTokenCoord(playerId, runningPos, otherPos)
         : getTileCoord(runningPos);
-      const toCoord = getTileCoord(nextTile);
+
+      // If this is the final landing of the turn (no ladder/snake to follow),
+      // land directly at the token's final resting coordinate (including shared-tile offset if landing with other player).
+      // Otherwise, intermediate steps pass through the tile center.
+      const toCoord = (isLastNormalStep && !willHitLadderOrSnake)
+        ? getMyTokenCoord(playerId, nextTile, otherPos)
+        : getTileCoord(nextTile);
+
+      // If landing on the same tile as the other player, smoothly shift resting player into their offset as we land
+      if (isLastNormalStep && !willHitLadderOrSnake && nextTile === otherPos) {
+        const otherTileCenter = getTileCoord(otherPos);
+        const otherNewOffset = getMyTokenCoord(otherPlayerId, otherPos, nextTile);
+        this.smoothRepositionToken(otherPlayerId, otherTileCenter, otherNewOffset, 140);
+      }
 
       await this.animateHop(playerId, fromCoord, toCoord, 120);
       sounds.playStep();
@@ -1170,7 +1245,13 @@ export class SnakeLadderGame implements GameInstance {
     if (result.hitLadder) {
       await this.sleep(180);
       sounds.playLadderClimb();
-      await this.animateLadderClimb(playerId, result.hitLadder, 550);
+      const targetCoord = getMyTokenCoord(playerId, result.hitLadder.to, otherPos);
+      if (result.hitLadder.to === otherPos) {
+        const otherTileCenter = getTileCoord(otherPos);
+        const otherNewOffset = getMyTokenCoord(otherPlayerId, otherPos, result.hitLadder.to);
+        this.smoothRepositionToken(otherPlayerId, otherTileCenter, otherNewOffset, 200);
+      }
+      await this.animateLadderClimb(playerId, result.hitLadder, targetCoord, 550);
       if (playerId === 'player') {
         this.engine.playerPos = result.hitLadder.to;
       } else {
@@ -1181,7 +1262,13 @@ export class SnakeLadderGame implements GameInstance {
     } else if (result.hitSnake) {
       await this.sleep(180);
       sounds.playSnakeSlide();
-      await this.animateSnakeSlide(playerId, result.hitSnake, 650);
+      const targetCoord = getMyTokenCoord(playerId, result.hitSnake.to, otherPos);
+      if (result.hitSnake.to === otherPos) {
+        const otherTileCenter = getTileCoord(otherPos);
+        const otherNewOffset = getMyTokenCoord(otherPlayerId, otherPos, result.hitSnake.to);
+        this.smoothRepositionToken(otherPlayerId, otherTileCenter, otherNewOffset, 200);
+      }
+      await this.animateSnakeSlide(playerId, result.hitSnake, targetCoord, 650);
       if (playerId === 'player') {
         this.engine.playerPos = result.hitSnake.to;
       } else {
