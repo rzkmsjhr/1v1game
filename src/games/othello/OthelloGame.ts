@@ -397,20 +397,20 @@ export class OthelloGame implements GameInstance {
     this.container.innerHTML = `
       <div class="w-full max-w-2xl flex flex-col items-center justify-center p-3 sm:p-4 relative">
         
-        <!-- Top Status Bar -->
-        <div class="w-full flex items-center justify-between py-2.5 mb-3 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'}">
-          <button id="btn-othello-exit" class="ps-btn-secondary px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5">
-            <span>← Exit Game</span>
+        <!-- Top Status Bar (Locked height & overflow-protected to eliminate screen push/jump) -->
+        <div class="w-full h-11 min-h-[44px] max-h-[44px] shrink-0 flex items-center justify-between px-1 mb-3 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'}">
+          <button id="btn-othello-exit" class="ps-btn-secondary px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1 shrink-0 active:scale-95 transition-transform" title="Exit to Arcade Hub">
+            <span>← Exit</span>
           </button>
           
-          <div class="flex items-center space-x-2">
-            <span id="othello-turn-text" class="text-xs font-bold uppercase tracking-wider text-gray-400">
+          <div class="flex-1 min-w-0 flex items-center justify-center space-x-2 px-2 overflow-hidden">
+            <span id="othello-turn-text" class="text-xs font-bold uppercase tracking-wider text-gray-400 truncate whitespace-nowrap">
               Initializing...
             </span>
-            <div id="othello-turn-indicator" class="w-3 h-3 rounded-full bg-gray-900 border border-gray-600 animate-pulse"></div>
+            <div id="othello-turn-indicator" class="w-3 h-3 shrink-0 rounded-full bg-gray-900 border border-gray-600 animate-pulse"></div>
           </div>
 
-          <div class="text-xs font-mono text-gray-500">
+          <div class="text-xs font-mono text-gray-500 shrink-0 text-right">
             ${this.session.mode === 'ai' ? `AI: ${this.session.aiDifficulty?.toUpperCase()}` : '1v1 Online'}
           </div>
         </div>
@@ -515,7 +515,7 @@ export class OthelloGame implements GameInstance {
     let turnClass = '';
 
     if (this.forfeitMessage) {
-      turnText = this.forfeitMessage;
+      turnText = 'Win by Forfeit';
       turnClass = 'text-emerald-500 font-bold';
     } else if (this.engine.isGameOver) {
       if (scores.black === scores.white) {
@@ -528,19 +528,19 @@ export class OthelloGame implements GameInstance {
         turnClass = isWinner ? 'text-emerald-500' : 'text-rose-500';
       }
     } else if (this.engine.passedTurn) {
-      turnText = this.isMyTurn ? 'Opponent Passed! Your Turn' : 'No Moves! You Passed';
+      turnText = this.isMyTurn ? 'Opponent Passed' : 'You Passed';
       turnClass = 'text-amber-500';
     } else if (this.isMyTurn) {
-      turnText = `Your Turn (${this.myPlayer === 1 ? 'Black' : 'White'})`;
+      turnText = 'Your Turn';
       turnClass = 'text-emerald-500';
     } else {
-      turnText = this.session.mode === 'ai' ? 'AI is Thinking...' : "Opponent's Turn";
+      turnText = this.session.mode === 'ai' ? 'AI Thinking...' : "Opponent's Turn";
       turnClass = 'text-gray-400';
     }
 
     if (this.turnTextEl) {
       this.turnTextEl.textContent = turnText;
-      this.turnTextEl.className = `text-xs font-bold uppercase tracking-wider ${turnClass}`;
+      this.turnTextEl.className = `text-xs font-bold uppercase tracking-wider truncate whitespace-nowrap ${turnClass}`;
     }
 
     if (this.turnIndicatorEl) {
