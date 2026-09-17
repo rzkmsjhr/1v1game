@@ -379,9 +379,9 @@ class ConsoleDashboard {
 
       <!-- Screenshot / Ambient background overlay -->
       ${currentGame.screenshotUrl ? `
-        <div class="absolute -right-6 sm:-right-4 md:right-2 lg:right-6 -bottom-6 sm:-bottom-6 md:-bottom-4 w-[140px] sm:w-[320px] md:w-[420px] lg:w-[480px] pointer-events-none select-none z-0 transform -rotate-6 sm:-rotate-8 group-hover:-rotate-3 group-hover:scale-105 transition-all duration-700 ease-out origin-bottom-right">
-          <div class="relative rounded-xl sm:rounded-3xl overflow-hidden border-2 ${isLightBanner ? 'border-amber-900/20 shadow-2xl shadow-amber-950/30' : 'border-white/20 shadow-2xl shadow-black/80'} bg-black/40 backdrop-blur-sm">
-            <img src="${currentGame.screenshotUrl}" alt="${currentGame.title} Preview" class="w-full h-auto object-cover block" />
+        <div class="absolute -right-6 sm:-right-4 md:right-2 lg:right-6 top-2 sm:top-3 md:top-4 w-[140px] sm:w-[320px] md:w-[420px] lg:w-[480px] pointer-events-none select-none z-0 transform -rotate-6 sm:-rotate-8 group-hover:-rotate-3 group-hover:scale-105 transition-all duration-700 ease-out origin-top-right">
+          <div class="relative rounded-xl sm:rounded-3xl overflow-hidden border-2 ${isLightBanner ? 'border-amber-900/20 shadow-2xl shadow-amber-950/30' : 'border-white/20 shadow-2xl shadow-black/80'} bg-black/40 backdrop-blur-sm max-h-[180px] sm:max-h-[260px] md:max-h-[300px]">
+            <img src="${currentGame.screenshotUrl}" alt="${currentGame.title} Preview" class="w-full h-auto object-cover object-top block" />
             <div class="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-black/20 pointer-events-none"></div>
             <div class="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none"></div>
           </div>
