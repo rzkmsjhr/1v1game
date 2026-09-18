@@ -74,6 +74,8 @@ export type NetworkMessage =
   | { type: 'WATER_INIT'; seed: number }
   | { type: 'WATER_PROGRESS'; score: number; completedColors: string[]; isWon: boolean }
   | { type: 'WATER_REMATCH'; seed: number }
+  | { type: 'WATER_POUR_TUBE'; color: string; srcIndex: number; dstIndex: number }
+  | { type: 'WATER_POUR_BOWL'; color: string; count: number; newBowlCount: number; isCompleted: boolean; score: number }
   | { type: 'CUSTOM'; payload: any };
 
 export type NetworkQuality = 'good' | 'moderate' | 'poor' | 'stalled';

@@ -10,6 +10,7 @@ import {
   type ColorDef
 } from './water-types';
 import { sounds } from '../../engine/sound';
+import type { NetworkHealth } from '../../network/webrtc-peer';
 
 export class WaterSortGame implements GameInstance {
   private container: HTMLElement;
@@ -20,19 +21,46 @@ export class WaterSortGame implements GameInstance {
   private isAnimating: boolean = false;
   private currentTheme: AppTheme;
 
-  // Multiplayer & Opponent state
+  // PvP State & Phases
+  private phase: 'COUNTDOWN' | 'PLAYING' | 'MATCH_OVER' = 'COUNTDOWN';
+  private countdown: number = 3;
+  private countdownTimer: number | null = null;
+  private opponentName: string = 'Opponent';
   private opponentScore: number = 0;
   private opponentWon: boolean = false;
   private matchSeed: number;
+  private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
+  private playerMatchWins: number = 0;
+  private opponentMatchWins: number = 0;
+  private transientStatusTimeout: number | null = null;
 
-  // DOM elements
+  // Cached DOM elements & values to eliminate layout thrashing
   private tubesContainer: HTMLElement | null = null;
   private reservoirEl: HTMLElement | null = null;
   private colorRibbonEl: HTMLElement | null = null;
-  private duelHudEl: HTMLElement | null = null;
   private undoBtn: HTMLButtonElement | null = null;
   private hintBtn: HTMLButtonElement | null = null;
   private resetBtn: HTMLButtonElement | null = null;
+  private statusTextEl: HTMLElement | null = null;
+  private hintTextEl: HTMLElement | null = null;
+  private scoreTrackerEl: HTMLElement | null = null;
+  private badgePlayerEl: HTMLElement | null = null;
+  private badgeOppEl: HTMLElement | null = null;
+  private countdownOverlayEl: HTMLElement | null = null;
+  private countdownNumberEl: HTMLElement | null = null;
+  private countdownSubtitleEl: HTMLElement | null = null;
+  private peerAwayBannerEl: HTMLElement | null = null;
+  private netPingEl: HTMLElement | null = null;
+  private netDotEl: HTMLElement | null = null;
+  private netTextEl: HTMLElement | null = null;
+  private rematchBtnEl: HTMLButtonElement | null = null;
+
+  private cachedPlayerScore: number = -1;
+  private cachedOppScore: number = -1;
+  private cachedStatusText: string = '';
+  private cachedHintText: string = '';
+  private cachedScoreText: string = '';
+  private lastHUDUpdateTime: number = 0;
 
   // Audio helper for water pouring
   private audioCtx: AudioContext | null = null;
@@ -41,6 +69,13 @@ export class WaterSortGame implements GameInstance {
     this.container = container;
     this.session = session;
     this.currentTheme = session.theme;
+
+    if (session.mode === 'ai') {
+      const diffLabel = (session.aiDifficulty || 'medium').toUpperCase();
+      this.opponentName = `AI (${diffLabel})`;
+    } else {
+      this.opponentName = session.peer?.role === 'host' ? 'Guest' : 'Host';
+    }
 
     // Seed generation
     this.matchSeed = session.mode === 'online'
@@ -53,6 +88,7 @@ export class WaterSortGame implements GameInstance {
     this.mount();
     this.setupNetwork();
     this.setupAI();
+    this.startCountdown();
   }
 
   private getAudioContext(): AudioContext | null {
@@ -120,33 +156,41 @@ export class WaterSortGame implements GameInstance {
   private setupNetwork() {
     if (this.session.mode !== 'online' || !this.session.peer) return;
 
-    this.session.peer.events = {
-      ...this.session.peer.events,
-      onMessage: (msg) => {
-        if (msg.type === 'WATER_INIT') {
-          this.matchSeed = msg.seed;
-          const generated = generateWaterBoard(this.matchSeed);
-          this.engine = new WaterEngine(generated.tubes);
-          this.selectedTubeIndex = null;
-          this.render();
-        } else if (msg.type === 'WATER_PROGRESS') {
-          this.opponentScore = msg.score;
-          if (msg.isWon) {
-            this.opponentWon = true;
-            this.handleMatchEnd('opponent');
+    const origOnMessage = this.session.peer.events?.onMessage;
+    const origOnStatusChange = this.session.peer.events?.onStatusChange;
+    const origOnHealthChange = this.session.peer.events?.onHealthChange;
+
+    this.session.peer = Object.assign(this.session.peer, {
+      events: {
+        ...this.session.peer.events,
+        onMessage: (msg: any) => {
+          origOnMessage?.(msg);
+          this.handleNetworkMessage(msg);
+        },
+        onStatusChange: (status: string, message?: string) => {
+          origOnStatusChange?.(status as any, message);
+          if (status === 'disconnected') {
+            if (this.phase !== 'MATCH_OVER' && !this.opponentWon && !this.engine.state.isWon) {
+              this.handleMatchEnd('player', 'Opponent disconnected. You win by forfeit!');
+            }
           }
-          this.updateHUD();
-        } else if (msg.type === 'WATER_REMATCH') {
-          this.matchSeed = msg.seed;
-          const generated = generateWaterBoard(this.matchSeed);
-          this.engine = new WaterEngine(generated.tubes);
-          this.selectedTubeIndex = null;
-          this.opponentScore = 0;
-          this.opponentWon = false;
-          this.render();
+        },
+        onHealthChange: (health: NetworkHealth) => {
+          origOnHealthChange?.(health);
+          this.updateNetworkHealthHUD(health);
         }
       }
-    };
+    });
+
+    this.session.peer.flushEarlyMessages();
+
+    if (this.session.peer.isConnected) {
+      this.updateNetworkHealthHUD({
+        rtt: this.session.peer.currentRtt,
+        status: this.session.peer.networkQuality,
+        isPeerVisible: this.session.peer.isPeerVisible
+      });
+    }
 
     // Host shares seed
     if (this.session.peer.role === 'host') {
@@ -157,15 +201,99 @@ export class WaterSortGame implements GameInstance {
     }
   }
 
+  private updateNetworkHealthHUD(health: NetworkHealth) {
+    if (this.netPingEl && this.netDotEl && this.netTextEl) {
+      if (health.status === 'stalled') {
+        this.netDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+        this.netTextEl.textContent = 'Lag ⚠️';
+        this.netPingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+      } else if (health.status === 'poor') {
+        this.netDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+        this.netTextEl.textContent = `${health.rtt}ms`;
+        this.netPingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+      } else if (health.status === 'moderate') {
+        this.netDotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+        this.netTextEl.textContent = `${health.rtt}ms`;
+        this.netPingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5';
+      } else {
+        this.netDotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+        this.netTextEl.textContent = `${health.rtt || 30}ms`;
+        this.netPingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5';
+      }
+    }
+
+    if (this.peerAwayBannerEl) {
+      if (!health.isPeerVisible) {
+        this.peerAwayBannerEl.classList.remove('hidden');
+      } else {
+        this.peerAwayBannerEl.classList.add('hidden');
+      }
+    }
+  }
+
+  private handleNetworkMessage(msg: any) {
+    switch (msg.type) {
+      case 'PLAYER_LEAVE':
+        if (this.phase !== 'MATCH_OVER' && !this.opponentWon && !this.engine.state.isWon) {
+          this.handleMatchEnd('player', 'Opponent forfeited the match.');
+        }
+        break;
+      case 'WATER_INIT':
+        this.matchSeed = msg.seed;
+        this.startNewMatch(this.matchSeed);
+        break;
+      case 'WATER_POUR_TUBE':
+        // Opponent made a tube pour
+        break;
+      case 'WATER_POUR_BOWL': {
+        const cDef = this.getColorDef(msg.color);
+        if (msg.isCompleted) {
+          this.flashOpponentEvent(`OPPONENT CLEARED ${cDef?.name || msg.color.toUpperCase()}! ⚠️`);
+        } else {
+          this.flashOpponentEvent(`Opponent deposited ${cDef?.name || msg.color}...`, 1200);
+        }
+        break;
+      }
+      case 'WATER_PROGRESS':
+        this.opponentScore = msg.score;
+        this.updateHUD(true);
+        if (msg.isWon && !this.engine.state.isWon) {
+          this.opponentWon = true;
+          this.handleMatchEnd('opponent');
+        }
+        break;
+      case 'REMATCH_REQUEST':
+        this.showRematchOffer();
+        break;
+      case 'REMATCH_ACCEPT':
+        this.startNewMatch(msg.seed);
+        break;
+      case 'WATER_REMATCH':
+        this.startNewMatch(msg.seed);
+        break;
+    }
+  }
+
   private setupAI() {
     if (this.session.mode !== 'ai') return;
     const diff = this.session.aiDifficulty || 'medium';
     const generated = generateWaterBoard(this.matchSeed);
 
+    if (this.ai) {
+      this.ai.destroy();
+      this.ai = null;
+    }
+
     this.ai = new WaterAI(generated.tubes, diff, {
-      onProgress: (score, _completed, isWon) => {
+      onProgress: (score, completed, isWon) => {
+        const prevScore = this.opponentScore;
         this.opponentScore = score;
-        this.updateHUD();
+        if (score > prevScore) {
+          const lastColor = completed[completed.length - 1];
+          const cDef = this.getColorDef(lastColor);
+          this.flashOpponentEvent(`BOT CLEARED ${cDef?.name || 'A COLOR'}! ⚠️`);
+        }
+        this.updateHUD(true);
         if (isWon && !this.engine.state.isWon) {
           this.opponentWon = true;
           this.handleMatchEnd('opponent');
@@ -173,7 +301,138 @@ export class WaterSortGame implements GameInstance {
       }
     });
 
-    this.ai.start();
+    if (this.phase === 'PLAYING') {
+      this.ai.start();
+    }
+  }
+
+  private startCountdown() {
+    this.phase = 'COUNTDOWN';
+    this.countdown = 3;
+    if (this.countdownTimer !== null) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+
+    if (this.countdownOverlayEl && this.countdownNumberEl && this.countdownSubtitleEl) {
+      this.countdownOverlayEl.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+      this.countdownNumberEl.className = 'text-7xl sm:text-8xl font-black text-amber-400 drop-shadow-[0_0_30px_rgba(245,158,11,0.9)] animate-scaleIn';
+      this.countdownNumberEl.textContent = '3';
+      this.countdownSubtitleEl.textContent = 'GET READY!';
+    }
+
+    sounds.playCountdownTick(false);
+    this.updateHUD(true);
+
+    this.countdownTimer = window.setInterval(() => {
+      this.countdown--;
+      if (this.countdown > 0) {
+        sounds.playCountdownTick(false);
+        if (this.countdownNumberEl) {
+          this.countdownNumberEl.textContent = `${this.countdown}`;
+          this.countdownNumberEl.classList.remove('animate-scaleIn');
+          void this.countdownNumberEl.offsetWidth;
+          this.countdownNumberEl.classList.add('animate-scaleIn');
+        }
+        this.updateHUD(true);
+      } else if (this.countdown === 0) {
+        sounds.playCountdownTick(true);
+        if (this.countdownNumberEl && this.countdownSubtitleEl) {
+          this.countdownNumberEl.className = 'text-6xl sm:text-7xl font-black text-emerald-400 drop-shadow-[0_0_30px_rgba(16,185,129,0.9)] animate-scaleIn';
+          this.countdownNumberEl.textContent = 'GO!';
+          this.countdownSubtitleEl.textContent = 'RACE TO SORT!';
+        }
+        this.phase = 'PLAYING';
+        this.updateHUD(true);
+        if (this.session.mode === 'ai' && this.ai) {
+          this.ai.start();
+        }
+
+        // Smoothly fade out overlay
+        setTimeout(() => {
+          if (this.countdownOverlayEl) {
+            this.countdownOverlayEl.classList.add('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+              this.countdownOverlayEl?.classList.add('hidden');
+            }, 300);
+          }
+        }, 450);
+
+        if (this.countdownTimer !== null) {
+          clearInterval(this.countdownTimer);
+          this.countdownTimer = null;
+        }
+      }
+    }, 850);
+  }
+
+  private handleRematchClick() {
+    if (this.session.mode === 'ai') {
+      this.startNewMatch();
+      return;
+    }
+
+    if (this.rematchState === 'offer_received') {
+      const seed = Math.floor(Math.random() * 1000000);
+      this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT', seed });
+      this.startNewMatch(seed);
+    } else if (this.rematchState === 'idle') {
+      this.rematchState = 'requested';
+      if (this.rematchBtnEl) {
+        this.rematchBtnEl.textContent = 'Waiting for Opponent...';
+        this.rematchBtnEl.classList.add('opacity-70', 'cursor-not-allowed');
+      }
+      this.session.peer?.sendMessage({ type: 'REMATCH_REQUEST' });
+    }
+  }
+
+  private showRematchOffer() {
+    this.rematchState = 'offer_received';
+    if (this.rematchBtnEl) {
+      this.rematchBtnEl.textContent = 'Accept Rematch!';
+      this.rematchBtnEl.classList.remove('opacity-70', 'cursor-not-allowed');
+      this.rematchBtnEl.className = 'w-full py-3 rounded-xl text-xs font-black tracking-wider uppercase text-white bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all cursor-pointer animate-pulse';
+    }
+  }
+
+  private startNewMatch(seed?: number) {
+    this.rematchState = 'idle';
+    const modal = document.getElementById('water-modal-victory');
+    modal?.classList.add('hidden');
+
+    if (this.rematchBtnEl) {
+      this.rematchBtnEl.textContent = 'Play Next Match';
+      this.rematchBtnEl.className = 'ps-btn-primary w-full py-3 rounded-xl text-xs font-bold';
+    }
+
+    this.matchSeed = seed !== undefined ? seed : Math.floor(Math.random() * 1000000);
+    const generated = generateWaterBoard(this.matchSeed);
+    this.engine = new WaterEngine(generated.tubes);
+    this.selectedTubeIndex = null;
+    this.opponentScore = 0;
+    this.opponentWon = false;
+
+    if (this.session.mode === 'ai') {
+      this.setupAI();
+    }
+
+    this.render();
+    this.startCountdown();
+  }
+
+  private flashOpponentEvent(text: string, duration: number = 2200) {
+    if (this.transientStatusTimeout !== null) {
+      clearTimeout(this.transientStatusTimeout);
+      this.transientStatusTimeout = null;
+    }
+    if (this.statusTextEl) {
+      this.statusTextEl.textContent = text;
+      this.cachedStatusText = text;
+    }
+    this.transientStatusTimeout = window.setTimeout(() => {
+      this.transientStatusTimeout = null;
+      this.updateHUD(true);
+    }, duration);
   }
 
   private getColorDef(colorId: string | null): ColorDef | undefined {
@@ -197,34 +456,80 @@ export class WaterSortGame implements GameInstance {
           0%, 100% { box-shadow: 0 0 15px var(--glow-color); }
           50% { box-shadow: 0 0 35px var(--glow-color), 0 0 60px var(--glow-color); }
         }
+        @keyframes scale-in {
+          0% { transform: scale(0.6); opacity: 0; }
+          60% { transform: scale(1.15); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-scaleIn {
+          animation: scale-in 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+        }
       </style>
-      <div id="water-game-root" class="w-full max-w-lg min-h-full flex flex-col justify-between items-center py-3 sm:py-5 px-3 sm:px-5 select-none relative font-sans">
+      <div id="water-game-root" class="w-full max-w-lg min-h-full flex flex-col justify-between items-center py-2 sm:py-4 px-3 sm:px-5 select-none relative font-sans">
         
-        <!-- Top Bar: Exit, Sound, Status -->
-        <header class="w-full flex items-center justify-between py-2 px-1 mb-3 sm:mb-4">
-          <button id="water-btn-exit" class="px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center space-x-1 shadow-sm ps-btn-secondary">
+        <!-- Top Bar: Exit, Title, Mode, Net Ping, Sound -->
+        <header class="w-full flex items-center justify-between py-1 px-1 mb-1 sm:mb-2">
+          <button id="water-btn-exit" class="px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center space-x-1 shadow-sm ps-btn-secondary" title="Exit to Arcade Hub">
             <span>← Exit</span>
           </button>
 
-          <!-- 1v1 Split Duel Score HUD -->
-          <div id="water-duel-hud" class="flex items-center space-x-2 text-xs font-bold font-mono">
-            <!-- Rendered dynamically -->
+          <div class="flex items-center space-x-1.5">
+            <span class="text-[10px] sm:text-[11px] font-bold text-amber-500 font-mono tracking-wider uppercase">WATER SORT</span>
+            <span class="text-[9px] sm:text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">${this.session.mode === 'ai' ? 'VS AI' : '1V1 ONLINE'}</span>
           </div>
 
-          <button id="water-btn-sound" class="p-1.5 rounded-xl text-xs font-bold transition-all ps-btn-secondary">
-            <span>${sounds.enabled ? '🔊' : '🔇'}</span>
-          </button>
+          <div class="flex items-center space-x-1.5">
+            <span id="water-net-ping" class="${this.session.mode === 'online' ? 'inline-flex' : 'hidden'} items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5">
+              <span id="water-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span id="water-net-text">30ms</span>
+            </span>
+            <button id="water-btn-sound" class="p-1.5 rounded-xl text-xs font-bold transition-all ps-btn-secondary">
+              <span>${sounds.enabled ? '🔊' : '🔇'}</span>
+            </button>
+          </div>
         </header>
 
+        <!-- Inactive Tab / Peer Away Banner -->
+        <div id="water-peer-away-banner" class="hidden w-full text-center py-0.5 px-2 mb-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-[10px] tracking-wide animate-pulse">
+          ⚠️ Opponent is tabbed out / minimized
+        </div>
+
+        <!-- 1v1 Split Duel Score & Momentum HUD -->
+        <div id="water-duel-hud" class="w-full grid grid-cols-3 items-center px-1 mb-2 sm:mb-3 gap-1">
+          <!-- Player Side -->
+          <div class="flex items-center space-x-1.5 justify-self-start">
+            <div class="w-6 h-6 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-400 flex items-center justify-center font-black text-[11px] shrink-0">P</div>
+            <div class="flex flex-col">
+              <span class="text-[9px] font-bold text-blue-400 leading-none">YOU</span>
+              <span id="water-player-score-badge" class="px-1.5 py-0.5 rounded bg-blue-600/20 text-blue-300 border border-blue-500/30 font-mono text-[10px] font-black leading-none mt-0.5">0/${TOTAL_COLORS}</span>
+            </div>
+          </div>
+
+          <!-- Center Dynamic Momentum Banner -->
+          <div id="water-status-banner" class="flex flex-col items-center px-2 py-0.5 rounded-xl bg-amber-600/15 border border-amber-500/30 text-center mx-auto w-full max-w-[140px]">
+            <span id="water-status-text" class="text-[9px] sm:text-[10px] font-black tracking-wide text-amber-400 uppercase truncate max-w-[125px]">GET READY!</span>
+            <span id="water-hint-text" class="text-[8px] font-medium text-gray-400 truncate max-w-[125px]">Match starts in 3...</span>
+          </div>
+
+          <!-- Opponent Side -->
+          <div class="flex items-center space-x-1.5 justify-self-end text-right">
+            <div class="flex flex-col items-end">
+              <span id="water-opp-name" class="text-[9px] font-bold text-emerald-400 leading-none truncate max-w-[65px]">${this.opponentName}</span>
+              <span id="water-opp-score-badge" class="px-1.5 py-0.5 rounded bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 font-mono text-[10px] font-black leading-none mt-0.5">0/${TOTAL_COLORS}</span>
+            </div>
+            <div class="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center font-black text-[11px] shrink-0">O</div>
+          </div>
+        </div>
+
         <!-- 10-Color Capsule Ribbon (Fits mobile width with zero scrollbar) -->
-        <div class="w-full max-w-sm py-2 mb-3 sm:mb-4">
+        <div class="w-full max-w-sm py-1.5 mb-2 sm:mb-3">
           <div id="water-color-ribbon" class="flex items-center justify-between px-0.5">
             <!-- Rendered dynamically -->
           </div>
         </div>
 
         <!-- Central Big Mixing Bowl (Single Color Extractor) -->
-        <div class="w-full flex flex-col items-center justify-center my-2 sm:my-4">
+        <div class="w-full flex flex-col items-center justify-center my-1.5 sm:my-3">
           <div class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center space-x-1">
             <span>🥣 COLOR MIXING BOWL (3 UNITS TO CLEAR)</span>
           </div>
@@ -234,24 +539,36 @@ export class WaterSortGame implements GameInstance {
         </div>
 
         <!-- 10 Test Tubes Grid (2 Rows of 5 Tubes) -->
-        <div class="w-full flex-1 flex flex-col justify-center items-center my-3 sm:my-5">
-          <div id="water-tubes-container" class="w-full flex flex-col space-y-3 sm:space-y-5">
+        <div class="w-full flex-1 flex flex-col justify-center items-center my-2 sm:my-4">
+          <div id="water-tubes-container" class="w-full flex flex-col space-y-3 sm:space-y-4">
             <!-- Rendered dynamically: Row 1 (5 tubes) & Row 2 (5 tubes) -->
           </div>
         </div>
 
-        <!-- Bottom Action Bar: Undo, Hint, Reset -->
-        <footer class="w-full max-w-sm flex items-center justify-between space-x-3 py-2.5 px-2 mt-3 sm:mt-4">
-          <button id="water-btn-undo" class="flex-1 py-2 sm:py-2.5 rounded-xl text-xs font-bold ps-btn-secondary flex items-center justify-center space-x-1 shadow-sm transition-all disabled:opacity-40">
-            <span>↩️ Undo</span>
-          </button>
-          <button id="water-btn-hint" class="flex-1 py-2 sm:py-2.5 rounded-xl text-xs font-bold ps-btn-secondary flex items-center justify-center space-x-1 shadow-sm transition-all text-amber-500 hover:text-amber-400">
-            <span>💡 Hint</span>
-          </button>
-          <button id="water-btn-reset" class="flex-1 py-2 sm:py-2.5 rounded-xl text-xs font-bold ps-btn-secondary flex items-center justify-center space-x-1 shadow-sm transition-all text-rose-500 hover:text-rose-400">
-            <span>🔄 Reset</span>
-          </button>
+        <!-- Bottom Action Bar: Undo, Hint, Reset + Cumulative Score -->
+        <footer class="w-full max-w-sm flex flex-col space-y-1.5 py-1 px-1 mt-1 sm:mt-2">
+          <div class="w-full flex items-center justify-between space-x-3">
+            <button id="water-btn-undo" class="flex-1 py-2 sm:py-2.5 rounded-xl text-xs font-bold ps-btn-secondary flex items-center justify-center space-x-1 shadow-sm transition-all disabled:opacity-40">
+              <span>↩️ Undo</span>
+            </button>
+            <button id="water-btn-hint" class="flex-1 py-2 sm:py-2.5 rounded-xl text-xs font-bold ps-btn-secondary flex items-center justify-center space-x-1 shadow-sm transition-all text-amber-500 hover:text-amber-400">
+              <span>💡 Hint</span>
+            </button>
+            <button id="water-btn-reset" class="flex-1 py-2 sm:py-2.5 rounded-xl text-xs font-bold ps-btn-secondary flex items-center justify-center space-x-1 shadow-sm transition-all text-rose-500 hover:text-rose-400">
+              <span>🔄 Reset</span>
+            </button>
+          </div>
+          <div class="w-full flex items-center justify-between px-1 text-[10px] font-mono text-gray-400">
+            <span class="truncate">3 units per color to clear</span>
+            <span id="water-score-tracker" class="font-black text-amber-500 shrink-0 ml-2">SCORE: 0 - 0</span>
+          </div>
         </footer>
+
+        <!-- Full-screen Countdown Overlay -->
+        <div id="water-countdown-overlay" class="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity duration-300 pointer-events-auto rounded-3xl">
+          <span id="water-countdown-number" class="text-7xl sm:text-8xl font-black text-amber-400 drop-shadow-[0_0_30px_rgba(245,158,11,0.9)] animate-scaleIn">3</span>
+          <span id="water-countdown-subtitle" class="text-xs sm:text-sm font-black tracking-widest uppercase text-amber-200 mt-2 drop-shadow">GET READY!</span>
+        </div>
 
         <!-- Victory / Match End Modal (Fixed full-screen backdrop, no white border lines) -->
         <div id="water-modal-victory" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
@@ -276,10 +593,22 @@ export class WaterSortGame implements GameInstance {
     this.tubesContainer = document.getElementById('water-tubes-container');
     this.reservoirEl = document.getElementById('water-reservoir-container');
     this.colorRibbonEl = document.getElementById('water-color-ribbon');
-    this.duelHudEl = document.getElementById('water-duel-hud');
     this.undoBtn = document.getElementById('water-btn-undo') as HTMLButtonElement;
     this.hintBtn = document.getElementById('water-btn-hint') as HTMLButtonElement;
     this.resetBtn = document.getElementById('water-btn-reset') as HTMLButtonElement;
+    this.statusTextEl = document.getElementById('water-status-text');
+    this.hintTextEl = document.getElementById('water-hint-text');
+    this.scoreTrackerEl = document.getElementById('water-score-tracker');
+    this.badgePlayerEl = document.getElementById('water-player-score-badge');
+    this.badgeOppEl = document.getElementById('water-opp-score-badge');
+    this.countdownOverlayEl = document.getElementById('water-countdown-overlay');
+    this.countdownNumberEl = document.getElementById('water-countdown-number');
+    this.countdownSubtitleEl = document.getElementById('water-countdown-subtitle');
+    this.peerAwayBannerEl = document.getElementById('water-peer-away-banner');
+    this.netPingEl = document.getElementById('water-net-ping');
+    this.netDotEl = document.getElementById('water-net-dot');
+    this.netTextEl = document.getElementById('water-net-text');
+    this.rematchBtnEl = document.getElementById('water-btn-play-again') as HTMLButtonElement;
 
     this.setupEventListeners();
     this.render();
@@ -300,7 +629,7 @@ export class WaterSortGame implements GameInstance {
 
     // Undo
     this.undoBtn?.addEventListener('click', () => {
-      if (this.isAnimating || !this.engine.canUndo()) return;
+      if (this.phase !== 'PLAYING' || this.isAnimating || !this.engine.canUndo()) return;
       this.engine.undo();
       this.selectedTubeIndex = null;
       this.playSplashSound();
@@ -309,7 +638,7 @@ export class WaterSortGame implements GameInstance {
 
     // Reset
     this.resetBtn?.addEventListener('click', () => {
-      if (this.isAnimating) return;
+      if (this.phase !== 'PLAYING' || this.isAnimating) return;
       if (confirm('Reset this puzzle to start over?')) {
         this.engine.reset();
         this.selectedTubeIndex = null;
@@ -319,7 +648,7 @@ export class WaterSortGame implements GameInstance {
 
     // Hint
     this.hintBtn?.addEventListener('click', () => {
-      if (this.isAnimating) return;
+      if (this.phase !== 'PLAYING' || this.isAnimating) return;
       const hint = this.engine.getHint();
       if (!hint) {
         alert('No obvious hint found! Try unburying matching colors.');
@@ -330,23 +659,13 @@ export class WaterSortGame implements GameInstance {
 
     // Reservoir Click
     this.reservoirEl?.addEventListener('click', () => {
-      if (this.isAnimating || this.selectedTubeIndex === null) return;
+      if (this.phase !== 'PLAYING' || this.isAnimating || this.selectedTubeIndex === null) return;
       this.handlePourToReservoir(this.selectedTubeIndex);
     });
 
-    // Victory modal buttons
-    document.getElementById('water-btn-play-again')?.addEventListener('click', () => {
-      document.getElementById('water-modal-victory')?.classList.add('hidden');
-      this.matchSeed = Math.floor(Math.random() * 1000000);
-      if (this.session.mode === 'online' && this.session.peer) {
-        this.session.peer.sendMessage({ type: 'WATER_REMATCH', seed: this.matchSeed });
-      }
-      const gen = generateWaterBoard(this.matchSeed);
-      this.engine = new WaterEngine(gen.tubes);
-      this.selectedTubeIndex = null;
-      this.opponentScore = 0;
-      this.opponentWon = false;
-      this.render();
+    // Rematch button (uses 2-step handshake in online mode)
+    this.rematchBtnEl?.addEventListener('click', () => {
+      this.handleRematchClick();
     });
 
     document.getElementById('water-btn-return-hub')?.addEventListener('click', () => {
@@ -355,7 +674,7 @@ export class WaterSortGame implements GameInstance {
   }
 
   private handleTubeClick(index: number) {
-    if (this.isAnimating || this.engine.state.isWon || this.opponentWon) return;
+    if (this.phase !== 'PLAYING' || this.isAnimating || this.engine.state.isWon || this.opponentWon) return;
 
     if (this.selectedTubeIndex === null) {
       // Pick source tube
@@ -466,6 +785,14 @@ export class WaterSortGame implements GameInstance {
 
     this.animatePour(srcIndex, dstEl, color, () => {
       this.engine.pour(srcIndex, dstIndex);
+      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        this.session.peer.sendMessage({
+          type: 'WATER_POUR_TUBE',
+          color,
+          srcIndex,
+          dstIndex
+        });
+      }
       this.selectedTubeIndex = null;
       this.isAnimating = false;
       this.render();
@@ -488,6 +815,17 @@ export class WaterSortGame implements GameInstance {
     this.animatePour(srcIndex, resCard, color, () => {
       const result = this.engine.pourToReservoir(srcIndex);
       this.selectedTubeIndex = null;
+
+      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        this.session.peer.sendMessage({
+          type: 'WATER_POUR_BOWL',
+          color,
+          count: result?.count || 1,
+          newBowlCount: this.engine.state.reservoir.count,
+          isCompleted: result?.isCompleted || false,
+          score: this.engine.state.score
+        });
+      }
 
       if (result?.isCompleted) {
         const completedColorDef = this.getColorDef(result.color);
@@ -588,7 +926,16 @@ export class WaterSortGame implements GameInstance {
     }
   }
 
-  private handleMatchEnd(winner: 'player' | 'opponent') {
+  private handleMatchEnd(winner: 'player' | 'opponent', customMessage?: string) {
+    this.phase = 'MATCH_OVER';
+    if (this.countdownTimer !== null) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+    if (this.countdownOverlayEl) {
+      this.countdownOverlayEl.classList.add('hidden');
+    }
+
     const modal = document.getElementById('water-modal-victory');
     const title = document.getElementById('water-victory-title');
     const sub = document.getElementById('water-victory-subtitle');
@@ -603,19 +950,24 @@ export class WaterSortGame implements GameInstance {
     }
 
     if (winner === 'player') {
+      this.playerMatchWins++;
       icon.textContent = '🏆';
-      title.textContent = 'YOU WIN!';
-      sub.textContent = `Magnificent! You sorted all 10 colors in ${this.engine.state.moveCount} moves!`;
+      title.textContent = 'VICTORY!';
+      sub.textContent = customMessage || `Magnificent! You sorted all 10 colors in ${this.engine.state.moveCount} moves!`;
+      sounds.playFanfare();
       try {
         confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
       } catch {}
     } else {
-      icon.textContent = '🥈';
-      title.textContent = 'OPPONENT WON!';
-      sub.textContent = 'Your opponent completed all 10 colors first. Better luck next round!';
+      this.opponentMatchWins++;
+      icon.textContent = '💀';
+      title.textContent = 'DEFEAT!';
+      sub.textContent = customMessage || `${this.opponentName} completed all 10 colors first. Better luck next round!`;
+      sounds.playGameOver();
     }
 
     modal.classList.remove('hidden');
+    this.updateHUD(true);
   }
 
   private shakeTube(index: number) {
@@ -655,22 +1007,65 @@ export class WaterSortGame implements GameInstance {
     }
   }
 
-  private updateHUD() {
-    if (!this.duelHudEl) return;
-    const isDark = this.currentTheme === 'dark';
-    const oppLabel = this.session.mode === 'ai' ? 'Bot' : 'Opponent';
+  private updateHUD(force: boolean = false) {
+    const now = performance.now();
+    if (!force && now - this.lastHUDUpdateTime < 60) {
+      return;
+    }
+    this.lastHUDUpdateTime = now;
 
-    this.duelHudEl.innerHTML = `
-      <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg ${isDark ? 'bg-blue-950/40 text-blue-400' : 'bg-blue-50 text-blue-600'} border border-blue-500/30">
-        <span>YOU:</span>
-        <span class="text-sm font-black">${this.engine.state.score}/${TOTAL_COLORS}</span>
-      </div>
-      <span class="text-gray-400 text-xs">VS</span>
-      <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg ${isDark ? 'bg-emerald-950/40 text-emerald-400' : 'bg-emerald-50 text-emerald-600'} border border-emerald-500/30">
-        <span>${oppLabel}:</span>
-        <span class="text-sm font-black">${this.opponentScore}/${TOTAL_COLORS}</span>
-      </div>
-    `;
+    const pScore = this.engine.state.score;
+    const oScore = this.opponentScore;
+
+    if (this.badgePlayerEl && pScore !== this.cachedPlayerScore) {
+      this.cachedPlayerScore = pScore;
+      this.badgePlayerEl.textContent = `${pScore}/${TOTAL_COLORS}`;
+    }
+
+    if (this.badgeOppEl && oScore !== this.cachedOppScore) {
+      this.cachedOppScore = oScore;
+      this.badgeOppEl.textContent = `${oScore}/${TOTAL_COLORS}`;
+    }
+
+    const scoreStr = `SCORE: ${this.playerMatchWins} - ${this.opponentMatchWins}`;
+    if (this.scoreTrackerEl && scoreStr !== this.cachedScoreText) {
+      this.cachedScoreText = scoreStr;
+      this.scoreTrackerEl.textContent = scoreStr;
+    }
+
+    if (this.statusTextEl && this.hintTextEl && this.transientStatusTimeout === null) {
+      let newStatus = '';
+      let newHint = '';
+
+      if (this.phase === 'COUNTDOWN') {
+        newStatus = 'GET READY!';
+        newHint = `Match starts in ${this.countdown}...`;
+      } else if (this.phase === 'PLAYING') {
+        if (pScore > oScore) {
+          newStatus = 'YOU ARE LEADING! 🔥';
+          newHint = `Only ${TOTAL_COLORS - pScore} left to clear!`;
+        } else if (pScore < oScore) {
+          newStatus = 'OPPONENT LEADING! ⚡';
+          newHint = 'Hurry up & sort faster!';
+        } else {
+          newStatus = 'TIED BATTLE! ⚔️';
+          newHint = 'Pour 3 units into the bowl!';
+        }
+      } else if (this.phase === 'MATCH_OVER') {
+        const didIWin = pScore >= TOTAL_COLORS || (!this.opponentWon && this.engine.state.isWon);
+        newStatus = didIWin ? 'VICTORY!' : 'DEFEAT!';
+        newHint = didIWin ? 'You sorted all 10 colors!' : `${this.opponentName} sorted first!`;
+      }
+
+      if (newStatus !== this.cachedStatusText) {
+        this.cachedStatusText = newStatus;
+        this.statusTextEl.textContent = newStatus;
+      }
+      if (newHint !== this.cachedHintText) {
+        this.cachedHintText = newHint;
+        this.hintTextEl.textContent = newHint;
+      }
+    }
   }
 
   public render() {
@@ -873,6 +1268,14 @@ export class WaterSortGame implements GameInstance {
   public destroy() {
     this.ai?.destroy();
     this.ai = null;
+    if (this.countdownTimer !== null) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+    if (this.transientStatusTimeout !== null) {
+      clearTimeout(this.transientStatusTimeout);
+      this.transientStatusTimeout = null;
+    }
     if (this.audioCtx) {
       this.audioCtx.close().catch(() => {});
       this.audioCtx = null;
