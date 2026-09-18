@@ -78,8 +78,9 @@ export class WaterSortGame implements GameInstance {
     this.currentTheme = session.theme;
 
     if (session.mode === 'ai') {
-      const diffLabel = (session.aiDifficulty || 'medium').toUpperCase();
-      this.opponentName = `AI (${diffLabel})`;
+      const diff = session.aiDifficulty || 'medium';
+      const diffLabel = diff === 'extreme' ? 'BOSS' : diff.toUpperCase();
+      this.opponentName = diff === 'extreme' ? 'BOSS 🔥' : `AI (${diffLabel})`;
     } else {
       this.opponentName = session.peer?.role === 'host' ? 'Guest' : 'Host';
     }
@@ -492,7 +493,9 @@ export class WaterSortGame implements GameInstance {
     const colorName = cDef?.name || colorId.toUpperCase();
     const colorHex = cDef?.hex || '#3b82f6';
     const isDark = this.currentTheme === 'dark';
-    const oppLabel = this.session.mode === 'ai' ? 'BOT' : 'OPPONENT';
+    const oppLabel = this.session.mode === 'ai'
+      ? (this.session.aiDifficulty === 'extreme' ? 'BOSS' : 'BOT')
+      : 'OPPONENT';
 
     // Flash opponent avatar border & glow
     if (this.oppAvatarEl) {

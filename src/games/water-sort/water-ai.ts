@@ -62,24 +62,42 @@ export class WaterAI {
   }
 
   /**
-   * Calibrated competitive move delays per difficulty:
-   * - Easy: 1100ms - 1500ms (~35-45s match)
-   * - Medium: 650ms - 900ms (~20-28s match)
-   * - Hard: 350ms - 500ms (~12-16s match)
-   * - Extreme: 180ms - 280ms (~7-10s match, lightning speedrunner bot)
+   * Calibrated move delays per difficulty:
+   * - Easy (Kid-friendly): 2800ms - 4200ms (~2.5-4 min match), with casual hesitations
+   * - Medium (Casual): 1300ms - 1900ms (~60-80s match), moderate pacing
+   * - Hard (Challenging): 500ms - 750ms (~18-24s match), aggressive unburying
+   * - Extreme (Boss 🔥): 240ms - 380ms (~10-14s match), relentless speedrunner
    */
   private getDelay(): number {
+    let base = 0;
     switch (this.difficulty) {
       case 'easy':
-        return 1100 + Math.random() * 400;
+        // Kid-friendly slow pace: 2.8s - 4.2s per move
+        base = 2800 + Math.random() * 1400;
+        // 25% chance for a child-like hesitation ("looking around at the bottles")
+        if (Math.random() < 0.25) {
+          base += 1500 + Math.random() * 1800;
+        }
+        return base;
+
       case 'medium':
-        return 650 + Math.random() * 250;
+        // Casual pace: 1.3s - 1.9s per move
+        base = 1300 + Math.random() * 600;
+        if (Math.random() < 0.12) {
+          base += 600 + Math.random() * 600;
+        }
+        return base;
+
       case 'hard':
-        return 350 + Math.random() * 150;
+        // Challenging: 0.5s - 0.75s per move
+        return 500 + Math.random() * 250;
+
       case 'extreme':
-        return 180 + Math.random() * 100;
+        // Boss speed: 0.24s - 0.38s per move
+        return 240 + Math.random() * 140;
+
       default:
-        return 650;
+        return 1400;
     }
   }
 
@@ -98,10 +116,26 @@ export class WaterAI {
 
   /**
    * Find the most promising color to clear next when reservoir is empty.
-   * Scores based on surface accessibility and proximity to top.
    */
   private findBestTargetColor(): string | null {
     const completed = new Set(this.engine.state.completedColors);
+
+    // On EASY (Kid-friendly): don't perform deep multi-tube depth math.
+    // Simply pick any visible top color that hasn't been completed.
+    if (this.difficulty === 'easy') {
+      const availableTopColors: string[] = [];
+      for (let i = 0; i < TOTAL_TUBES; i++) {
+        const top = this.engine.getTopColor(i);
+        if (top && !completed.has(top)) {
+          availableTopColors.push(top);
+        }
+      }
+      if (availableTopColors.length > 0) {
+        return availableTopColors[Math.floor(Math.random() * availableTopColors.length)];
+      }
+    }
+
+    // Medium, Hard, Extreme: Scores based on surface accessibility and proximity to top.
     const colorScores = new Map<string, number>();
 
     for (let i = 0; i < TOTAL_TUBES; i++) {
@@ -158,11 +192,12 @@ export class WaterAI {
       for (let i = 0; i < TOTAL_TUBES; i++) {
         const can = this.engine.canPourToReservoir(i);
         if (can.valid && can.color === reservoir.color) {
+          const baseScore = this.difficulty === 'easy' ? 900 : 2000;
           candidates.push({
             type: 'reservoir',
             srcIndex: i,
             color: can.color,
-            score: 2000 + can.count * 150
+            score: baseScore + can.count * 150
           });
         }
       }
@@ -171,11 +206,12 @@ export class WaterAI {
       for (let i = 0; i < TOTAL_TUBES; i++) {
         const can = this.engine.canPourToReservoir(i);
         if (can.valid && can.color === targetColor) {
+          const baseScore = this.difficulty === 'easy' ? 800 : 1600;
           candidates.push({
             type: 'reservoir',
             srcIndex: i,
             color: can.color,
-            score: 1600 + can.count * 100
+            score: baseScore + can.count * 100
           });
         }
       }
@@ -183,8 +219,9 @@ export class WaterAI {
 
     // -------------------------------------------------------------
     // 2. UNBURYING MOVES FOR TARGET COLOR
+    // (Active unburying algorithm only for Medium, Hard, and Extreme. Easy bot skips this)
     // -------------------------------------------------------------
-    if (targetColor) {
+    if (targetColor && this.difficulty !== 'easy') {
       for (let src = 0; src < TOTAL_TUBES; src++) {
         const tube = this.engine.state.tubes[src];
         const top = this.engine.getTopColor(src);
@@ -194,6 +231,10 @@ export class WaterAI {
         const targetIndex = tube.lastIndexOf(targetColor);
         if (targetIndex !== -1) {
           const depth = tube.length - 1 - targetIndex; // 1 = right under top, 2 = 2 below
+
+          // For Medium: only unbury shallow layers (depth <= 1)
+          if (this.difficulty === 'medium' && depth > 1) continue;
+
           const topInfo = this.engine.getContiguousTopCount(src);
           const topCount = topInfo ? topInfo.count : 1;
 
@@ -328,11 +369,34 @@ export class WaterAI {
     if (candidates.length === 0) return;
 
     // Difficulty selection:
-    // - Easy: 25% chance of picking a slightly suboptimal move (index 1 or 2)
-    // - Medium, Hard, Extreme: Always pick best move (index 0)
     let selectedMove: ScoredMove = candidates[0];
-    if (this.difficulty === 'easy' && candidates.length > 2 && Math.random() < 0.25) {
-      selectedMove = candidates[Math.min(candidates.length - 1, Math.floor(1 + Math.random() * 2))];
+
+    if (this.difficulty === 'easy') {
+      // Easy (Kid-friendly):
+      // Filter non-negative valid candidates (prevents infinite ping-pongs)
+      const validPool = candidates.filter(c => c.score > 0);
+      const pool = validPool.length > 0 ? validPool : candidates;
+
+      // 60% of the time, pick randomly among the top sensible moves
+      if (pool.length > 1 && Math.random() < 0.60) {
+        const pickIndex = Math.floor(Math.random() * Math.min(4, pool.length));
+        selectedMove = pool[pickIndex];
+      } else {
+        selectedMove = pool[0];
+      }
+    } else if (this.difficulty === 'medium') {
+      // Medium (Casual): 25% chance of picking candidate 1 or 2
+      if (candidates.length > 2 && Math.random() < 0.25) {
+        selectedMove = candidates[Math.min(candidates.length - 1, Math.floor(1 + Math.random() * 2))];
+      }
+    } else if (this.difficulty === 'hard') {
+      // Hard (Challenging): 95% optimal move, 5% candidate 1
+      if (candidates.length > 1 && Math.random() < 0.05) {
+        selectedMove = candidates[1];
+      }
+    } else {
+      // Extreme (Boss 🔥): Always 100% absolute optimal move
+      selectedMove = candidates[0];
     }
 
     // Execute the chosen move
