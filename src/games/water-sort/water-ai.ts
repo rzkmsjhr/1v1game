@@ -101,15 +101,24 @@ export class WaterAI {
     }
   }
 
-  private scheduleNextMove() {
+  private scheduleNextMove(extraDelay: number = 0) {
     if (!this.isRunning || this.engine.state.isWon) return;
 
-    const delay = this.getDelay();
+    const delay = this.getDelay() + extraDelay;
     this.timer = window.setTimeout(() => {
       if (!this.isRunning) return;
-      this.executeMove();
+      const moveResult = this.executeMove();
       if (!this.engine.state.isWon && this.isRunning) {
-        this.scheduleNextMove();
+        // The AI is also bound by physical liquid pouring and bowl clearing time!
+        let pourPhysicalTime = 0;
+        if (moveResult) {
+          if (moveResult.type === 'reservoir') {
+            pourPhysicalTime = moveResult.isCompleted ? 1100 : 500;
+          } else {
+            pourPhysicalTime = 400;
+          }
+        }
+        this.scheduleNextMove(pourPhysicalTime);
       }
     }, delay);
   }
@@ -176,8 +185,8 @@ export class WaterAI {
     return tube.every(c => c === first);
   }
 
-  private executeMove() {
-    if (this.engine.state.isWon) return;
+  private executeMove(): { type: 'reservoir' | 'tube'; color: string; isCompleted?: boolean } | null {
+    if (this.engine.state.isWon) return null;
 
     const reservoir = this.engine.state.reservoir;
     const candidates: ScoredMove[] = [];
@@ -366,7 +375,7 @@ export class WaterAI {
     // Sort moves by score descending
     candidates.sort((a, b) => b.score - a.score);
 
-    if (candidates.length === 0) return;
+    if (candidates.length === 0) return null;
 
     // Difficulty selection:
     let selectedMove: ScoredMove = candidates[0];
@@ -416,6 +425,7 @@ export class WaterAI {
           isCompleted: res.isCompleted
         });
         this.callbacks.onProgress?.(this.engine.state.score, this.engine.state.completedColors, this.engine.state.isWon);
+        return { type: 'reservoir', color: selectedMove.color, isCompleted: res.isCompleted };
       }
     } else if (selectedMove.type === 'tube' && selectedMove.dstIndex !== undefined) {
       const res = this.engine.pour(selectedMove.srcIndex, selectedMove.dstIndex);
@@ -432,8 +442,11 @@ export class WaterAI {
           dstIndex: selectedMove.dstIndex
         });
         this.callbacks.onProgress?.(this.engine.state.score, this.engine.state.completedColors, this.engine.state.isWon);
+        return { type: 'tube', color: selectedMove.color };
       }
     }
+
+    return null;
   }
 
   private recordMove(move: { type: 'reservoir' | 'tube'; src: number; dst?: number; color: string }) {

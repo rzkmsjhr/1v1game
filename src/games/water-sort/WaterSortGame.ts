@@ -933,9 +933,9 @@ export class WaterSortGame implements GameInstance {
     const colorDef = this.getColorDef(colorId);
     const gradient = colorDef ? `linear-gradient(180deg, ${colorDef.gradient[0]}, ${colorDef.gradient[1]})` : '#3b82f6';
 
-    // 1. Set transform-origin near mouth and elevate & tilt toward destination
+    // 1. Set transform-origin near mouth and elevate & tilt toward destination (snappy 0.18s)
     srcEl.style.transformOrigin = '50% 15%';
-    srcEl.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1)';
+    srcEl.style.transition = 'transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)';
     srcEl.style.zIndex = '50';
     srcEl.style.transform = `translate(${dx + (toRight ? -14 : 14)}px, ${dy - 55}px) rotate(${tiltAngle}deg)`;
 
@@ -959,24 +959,24 @@ export class WaterSortGame implements GameInstance {
       streamEl.style.boxShadow = `0 0 14px ${colorDef?.hex || '#3b82f6'}`;
 
       document.body.appendChild(streamEl);
-    }, 180);
+    }, 90);
 
-    // 3. Return source tube and finish
+    // 3. Return source tube and finish (unlock player controls quickly)
     setTimeout(() => {
       clearTimeout(streamTimer);
       if (streamEl && streamEl.parentNode) {
         streamEl.parentNode.removeChild(streamEl);
       }
 
-      srcEl.style.transition = 'transform 0.22s ease-out';
+      srcEl.style.transition = 'transform 0.16s ease-out';
       srcEl.style.transform = '';
       srcEl.style.zIndex = '';
       srcEl.style.transformOrigin = '';
 
       setTimeout(() => {
         onComplete();
-      }, 220);
-    }, 520);
+      }, 80);
+    }, 240);
   }
 
   private handlePourBetweenTubes(srcIndex: number, dstIndex: number) {
@@ -1094,11 +1094,11 @@ export class WaterSortGame implements GameInstance {
     const resCard = document.getElementById('water-reservoir-card');
     if (!resCard) { onComplete(); return; }
 
-    // Phase 1: Intense glow + pulsing border
-    resCard.style.transition = 'box-shadow 0.3s, border-color 0.3s, transform 0.3s';
-    resCard.style.boxShadow = `0 0 30px ${colorDef.hex}, 0 0 60px ${colorDef.hex}60`;
+    // Phase 1: Intense glow + pulsing border (punchy 0.2s)
+    resCard.style.transition = 'box-shadow 0.2s, border-color 0.2s, transform 0.2s';
+    resCard.style.boxShadow = `0 0 28px ${colorDef.hex}, 0 0 50px ${colorDef.hex}60`;
     resCard.style.borderColor = colorDef.hex;
-    resCard.style.transform = 'scale(1.04)';
+    resCard.style.transform = 'scale(1.03)';
 
     // Create a liquid overlay that shows the full 3/3 state
     const overlay = document.createElement('div');
@@ -1106,30 +1106,30 @@ export class WaterSortGame implements GameInstance {
     overlay.style.borderBottomLeftRadius = '32px';
     overlay.style.borderBottomRightRadius = '32px';
     overlay.style.background = `linear-gradient(180deg, ${colorDef.gradient[0]}, ${colorDef.gradient[1]})`;
-    overlay.style.transition = 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)';
+    overlay.style.transition = 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)';
     overlay.innerHTML = `
       <div class="liquid-shimmer absolute inset-0 pointer-events-none"></div>
-      <span class="relative text-white font-black text-sm sm:text-base drop-shadow-lg animate-pulse tracking-wider">
+      <span class="relative text-white font-black text-xs sm:text-sm drop-shadow-lg animate-pulse tracking-wider">
         ✨ ${colorDef.name} CLEARED! ✨
       </span>
     `;
     resCard.appendChild(overlay);
 
-    // Phase 2: After glow hold, drain the liquid upward and fade out
+    // Phase 2: After 400ms, drain the liquid upward and fade out
     setTimeout(() => {
       overlay.style.opacity = '0';
-      overlay.style.transform = 'translateY(-25px) scaleY(0.2)';
+      overlay.style.transform = 'translateY(-20px) scaleY(0.2)';
       resCard.style.boxShadow = '';
       resCard.style.borderColor = '';
       resCard.style.transform = '';
-    }, 900);
+    }, 400);
 
-    // Phase 3: Cleanup and trigger callback
+    // Phase 3: Cleanup and trigger callback at 700ms (cuts lockout in half)
     setTimeout(() => {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
       resCard.style.transition = '';
       onComplete();
-    }, 1500);
+    }, 700);
   }
 
   private syncProgress() {
