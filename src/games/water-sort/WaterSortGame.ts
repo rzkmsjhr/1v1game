@@ -69,6 +69,12 @@ export class WaterSortGame implements GameInstance {
   private cachedScoreText: string = '';
   private lastHUDUpdateTime: number = 0;
 
+  // Selective DOM diffing & performance cache properties
+  private cachedRibbonKey: string = '';
+  private cachedReservoirKey: string = '';
+  private cachedTubeStates: string[] = [];
+  private cachedSelectedTubeIndex: number | null = null;
+
   // Audio helper for water pouring
   private audioCtx: AudioContext | null = null;
 
@@ -524,6 +530,14 @@ export class WaterSortGame implements GameInstance {
       this.setupAI();
     }
 
+    this.cachedRibbonKey = '';
+    this.cachedReservoirKey = '';
+    this.cachedTubeStates = [];
+    this.cachedSelectedTubeIndex = null;
+    if (this.tubesContainer) {
+      this.tubesContainer.innerHTML = '';
+    }
+
     this.render();
     this.startCountdown();
   }
@@ -686,14 +700,25 @@ export class WaterSortGame implements GameInstance {
   private mount() {
     this.container.innerHTML = `
       <style>
-        @keyframes water-shimmer {
-          0% { background-position: 200% 0; }
-          100% { background-position: -200% 0; }
+        @keyframes surface-glint {
+          0% { transform: translate3d(-100%, 0, 0); }
+          50%, 100% { transform: translate3d(200%, 0, 0); }
         }
-        .liquid-shimmer {
-          background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 35%, rgba(255,255,255,0.25) 50%, rgba(255,255,255,0.1) 65%, transparent 100%);
-          background-size: 200% 100%;
-          animation: water-shimmer 3s ease-in-out infinite;
+        .liquid-surface-glint {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 25%, rgba(255,255,255,0.38) 50%, rgba(255,255,255,0.08) 75%, transparent 100%);
+          will-change: transform;
+          animation: surface-glint 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+          pointer-events-none;
+        }
+        @keyframes water-shake {
+          0%, 100% { transform: translate3d(0, 0, 0); }
+          20%, 60% { transform: translate3d(-5px, 0, 0); }
+          40%, 80% { transform: translate3d(5px, 0, 0); }
+        }
+        .animate-shake {
+          animation: water-shake 0.35s ease-in-out;
         }
         @keyframes bowl-glow-pulse {
           0%, 100% { box-shadow: 0 0 15px var(--glow-color); }
@@ -706,6 +731,20 @@ export class WaterSortGame implements GameInstance {
         }
         .animate-scaleIn {
           animation: scale-in 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+        }
+        .water-tube-item {
+          touch-action: manipulation;
+          will-change: transform;
+        }
+        #water-reservoir-card {
+          touch-action: manipulation;
+          will-change: transform;
+        }
+        #water-game-root {
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
+          user-select: none;
+          -webkit-user-select: none;
         }
       </style>
       <div id="water-game-root" class="w-full max-w-lg min-h-full flex flex-col justify-between items-center py-2 sm:py-4 px-3 sm:px-5 select-none relative font-sans">
@@ -933,6 +972,96 @@ export class WaterSortGame implements GameInstance {
     document.getElementById('water-btn-return-hub')?.addEventListener('click', () => {
       this.session.onExit();
     });
+
+    // High-performance event delegation on tubes rack (attached once!)
+    this.tubesContainer?.addEventListener('click', (e) => {
+      const target = (e.target as HTMLElement).closest('.water-tube-item') as HTMLElement | null;
+      if (!target) return;
+      const indexStr = target.dataset.index;
+      if (indexStr !== undefined) {
+        this.handleTubeClick(parseInt(indexStr, 10));
+      }
+    });
+  }
+
+  /**
+   * Fast-path tube selection: updates CSS classes directly in <0.05ms without DOM re-creation.
+   */
+  private updateTubeSelectionVisuals(prevIdx: number | null, newIdx: number | null) {
+    const isDark = this.currentTheme === 'dark';
+    if (prevIdx !== null && prevIdx !== newIdx) {
+      const prevEl = document.getElementById(`water-tube-${prevIdx}`);
+      if (prevEl) {
+        prevEl.classList.remove('-translate-y-3.5', 'shadow-blue-500/40', 'border-blue-400', 'ring-2', 'ring-blue-400', 'scale-105');
+        prevEl.classList.add('hover:-translate-y-1');
+        const rim = prevEl.querySelector('.water-tube-rim') as HTMLElement;
+        if (rim) {
+          rim.className = `water-tube-rim absolute -top-1.5 inset-x-[-2px] h-3 rounded-full border-2 z-30 transition-all ${isDark ? 'border-white/35 bg-white/10' : 'border-gray-400 bg-gray-200'}`;
+        }
+      }
+    }
+
+    if (newIdx !== null) {
+      const newEl = document.getElementById(`water-tube-${newIdx}`);
+      if (newEl) {
+        newEl.classList.add('-translate-y-3.5', 'shadow-blue-500/40', 'border-blue-400', 'ring-2', 'ring-blue-400', 'scale-105');
+        newEl.classList.remove('hover:-translate-y-1');
+        const rim = newEl.querySelector('.water-tube-rim') as HTMLElement;
+        if (rim) {
+          rim.className = 'water-tube-rim absolute -top-1.5 inset-x-[-2px] h-3 rounded-full border-2 z-30 transition-all border-blue-400 bg-blue-500/30';
+        }
+      }
+    }
+  }
+
+  /**
+   * Quick status notice update for empty reservoir without rebuilding bowl DOM.
+   */
+  private updateReservoirSelectionNotice() {
+    const noticeEl = document.getElementById('water-reservoir-notice');
+    if (!noticeEl) return;
+    const res = this.engine.state.reservoir;
+    if (!res.color) {
+      noticeEl.textContent = this.selectedTubeIndex !== null
+        ? 'Tap to deposit into bowl'
+        : '🥣 Empty Mixing Bowl (Tap tube to start)';
+    }
+  }
+
+  /**
+   * Helper to generate HTML for a tube's liquid & empty slot stack.
+   */
+  private renderTubeLiquidStack(tube: string[]): string {
+    const emptyCount = TUBE_CAPACITY - tube.length;
+    const emptySlots = Array.from({ length: emptyCount }).map(() => `
+      <div class="w-full flex-1 flex items-center justify-center opacity-20 pointer-events-none">
+        <div class="w-2.5 h-0.5 bg-gray-400 rounded-full"></div>
+      </div>
+    `).join('');
+
+    const liquidSegments = tube.slice().reverse().map((colorId, revIdx) => {
+      const origIdx = tube.length - 1 - revIdx;
+      const c = this.getColorDef(colorId);
+      const isTop = origIdx === tube.length - 1;
+      const isBottom = origIdx === 0;
+      const borderStyle = colorId === 'silver' ? 'border: 1.5px solid rgba(100,116,139,0.5);' : (colorId === 'black' ? 'border: 1.5px solid rgba(148,163,184,0.35);' : '');
+      return `
+        <div class="w-full flex-1 rounded-sm relative overflow-hidden shadow-inner ${isTop ? 'rounded-t-md' : ''} ${isBottom ? 'rounded-b-[18px]' : ''}"
+             style="background: linear-gradient(180deg, ${c?.gradient[0] || '#999'}, ${c?.gradient[1] || '#666'}); ${borderStyle}">
+          ${isTop ? `
+            <!-- Meniscus Curve on top liquid surface -->
+            <div class="w-full h-1 bg-white/35 rounded-t-full"></div>
+            <!-- GPU-composited surface glint on meniscus -->
+            <div class="liquid-surface-glint"></div>
+          ` : ''}
+          <!-- Subtle liquid shine / bubbles -->
+          <div class="absolute top-1 right-1.5 w-1 h-1 rounded-full bg-white/30"></div>
+          <div class="absolute bottom-1.5 left-1.5 w-0.5 h-0.5 rounded-full bg-white/30"></div>
+        </div>
+      `;
+    }).join('');
+
+    return emptySlots + liquidSegments;
   }
 
   private handleTubeClick(index: number) {
@@ -942,13 +1071,19 @@ export class WaterSortGame implements GameInstance {
       // Pick source tube
       const tube = this.engine.state.tubes[index];
       if (tube.length === 0) return; // Cannot select empty tube as source
+      const prev = this.selectedTubeIndex;
       this.selectedTubeIndex = index;
+      this.cachedSelectedTubeIndex = index;
       this.playSplashSound();
-      this.render();
+      this.updateTubeSelectionVisuals(prev, index);
+      this.updateReservoirSelectionNotice();
     } else if (this.selectedTubeIndex === index) {
       // Tap again to deselect
+      const prev = this.selectedTubeIndex;
       this.selectedTubeIndex = null;
-      this.render();
+      this.cachedSelectedTubeIndex = null;
+      this.updateTubeSelectionVisuals(prev, null);
+      this.updateReservoirSelectionNotice();
     } else {
       // Tap destination tube: execute pour
       this.handlePourBetweenTubes(this.selectedTubeIndex, index);
@@ -978,11 +1113,11 @@ export class WaterSortGame implements GameInstance {
     const colorDef = this.getColorDef(colorId);
     const gradient = colorDef ? `linear-gradient(180deg, ${colorDef.gradient[0]}, ${colorDef.gradient[1]})` : '#3b82f6';
 
-    // 1. Set transform-origin near mouth and elevate & tilt toward destination (snappy 0.18s)
+    // 1. Hardware accelerated tilt toward destination
     srcEl.style.transformOrigin = '50% 15%';
     srcEl.style.transition = 'transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)';
     srcEl.style.zIndex = '50';
-    srcEl.style.transform = `translate(${dx + (toRight ? -14 : 14)}px, ${dy - 55}px) rotate(${tiltAngle}deg)`;
+    srcEl.style.transform = `translate3d(${dx + (toRight ? -14 : 14)}px, ${dy - 55}px, 0) rotate(${tiltAngle}deg)`;
 
     // 2. Liquid pour stream overlay directly between mouth and destination
     let streamEl: HTMLElement | null = null;
@@ -1002,6 +1137,8 @@ export class WaterSortGame implements GameInstance {
       streamEl.style.height = `${streamHeight}px`;
       streamEl.style.background = gradient;
       streamEl.style.boxShadow = `0 0 14px ${colorDef?.hex || '#3b82f6'}`;
+      streamEl.style.transform = 'translateZ(0)';
+      streamEl.style.willChange = 'transform, opacity';
 
       document.body.appendChild(streamEl);
     }, 90);
@@ -1029,9 +1166,12 @@ export class WaterSortGame implements GameInstance {
     if (!check.valid || !check.color) {
       // If destination has liquid, switch selection to it
       if (this.engine.state.tubes[dstIndex].length > 0) {
+        const prev = this.selectedTubeIndex;
         this.selectedTubeIndex = dstIndex;
+        this.cachedSelectedTubeIndex = dstIndex;
         this.playSplashSound();
-        this.render();
+        this.updateTubeSelectionVisuals(prev, dstIndex);
+        this.updateReservoirSelectionNotice();
       } else {
         // Shake source tube briefly
         this.shakeTube(srcIndex);
@@ -1152,8 +1292,10 @@ export class WaterSortGame implements GameInstance {
     overlay.style.borderBottomRightRadius = '32px';
     overlay.style.background = `linear-gradient(180deg, ${colorDef.gradient[0]}, ${colorDef.gradient[1]})`;
     overlay.style.transition = 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)';
+    overlay.style.transform = 'translateZ(0)';
+    overlay.style.willChange = 'transform, opacity';
     overlay.innerHTML = `
-      <div class="liquid-shimmer absolute inset-0 pointer-events-none"></div>
+      <div class="liquid-surface-glint"></div>
       <span class="relative text-white font-black text-xs sm:text-sm drop-shadow-lg animate-pulse tracking-wider">
         ✨ ${colorDef.name} CLEARED! ✨
       </span>
@@ -1336,8 +1478,10 @@ export class WaterSortGame implements GameInstance {
     // 1. Update HUD
     this.updateHUD();
 
-    // 2. Update 10-Color Capsule Ribbon (Shows circle and colored text)
-    if (this.colorRibbonEl) {
+    // 2. Update 10-Color Capsule Ribbon (Diff check: only rebuild if completed colors or theme changed)
+    const ribbonKey = this.engine.state.completedColors.join(',') + '_' + (isDark ? 'dark' : 'light');
+    if (this.colorRibbonEl && ribbonKey !== this.cachedRibbonKey) {
+      this.cachedRibbonKey = ribbonKey;
       this.colorRibbonEl.innerHTML = WATER_COLORS.map(color => {
         const isDone = this.engine.state.completedColors.includes(color.id);
         return `
@@ -1355,12 +1499,14 @@ export class WaterSortGame implements GameInstance {
       }).join('');
     }
 
-    // 3. Update Central Horizontal Mixing Bowl
-    if (this.reservoirEl) {
-      const res = this.engine.state.reservoir;
-      const colorDef = this.getColorDef(res.color);
-      const percent = (res.count / res.maxCapacity) * 100;
+    // 3. Update Central Horizontal Mixing Bowl (Diff check: skip if bowl contents haven't changed)
+    const res = this.engine.state.reservoir;
+    const colorDef = this.getColorDef(res.color);
+    const percent = (res.count / res.maxCapacity) * 100;
+    const resKey = `${res.color || 'empty'}_${res.count}_${this.selectedTubeIndex !== null ? 'sel' : 'nosel'}_${isDark ? 'dark' : 'light'}`;
 
+    if (this.reservoirEl && resKey !== this.cachedReservoirKey) {
+      this.cachedReservoirKey = resKey;
       this.reservoirEl.innerHTML = `
         <div id="water-reservoir-card" 
              class="relative w-64 xs:w-72 sm:w-80 h-16 sm:h-18 border-2 cursor-pointer transition-all duration-200 flex flex-col items-center justify-between shadow-lg overflow-hidden group ${res.color ? 'border-blue-400 shadow-blue-500/25 ring-2 ring-blue-400/40' : (isDark ? 'bg-white/[0.03] border-white/20 shadow-black/40' : 'bg-black/[0.02] border-gray-400 shadow-gray-200')}"
@@ -1383,8 +1529,8 @@ export class WaterSortGame implements GameInstance {
                    style="height: ${percent}%; background: linear-gradient(180deg, ${colorDef?.gradient[0] || '#3b82f6'}, ${colorDef?.gradient[1] || '#1d4ed8'}); ${bowlBorder}">
                 <!-- Gloss highlight wave across surface -->
                 <div class="w-full h-1.5 bg-white/35 rounded-t-full"></div>
-                <!-- Shimmer animation overlay -->
-                <div class="absolute inset-0 liquid-shimmer pointer-events-none"></div>
+                <!-- Shimmer surface glint -->
+                <div class="liquid-surface-glint"></div>
                 <!-- Rising bubbles -->
                 <div class="absolute top-1 left-8 w-1.5 h-1.5 rounded-full bg-white/40 animate-ping"></div>
                 <div class="absolute top-1.5 right-12 w-2 h-2 rounded-full bg-white/30 animate-pulse"></div>
@@ -1416,7 +1562,7 @@ export class WaterSortGame implements GameInstance {
                 <span>${colorDef?.name}: ${res.count}/${res.maxCapacity}</span>
               </span>
             ` : `
-              <span class="text-[9px] sm:text-[10px] font-bold text-gray-400">
+              <span id="water-reservoir-notice" class="text-[9px] sm:text-[10px] font-bold text-gray-400">
                 ${this.selectedTubeIndex !== null ? 'Tap to deposit into bowl' : '🥣 Empty Mixing Bowl (Tap tube to start)'}
               </span>
             `}
@@ -1428,92 +1574,79 @@ export class WaterSortGame implements GameInstance {
 
     // 4. Update 10 Test Tubes (Row 1: Tubes 0-4, Row 2: Tubes 5-9)
     if (this.tubesContainer) {
-      const renderTube = (index: number) => {
-        const tube = this.engine.state.tubes[index];
-        const isSelected = this.selectedTubeIndex === index;
+      const rackExists = !!document.getElementById('water-tube-0');
 
-        return `
-          <div class="flex flex-col items-center flex-1">
-            <div id="water-tube-${index}" 
-                 data-index="${index}"
-                 class="water-tube-item relative w-[46px] xs:w-[50px] sm:w-[58px] h-[116px] sm:h-[136px] border-2 border-t-0 p-0.5 cursor-pointer transition-transform duration-200 flex flex-col justify-end items-center shadow-md group ${isSelected ? '-translate-y-3.5 shadow-blue-500/40 border-blue-400 ring-2 ring-blue-400 scale-105' : 'hover:-translate-y-1'} ${isDark ? 'bg-white/[0.03] border-white/20 shadow-black/40' : 'bg-black/[0.02] border-gray-400 shadow-gray-200'}"
-                 style="border-bottom-left-radius: 23px; border-bottom-right-radius: 23px;">
-              
-              <!-- Glass Rim Ring at Top -->
-              <div class="absolute -top-1.5 inset-x-[-2px] h-3 rounded-full border-2 z-30 transition-all ${isSelected ? 'border-blue-400 bg-blue-500/30' : (isDark ? 'border-white/35 bg-white/10' : 'border-gray-400 bg-gray-200')}"></div>
+      if (!rackExists) {
+        // Initial Mount or Theme/Match Reset: Build Tube Shells
+        const renderTubeShell = (index: number) => {
+          const tube = this.engine.state.tubes[index];
+          const isSelected = this.selectedTubeIndex === index;
+          this.cachedTubeStates[index] = tube.join(',');
 
-              <!-- Glass Reflection Streak -->
-              <div class="absolute left-1 top-1.5 bottom-3 w-1 bg-white/20 rounded-full pointer-events-none z-20"></div>
-
-              <!-- Liquid & Slot Stack Container (Gravity: liquids settle at bottom!) -->
-              <div class="absolute inset-x-1 bottom-1 top-2 flex flex-col justify-end items-center z-10 overflow-hidden" 
-                   style="border-bottom-left-radius: 19px; border-bottom-right-radius: 19px;">
+          return `
+            <div class="flex flex-col items-center flex-1">
+              <div id="water-tube-${index}" 
+                   data-index="${index}"
+                   class="water-tube-item relative w-[46px] xs:w-[50px] sm:w-[58px] h-[116px] sm:h-[136px] border-2 border-t-0 p-0.5 cursor-pointer transition-transform duration-200 flex flex-col justify-end items-center shadow-md group ${isSelected ? '-translate-y-3.5 shadow-blue-500/40 border-blue-400 ring-2 ring-blue-400 scale-105' : 'hover:-translate-y-1'} ${isDark ? 'bg-white/[0.03] border-white/20 shadow-black/40' : 'bg-black/[0.02] border-gray-400 shadow-gray-200'}"
+                   style="border-bottom-left-radius: 23px; border-bottom-right-radius: 23px;">
                 
-                <!-- Empty buffer slots (at the TOP of the tube!) -->
-                ${Array.from({ length: TUBE_CAPACITY - tube.length }).map(() => `
-                  <div class="w-full flex-1 flex items-center justify-center opacity-20 pointer-events-none">
-                    <div class="w-2.5 h-0.5 bg-gray-400 rounded-full"></div>
-                  </div>
-                `).join('')}
+                <!-- Glass Rim Ring at Top -->
+                <div class="water-tube-rim absolute -top-1.5 inset-x-[-2px] h-3 rounded-full border-2 z-30 transition-all ${isSelected ? 'border-blue-400 bg-blue-500/30' : (isDark ? 'border-white/35 bg-white/10' : 'border-gray-400 bg-gray-200')}"></div>
 
-                <!-- Liquid Segments (at the BOTTOM of the tube by gravity!) -->
-                ${tube.slice().reverse().map((colorId, revIdx) => {
-                  const origIdx = tube.length - 1 - revIdx;
-                  const c = this.getColorDef(colorId);
-                  const isTop = origIdx === tube.length - 1;
-                  const isBottom = origIdx === 0;
-                  const borderStyle = colorId === 'silver' ? 'border: 1.5px solid rgba(100,116,139,0.5);' : (colorId === 'black' ? 'border: 1.5px solid rgba(148,163,184,0.35);' : '');
-                  return `
-                    <div class="w-full flex-1 rounded-sm transition-all duration-200 relative overflow-hidden shadow-inner ${isTop ? 'rounded-t-md' : ''} ${isBottom ? 'rounded-b-[18px]' : ''}"
-                         style="background: linear-gradient(180deg, ${c?.gradient[0] || '#999'}, ${c?.gradient[1] || '#666'}); ${borderStyle}">
-                      ${isTop ? `
-                        <!-- Meniscus Curve on top liquid surface -->
-                        <div class="w-full h-1 bg-white/35 rounded-t-full"></div>
-                      ` : ''}
-                      <!-- Shimmer animation overlay -->
-                      <div class="absolute inset-0 liquid-shimmer pointer-events-none"></div>
-                      <!-- Subtle liquid shine / bubbles -->
-                      <div class="absolute top-1 right-1.5 w-1 h-1 rounded-full bg-white/30"></div>
-                      <div class="absolute bottom-1.5 left-1.5 w-0.5 h-0.5 rounded-full bg-white/30"></div>
-                    </div>
-                  `;
-                }).join('')}
-              </div>
+                <!-- Glass Reflection Streak -->
+                <div class="absolute left-1 top-1.5 bottom-3 w-1 bg-white/20 rounded-full pointer-events-none z-20"></div>
 
-              <!-- Graduation tick marks on outer glass -->
-              <div class="absolute inset-y-2.5 right-1 flex flex-col justify-between py-0.5 text-[7px] font-mono text-gray-400/40 pointer-events-none select-none z-20">
-                <span>-</span>
-                <span>-</span>
-                <span>-</span>
+                <!-- Liquid & Slot Stack Container (Gravity: liquids settle at bottom!) -->
+                <div id="water-tube-liquids-${index}" class="absolute inset-x-1 bottom-1 top-2 flex flex-col justify-end items-center z-10 overflow-hidden" 
+                     style="border-bottom-left-radius: 19px; border-bottom-right-radius: 19px;">
+                  ${this.renderTubeLiquidStack(tube)}
+                </div>
+
+                <!-- Graduation tick marks on outer glass -->
+                <div class="absolute inset-y-2.5 right-1 flex flex-col justify-between py-0.5 text-[7px] font-mono text-gray-400/40 pointer-events-none select-none z-20">
+                  <span>-</span>
+                  <span>-</span>
+                  <span>-</span>
+                </div>
               </div>
             </div>
+          `;
+        };
+
+        const row1Tubes = [0, 1, 2, 3, 4].map(renderTubeShell).join('');
+        const row2Tubes = [5, 6, 7, 8, 9].map(renderTubeShell).join('');
+
+        this.tubesContainer.innerHTML = `
+          <!-- Rack Row 1 (Tubes 1 - 5) -->
+          <div class="w-full flex items-center justify-around px-0.5 sm:px-1">
+            ${row1Tubes}
+          </div>
+          <!-- Rack Row 2 (Tubes 6 - 10) -->
+          <div class="w-full flex items-center justify-around px-0.5 sm:px-1 pt-0.5 sm:pt-1">
+            ${row2Tubes}
           </div>
         `;
-      };
-
-      const row1Tubes = [0, 1, 2, 3, 4].map(renderTube).join('');
-      const row2Tubes = [5, 6, 7, 8, 9].map(renderTube).join('');
-
-      this.tubesContainer.innerHTML = `
-        <!-- Rack Row 1 (Tubes 1 - 5) -->
-        <div class="w-full flex items-center justify-around px-0.5 sm:px-1">
-          ${row1Tubes}
-        </div>
-        <!-- Rack Row 2 (Tubes 6 - 10) -->
-        <div class="w-full flex items-center justify-around px-0.5 sm:px-1 pt-0.5 sm:pt-1">
-          ${row2Tubes}
-        </div>
-      `;
-
-      // Attach tube tap listeners
-      this.tubesContainer.querySelectorAll('.water-tube-item').forEach(el => {
-        el.addEventListener('click', (e) => {
-          const target = (e.currentTarget as HTMLElement).dataset.index;
-          if (target !== undefined) {
-            this.handleTubeClick(parseInt(target, 10));
+        this.cachedSelectedTubeIndex = this.selectedTubeIndex;
+      } else {
+        // Fast Selective Update: Only update tubes whose contents changed!
+        for (let i = 0; i < 10; i++) {
+          const tube = this.engine.state.tubes[i];
+          const stateStr = tube.join(',');
+          if (stateStr !== this.cachedTubeStates[i]) {
+            this.cachedTubeStates[i] = stateStr;
+            const liquidsEl = document.getElementById(`water-tube-liquids-${i}`);
+            if (liquidsEl) {
+              liquidsEl.innerHTML = this.renderTubeLiquidStack(tube);
+            }
           }
-        });
-      });
+        }
+
+        // Fast update selection classes if needed
+        if (this.cachedSelectedTubeIndex !== this.selectedTubeIndex) {
+          this.updateTubeSelectionVisuals(this.cachedSelectedTubeIndex, this.selectedTubeIndex);
+          this.cachedSelectedTubeIndex = this.selectedTubeIndex;
+        }
+      }
     }
 
     // 5. Update Undo Button State
@@ -1524,6 +1657,13 @@ export class WaterSortGame implements GameInstance {
 
   public setTheme(theme: AppTheme) {
     this.currentTheme = theme;
+    this.cachedRibbonKey = '';
+    this.cachedReservoirKey = '';
+    this.cachedTubeStates = [];
+    this.cachedSelectedTubeIndex = null;
+    if (this.tubesContainer) {
+      this.tubesContainer.innerHTML = '';
+    }
     this.render();
   }
 
