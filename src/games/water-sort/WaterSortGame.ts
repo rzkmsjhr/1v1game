@@ -32,7 +32,9 @@ export class WaterSortGame implements GameInstance {
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
   private playerMatchWins: number = 0;
   private opponentMatchWins: number = 0;
-  private transientStatusTimeout: number | null = null;
+  private opponentCompletedColors: string[] = [];
+  private opponentReservoirState: { color: string | null; count: number } = { color: null, count: 0 };
+  private enemyToastTimeout: number | null = null;
 
   // Cached DOM elements & values to eliminate layout thrashing
   private tubesContainer: HTMLElement | null = null;
@@ -41,6 +43,7 @@ export class WaterSortGame implements GameInstance {
   private undoBtn: HTMLButtonElement | null = null;
   private hintBtn: HTMLButtonElement | null = null;
   private resetBtn: HTMLButtonElement | null = null;
+  private statusBannerEl: HTMLElement | null = null;
   private statusTextEl: HTMLElement | null = null;
   private hintTextEl: HTMLElement | null = null;
   private scoreTrackerEl: HTMLElement | null = null;
@@ -54,6 +57,10 @@ export class WaterSortGame implements GameInstance {
   private netDotEl: HTMLElement | null = null;
   private netTextEl: HTMLElement | null = null;
   private rematchBtnEl: HTMLButtonElement | null = null;
+  private enemyToastEl: HTMLElement | null = null;
+  private oppClearedTrayEl: HTMLElement | null = null;
+  private oppBowlStatusEl: HTMLElement | null = null;
+  private oppAvatarEl: HTMLElement | null = null;
 
   private cachedPlayerScore: number = -1;
   private cachedOppScore: number = -1;
@@ -246,16 +253,30 @@ export class WaterSortGame implements GameInstance {
         // Opponent made a tube pour
         break;
       case 'WATER_POUR_BOWL': {
-        const cDef = this.getColorDef(msg.color);
-        if (msg.isCompleted) {
-          this.flashOpponentEvent(`OPPONENT CLEARED ${cDef?.name || msg.color.toUpperCase()}! ⚠️`);
+        const color = msg.color;
+        const count = msg.count || 1;
+        const isCompleted = !!msg.isCompleted;
+        if (isCompleted) {
+          if (!this.opponentCompletedColors.includes(color)) {
+            this.opponentCompletedColors.push(color);
+          }
+          this.opponentReservoirState = { color: null, count: 0 };
+          this.showOpponentActionToast('clear', color);
+          this.updateOpponentClearedTray();
+          this.updateOpponentBowlStatus();
         } else {
-          this.flashOpponentEvent(`Opponent deposited ${cDef?.name || msg.color}...`, 1200);
+          this.opponentReservoirState = { color, count: msg.newBowlCount || count };
+          this.showOpponentActionToast('pour', color, this.opponentReservoirState.count);
+          this.updateOpponentBowlStatus();
         }
         break;
       }
       case 'WATER_PROGRESS':
         this.opponentScore = msg.score;
+        if (Array.isArray(msg.completedColors)) {
+          this.opponentCompletedColors = [...msg.completedColors];
+          this.updateOpponentClearedTray();
+        }
         this.updateHUD(true);
         if (msg.isWon && !this.engine.state.isWon) {
           this.opponentWon = true;
@@ -285,13 +306,33 @@ export class WaterSortGame implements GameInstance {
     }
 
     this.ai = new WaterAI(generated.tubes, diff, {
+      onMove: (action) => {
+        if (action.type === 'reservoir' && action.color) {
+          if (action.isCompleted) {
+            if (!this.opponentCompletedColors.includes(action.color)) {
+              this.opponentCompletedColors.push(action.color);
+            }
+            this.opponentReservoirState = { color: null, count: 0 };
+            this.showOpponentActionToast('clear', action.color);
+            this.updateOpponentClearedTray();
+            this.updateOpponentBowlStatus();
+          } else {
+            this.opponentReservoirState = { color: action.color, count: action.count || 1 };
+            this.showOpponentActionToast('pour', action.color, action.count);
+            this.updateOpponentBowlStatus();
+          }
+        }
+      },
       onProgress: (score, completed, isWon) => {
         const prevScore = this.opponentScore;
         this.opponentScore = score;
+        this.opponentCompletedColors = [...completed];
+        this.updateOpponentClearedTray();
         if (score > prevScore) {
           const lastColor = completed[completed.length - 1];
-          const cDef = this.getColorDef(lastColor);
-          this.flashOpponentEvent(`BOT CLEARED ${cDef?.name || 'A COLOR'}! ⚠️`);
+          if (lastColor) {
+            this.showOpponentActionToast('clear', lastColor);
+          }
         }
         this.updateHUD(true);
         if (isWon && !this.engine.state.isWon) {
@@ -411,6 +452,24 @@ export class WaterSortGame implements GameInstance {
     this.selectedTubeIndex = null;
     this.opponentScore = 0;
     this.opponentWon = false;
+    this.opponentCompletedColors = [];
+    this.opponentReservoirState = { color: null, count: 0 };
+
+    if (this.enemyToastTimeout !== null) {
+      clearTimeout(this.enemyToastTimeout);
+      this.enemyToastTimeout = null;
+    }
+    if (this.enemyToastEl) {
+      this.enemyToastEl.className = 'w-full transition-all duration-300 max-h-0 py-0 opacity-0 overflow-hidden text-center my-0 rounded-xl border flex items-center justify-center space-x-2 px-3 text-xs font-bold';
+      this.enemyToastEl.style.boxShadow = '';
+    }
+    if (this.statusBannerEl) {
+      this.statusBannerEl.style.borderColor = '';
+      this.statusBannerEl.style.boxShadow = '';
+    }
+
+    this.updateOpponentClearedTray();
+    this.updateOpponentBowlStatus();
 
     if (this.session.mode === 'ai') {
       this.setupAI();
@@ -420,19 +479,150 @@ export class WaterSortGame implements GameInstance {
     this.startCountdown();
   }
 
-  private flashOpponentEvent(text: string, duration: number = 2200) {
-    if (this.transientStatusTimeout !== null) {
-      clearTimeout(this.transientStatusTimeout);
-      this.transientStatusTimeout = null;
+  private showOpponentActionToast(type: 'clear' | 'pour', colorId: string, count?: number) {
+    if (this.enemyToastTimeout !== null) {
+      clearTimeout(this.enemyToastTimeout);
+      this.enemyToastTimeout = null;
     }
-    if (this.statusTextEl) {
-      this.statusTextEl.textContent = text;
-      this.cachedStatusText = text;
+
+    const cDef = this.getColorDef(colorId);
+    const colorName = cDef?.name || colorId.toUpperCase();
+    const colorHex = cDef?.hex || '#3b82f6';
+    const isDark = this.currentTheme === 'dark';
+    const oppLabel = this.session.mode === 'ai' ? 'BOT' : 'OPPONENT';
+
+    // Flash opponent avatar border & glow
+    if (this.oppAvatarEl) {
+      this.oppAvatarEl.style.boxShadow = `0 0 16px ${colorHex}`;
+      this.oppAvatarEl.style.borderColor = colorHex;
+      setTimeout(() => {
+        if (this.oppAvatarEl) {
+          this.oppAvatarEl.style.boxShadow = '';
+          this.oppAvatarEl.style.borderColor = '';
+        }
+      }, 1800);
     }
-    this.transientStatusTimeout = window.setTimeout(() => {
-      this.transientStatusTimeout = null;
-      this.updateHUD(true);
-    }, duration);
+
+    // Glow the center status capsule and show concise, punchy text that never gets cut off!
+    if (this.statusBannerEl) {
+      this.statusBannerEl.style.borderColor = colorHex;
+      this.statusBannerEl.style.boxShadow = `0 0 14px ${colorHex}55`;
+    }
+
+    if (this.statusTextEl && this.hintTextEl) {
+      if (type === 'clear') {
+        this.statusTextEl.textContent = `⭐ ${oppLabel} CLEARED!`;
+        this.statusTextEl.className = 'text-[9px] sm:text-[10px] font-black tracking-wide text-rose-400 uppercase leading-tight whitespace-nowrap animate-pulse';
+        this.hintTextEl.textContent = `${colorName} • ${this.opponentScore}/${TOTAL_COLORS}`;
+      } else {
+        this.statusTextEl.textContent = `🥣 ${oppLabel} DEPOSIT`;
+        this.statusTextEl.className = 'text-[9px] sm:text-[10px] font-black tracking-wide text-amber-400 uppercase leading-tight whitespace-nowrap';
+        this.hintTextEl.textContent = `${colorName} (${count || 1}/3)`;
+      }
+    }
+
+    if (!this.enemyToastEl) return;
+
+    if (type === 'clear') {
+      sounds.playBlockSnap();
+      this.enemyToastEl.innerHTML = `
+        <span class="text-sm animate-bounce">⭐</span>
+        <div class="flex items-center space-x-1.5">
+          <span class="w-3.5 h-3.5 rounded-full shrink-0 shadow-sm" style="background: ${colorHex}; box-shadow: 0 0 10px ${colorHex};"></span>
+          <span class="text-[11px] sm:text-xs font-black tracking-wide uppercase ${isDark ? 'text-white' : 'text-gray-900'}">${this.opponentName} CLEARED ${colorName}!</span>
+        </div>
+        <span class="text-[10px] font-mono font-black px-2 py-0.5 rounded bg-amber-500/25 text-amber-300 border border-amber-500/40 shrink-0">
+          ${this.opponentScore}/${TOTAL_COLORS}
+        </span>
+      `;
+      this.enemyToastEl.style.borderColor = colorHex;
+      this.enemyToastEl.style.boxShadow = `0 0 16px ${colorHex}55`;
+      this.enemyToastEl.style.backgroundColor = isDark ? '#111827' : '#ffffff';
+      this.enemyToastEl.style.color = isDark ? '#ffffff' : '#111827';
+      this.enemyToastEl.className = `w-full transition-all duration-300 max-h-12 py-1.5 opacity-100 text-center my-1 rounded-xl border flex items-center justify-center space-x-2 px-3 text-xs font-bold shadow-lg`;
+
+      this.enemyToastTimeout = window.setTimeout(() => {
+        if (this.enemyToastEl) {
+          this.enemyToastEl.className = 'w-full transition-all duration-300 max-h-0 py-0 opacity-0 overflow-hidden text-center my-0 rounded-xl border-0 flex items-center justify-center space-x-2 px-3 text-xs font-bold';
+          this.enemyToastEl.style.boxShadow = '';
+          this.enemyToastEl.style.backgroundColor = '';
+          this.enemyToastEl.style.color = '';
+        }
+        if (this.statusBannerEl) {
+          this.statusBannerEl.style.borderColor = '';
+          this.statusBannerEl.style.boxShadow = '';
+        }
+        if (this.statusTextEl) {
+          this.statusTextEl.className = 'text-[9px] sm:text-[10px] font-black tracking-wide text-amber-400 uppercase leading-tight whitespace-nowrap';
+        }
+        this.enemyToastTimeout = null;
+        this.updateHUD(true);
+      }, 2600);
+    } else {
+      // Pour into bowl
+      this.enemyToastEl.innerHTML = `
+        <span class="text-xs">🥣</span>
+        <div class="flex items-center space-x-1.5">
+          <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background: ${colorHex}; box-shadow: 0 0 6px ${colorHex};"></span>
+          <span class="text-[10px] sm:text-[11px] font-bold tracking-wide ${isDark ? 'text-gray-100' : 'text-gray-800'}">${this.opponentName} added ${colorName}</span>
+        </div>
+        <span class="text-[9px] font-mono font-black px-1.5 py-0.5 rounded bg-blue-500/25 text-blue-300 border border-blue-500/40 shrink-0">
+          ${count || 1}/3
+        </span>
+      `;
+      this.enemyToastEl.style.borderColor = `${colorHex}88`;
+      this.enemyToastEl.style.boxShadow = `0 0 12px ${colorHex}33`;
+      this.enemyToastEl.style.backgroundColor = isDark ? '#111827' : '#ffffff';
+      this.enemyToastEl.style.color = isDark ? '#ffffff' : '#111827';
+      this.enemyToastEl.className = `w-full transition-all duration-300 max-h-10 py-1 opacity-100 text-center my-0.5 rounded-xl border flex items-center justify-center space-x-2 px-3 text-xs font-bold shadow-md`;
+
+      this.enemyToastTimeout = window.setTimeout(() => {
+        if (this.enemyToastEl) {
+          this.enemyToastEl.className = 'w-full transition-all duration-300 max-h-0 py-0 opacity-0 overflow-hidden text-center my-0 rounded-xl border-0 flex items-center justify-center space-x-2 px-3 text-xs font-bold';
+          this.enemyToastEl.style.boxShadow = '';
+          this.enemyToastEl.style.backgroundColor = '';
+          this.enemyToastEl.style.color = '';
+        }
+        if (this.statusBannerEl) {
+          this.statusBannerEl.style.borderColor = '';
+          this.statusBannerEl.style.boxShadow = '';
+        }
+        if (this.statusTextEl) {
+          this.statusTextEl.className = 'text-[9px] sm:text-[10px] font-black tracking-wide text-amber-400 uppercase leading-tight whitespace-nowrap';
+        }
+        this.enemyToastTimeout = null;
+        this.updateHUD(true);
+      }, 1600);
+    }
+  }
+
+  private updateOpponentClearedTray() {
+    if (!this.oppClearedTrayEl) return;
+    if (this.opponentCompletedColors.length === 0) {
+      this.oppClearedTrayEl.innerHTML = '';
+      return;
+    }
+    this.oppClearedTrayEl.innerHTML = this.opponentCompletedColors.map(cId => {
+      const cDef = this.getColorDef(cId);
+      const hex = cDef?.hex || '#10b981';
+      return `<span class="w-2 h-2 rounded-full inline-block shadow-sm transition-transform hover:scale-125" style="background: ${hex}; box-shadow: 0 0 4px ${hex};" title="${cDef?.name || cId}"></span>`;
+    }).join('');
+  }
+
+  private updateOpponentBowlStatus() {
+    if (!this.oppBowlStatusEl) return;
+    if (this.opponentReservoirState.color && this.opponentReservoirState.count > 0) {
+      const cDef = this.getColorDef(this.opponentReservoirState.color);
+      const hex = cDef?.hex || '#10b981';
+      this.oppBowlStatusEl.classList.remove('hidden');
+      this.oppBowlStatusEl.style.borderColor = `${hex}66`;
+      this.oppBowlStatusEl.style.backgroundColor = `${hex}22`;
+      this.oppBowlStatusEl.style.color = hex;
+      this.oppBowlStatusEl.textContent = `🥣 ${this.opponentReservoirState.count}/3`;
+      this.oppBowlStatusEl.title = `Opponent bowl: ${cDef?.name || ''} (${this.opponentReservoirState.count}/3)`;
+    } else {
+      this.oppBowlStatusEl.classList.add('hidden');
+    }
   }
 
   private getColorDef(colorId: string | null): ColorDef | undefined {
@@ -494,11 +684,16 @@ export class WaterSortGame implements GameInstance {
           ⚠️ Opponent is tabbed out / minimized
         </div>
 
+        <!-- Opponent Action Notice Banner (Noticeable, Unclipped, Animated) -->
+        <div id="water-enemy-toast" class="w-full transition-all duration-300 max-h-0 py-0 opacity-0 overflow-hidden text-center my-0 rounded-xl border flex items-center justify-center space-x-2 px-3 text-xs font-bold">
+          <!-- Populated dynamically -->
+        </div>
+
         <!-- 1v1 Split Duel Score & Momentum HUD -->
         <div id="water-duel-hud" class="w-full grid grid-cols-3 items-center px-1 mb-2 sm:mb-3 gap-1">
           <!-- Player Side -->
           <div class="flex items-center space-x-1.5 justify-self-start">
-            <div class="w-6 h-6 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-400 flex items-center justify-center font-black text-[11px] shrink-0">P</div>
+            <div class="w-7 h-7 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-400 flex items-center justify-center font-black text-xs shrink-0">P</div>
             <div class="flex flex-col">
               <span class="text-[9px] font-bold text-blue-400 leading-none">YOU</span>
               <span id="water-player-score-badge" class="px-1.5 py-0.5 rounded bg-blue-600/20 text-blue-300 border border-blue-500/30 font-mono text-[10px] font-black leading-none mt-0.5">0/${TOTAL_COLORS}</span>
@@ -506,18 +701,25 @@ export class WaterSortGame implements GameInstance {
           </div>
 
           <!-- Center Dynamic Momentum Banner -->
-          <div id="water-status-banner" class="flex flex-col items-center px-2 py-0.5 rounded-xl bg-amber-600/15 border border-amber-500/30 text-center mx-auto w-full max-w-[140px]">
-            <span id="water-status-text" class="text-[9px] sm:text-[10px] font-black tracking-wide text-amber-400 uppercase truncate max-w-[125px]">GET READY!</span>
-            <span id="water-hint-text" class="text-[8px] font-medium text-gray-400 truncate max-w-[125px]">Match starts in 3...</span>
+          <div id="water-status-banner" class="flex flex-col items-center justify-center px-2 py-0.5 rounded-xl bg-amber-600/15 border border-amber-500/30 text-center mx-auto w-full max-w-[160px] min-h-[36px] transition-all">
+            <span id="water-status-text" class="text-[9px] sm:text-[10px] font-black tracking-wide text-amber-400 uppercase leading-tight whitespace-nowrap">GET READY!</span>
+            <span id="water-hint-text" class="text-[8px] font-medium text-gray-400 leading-tight truncate max-w-[150px]">Match starts in 3...</span>
           </div>
 
           <!-- Opponent Side -->
           <div class="flex items-center space-x-1.5 justify-self-end text-right">
             <div class="flex flex-col items-end">
-              <span id="water-opp-name" class="text-[9px] font-bold text-emerald-400 leading-none truncate max-w-[65px]">${this.opponentName}</span>
-              <span id="water-opp-score-badge" class="px-1.5 py-0.5 rounded bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 font-mono text-[10px] font-black leading-none mt-0.5">0/${TOTAL_COLORS}</span>
+              <span id="water-opp-name" class="text-[9px] font-bold text-emerald-400 leading-none truncate max-w-[80px]">${this.opponentName}</span>
+              <div class="flex items-center space-x-1 mt-0.5">
+                <span id="water-opp-score-badge" class="px-1.5 py-0.5 rounded bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 font-mono text-[10px] font-black leading-none">0/${TOTAL_COLORS}</span>
+                <span id="water-opp-bowl-status" class="hidden text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border leading-none"></span>
+              </div>
+              <!-- Mini Cleared Colors tray for Opponent -->
+              <div id="water-opp-cleared-tray" class="flex items-center space-x-0.5 mt-1 min-h-[8px]"></div>
             </div>
-            <div class="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center font-black text-[11px] shrink-0">O</div>
+            <div id="water-opp-avatar" class="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center font-black text-xs shrink-0 transition-all duration-300">
+              ${this.session.mode === 'ai' ? '🤖' : '👤'}
+            </div>
           </div>
         </div>
 
@@ -609,6 +811,11 @@ export class WaterSortGame implements GameInstance {
     this.netDotEl = document.getElementById('water-net-dot');
     this.netTextEl = document.getElementById('water-net-text');
     this.rematchBtnEl = document.getElementById('water-btn-play-again') as HTMLButtonElement;
+    this.statusBannerEl = document.getElementById('water-status-banner');
+    this.enemyToastEl = document.getElementById('water-enemy-toast');
+    this.oppClearedTrayEl = document.getElementById('water-opp-cleared-tray');
+    this.oppBowlStatusEl = document.getElementById('water-opp-bowl-status');
+    this.oppAvatarEl = document.getElementById('water-opp-avatar');
 
     this.setupEventListeners();
     this.render();
@@ -1033,7 +1240,7 @@ export class WaterSortGame implements GameInstance {
       this.scoreTrackerEl.textContent = scoreStr;
     }
 
-    if (this.statusTextEl && this.hintTextEl && this.transientStatusTimeout === null) {
+    if (this.statusTextEl && this.hintTextEl && (this.enemyToastTimeout === null || this.phase === 'MATCH_OVER')) {
       let newStatus = '';
       let newHint = '';
 
@@ -1272,9 +1479,9 @@ export class WaterSortGame implements GameInstance {
       clearInterval(this.countdownTimer);
       this.countdownTimer = null;
     }
-    if (this.transientStatusTimeout !== null) {
-      clearTimeout(this.transientStatusTimeout);
-      this.transientStatusTimeout = null;
+    if (this.enemyToastTimeout !== null) {
+      clearTimeout(this.enemyToastTimeout);
+      this.enemyToastTimeout = null;
     }
     if (this.audioCtx) {
       this.audioCtx.close().catch(() => {});

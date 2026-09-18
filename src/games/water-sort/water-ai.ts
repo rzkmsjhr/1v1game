@@ -3,7 +3,14 @@ import { TOTAL_TUBES, TUBE_CAPACITY } from './water-types';
 import type { AIDifficulty } from '../types';
 
 export interface AICallbacks {
-  onMove?: (action: { type: 'tube' | 'reservoir'; srcIndex: number; dstIndex?: number }) => void;
+  onMove?: (action: {
+    type: 'tube' | 'reservoir';
+    srcIndex: number;
+    dstIndex?: number;
+    color?: string;
+    count?: number;
+    isCompleted?: boolean;
+  }) => void;
   onProgress?: (score: number, completedColors: string[], isWon: boolean) => void;
 }
 
@@ -337,7 +344,13 @@ export class WaterAI {
           src: selectedMove.srcIndex,
           color: selectedMove.color
         });
-        this.callbacks.onMove?.({ type: 'reservoir', srcIndex: selectedMove.srcIndex });
+        this.callbacks.onMove?.({
+          type: 'reservoir',
+          srcIndex: selectedMove.srcIndex,
+          color: selectedMove.color,
+          count: res.count,
+          isCompleted: res.isCompleted
+        });
         this.callbacks.onProgress?.(this.engine.state.score, this.engine.state.completedColors, this.engine.state.isWon);
       }
     } else if (selectedMove.type === 'tube' && selectedMove.dstIndex !== undefined) {
