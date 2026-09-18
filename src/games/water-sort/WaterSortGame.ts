@@ -460,8 +460,11 @@ export class WaterSortGame implements GameInstance {
       this.enemyToastTimeout = null;
     }
     if (this.enemyToastEl) {
-      this.enemyToastEl.className = 'w-full transition-all duration-300 max-h-0 py-0 opacity-0 overflow-hidden text-center my-0 rounded-xl border flex items-center justify-center space-x-2 px-3 text-xs font-bold';
+      this.enemyToastEl.className = 'w-full h-full transition-all duration-300 opacity-0 -translate-y-1 scale-98 pointer-events-none text-center rounded-xl border border-transparent flex items-center justify-center space-x-2 px-3 text-xs font-bold';
       this.enemyToastEl.style.boxShadow = '';
+      this.enemyToastEl.style.backgroundColor = '';
+      this.enemyToastEl.style.color = '';
+      this.enemyToastEl.style.borderColor = 'transparent';
     }
     if (this.statusBannerEl) {
       this.statusBannerEl.style.borderColor = '';
@@ -539,14 +542,15 @@ export class WaterSortGame implements GameInstance {
       this.enemyToastEl.style.boxShadow = `0 0 16px ${colorHex}55`;
       this.enemyToastEl.style.backgroundColor = isDark ? '#111827' : '#ffffff';
       this.enemyToastEl.style.color = isDark ? '#ffffff' : '#111827';
-      this.enemyToastEl.className = `w-full transition-all duration-300 max-h-12 py-1.5 opacity-100 text-center my-1 rounded-xl border flex items-center justify-center space-x-2 px-3 text-xs font-bold shadow-lg`;
+      this.enemyToastEl.className = `w-full h-full transition-all duration-300 opacity-100 translate-y-0 scale-100 text-center rounded-xl border flex items-center justify-center space-x-2 px-3 text-xs font-bold shadow-lg`;
 
       this.enemyToastTimeout = window.setTimeout(() => {
         if (this.enemyToastEl) {
-          this.enemyToastEl.className = 'w-full transition-all duration-300 max-h-0 py-0 opacity-0 overflow-hidden text-center my-0 rounded-xl border-0 flex items-center justify-center space-x-2 px-3 text-xs font-bold';
+          this.enemyToastEl.className = 'w-full h-full transition-all duration-300 opacity-0 -translate-y-1 scale-98 pointer-events-none text-center rounded-xl border border-transparent flex items-center justify-center space-x-2 px-3 text-xs font-bold';
           this.enemyToastEl.style.boxShadow = '';
           this.enemyToastEl.style.backgroundColor = '';
           this.enemyToastEl.style.color = '';
+          this.enemyToastEl.style.borderColor = 'transparent';
         }
         if (this.statusBannerEl) {
           this.statusBannerEl.style.borderColor = '';
@@ -574,14 +578,15 @@ export class WaterSortGame implements GameInstance {
       this.enemyToastEl.style.boxShadow = `0 0 12px ${colorHex}33`;
       this.enemyToastEl.style.backgroundColor = isDark ? '#111827' : '#ffffff';
       this.enemyToastEl.style.color = isDark ? '#ffffff' : '#111827';
-      this.enemyToastEl.className = `w-full transition-all duration-300 max-h-10 py-1 opacity-100 text-center my-0.5 rounded-xl border flex items-center justify-center space-x-2 px-3 text-xs font-bold shadow-md`;
+      this.enemyToastEl.className = `w-full h-full transition-all duration-300 opacity-100 translate-y-0 scale-100 text-center rounded-xl border flex items-center justify-center space-x-2 px-3 text-xs font-bold shadow-md`;
 
       this.enemyToastTimeout = window.setTimeout(() => {
         if (this.enemyToastEl) {
-          this.enemyToastEl.className = 'w-full transition-all duration-300 max-h-0 py-0 opacity-0 overflow-hidden text-center my-0 rounded-xl border-0 flex items-center justify-center space-x-2 px-3 text-xs font-bold';
+          this.enemyToastEl.className = 'w-full h-full transition-all duration-300 opacity-0 -translate-y-1 scale-98 pointer-events-none text-center rounded-xl border border-transparent flex items-center justify-center space-x-2 px-3 text-xs font-bold';
           this.enemyToastEl.style.boxShadow = '';
           this.enemyToastEl.style.backgroundColor = '';
           this.enemyToastEl.style.color = '';
+          this.enemyToastEl.style.borderColor = 'transparent';
         }
         if (this.statusBannerEl) {
           this.statusBannerEl.style.borderColor = '';
@@ -684,9 +689,11 @@ export class WaterSortGame implements GameInstance {
           ⚠️ Opponent is tabbed out / minimized
         </div>
 
-        <!-- Opponent Action Notice Banner (Noticeable, Unclipped, Animated) -->
-        <div id="water-enemy-toast" class="w-full transition-all duration-300 max-h-0 py-0 opacity-0 overflow-hidden text-center my-0 rounded-xl border flex items-center justify-center space-x-2 px-3 text-xs font-bold">
-          <!-- Populated dynamically -->
+        <!-- Opponent Action Notice Slot (Fixed height prevents any layout shift; generous top spacing) -->
+        <div id="water-enemy-toast-slot" class="w-full h-8 sm:h-9 relative flex items-center justify-center mt-2.5 sm:mt-3 mb-1.5 sm:mb-2">
+          <div id="water-enemy-toast" class="w-full h-full transition-all duration-300 opacity-0 -translate-y-1 scale-98 pointer-events-none text-center rounded-xl border border-transparent flex items-center justify-center space-x-2 px-3 text-xs font-bold">
+            <!-- Populated dynamically -->
+          </div>
         </div>
 
         <!-- 1v1 Split Duel Score & Momentum HUD -->
