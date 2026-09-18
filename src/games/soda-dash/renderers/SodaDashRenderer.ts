@@ -239,7 +239,7 @@ export class SodaDashRenderer {
     this.drawRoad(ctx, width, height, horizonY, vanishX, cameraZ);
 
     // 3. Collect all 3D renderable objects (Obstacles, Pickups, Runners)
-    this.drawWorldObjects(ctx, width, height, horizonY, vanishX, cameraZ);
+    this.drawWorldObjects(ctx, width, height, horizonY, vanishX, cameraZ, dt);
 
     // 4. Update and Render Particles
     this.drawParticles(ctx, dt);
@@ -388,8 +388,8 @@ export class SodaDashRenderer {
       const rightInner1 = rightOuter1 - curbW1;
       const rightInner2 = rightOuter2 - curbW2;
 
-      // 1. Center Asphalt Road (Smooth Slate, clean without yellow stripes)
-      ctx.fillStyle = isOdd ? '#334155' : '#2d3748';
+      // 1. Center Asphalt Road (Enhanced contrast for clear optical flow on high-refresh displays)
+      ctx.fillStyle = isOdd ? '#38465c' : '#242f40';
       ctx.beginPath();
       ctx.moveTo(leftInner2, p2.y);
       ctx.lineTo(rightInner2, p2.y);
@@ -397,6 +397,36 @@ export class SodaDashRenderer {
       ctx.lineTo(leftInner1, p1.y);
       ctx.closePath();
       ctx.fill();
+
+      // 1b. Painted Dashed Lane Dividers (100% coplanar and glued to the asphalt surface)
+      // Alternates with segments (isOdd) to create clean 2m painted, 2m gap highway dashed lines
+      if (isOdd) {
+        const dashW1 = Math.max(1.5, 4.5 * (p1.scale / (isMobile ? 1.42 : 1.0)));
+        const dashW2 = Math.max(1.5, 4.5 * (p2.scale / (isMobile ? 1.42 : 1.0)));
+        ctx.fillStyle = 'rgba(254, 240, 138, 0.85)'; // Radiant warm golden-white lane marking
+
+        // Divider 1 (between Left Lane -1 and Center Lane 0: lane offset -0.5)
+        const div1X1 = vanishX - 0.5 * p1.laneSpacing;
+        const div1X2 = vanishX - 0.5 * p2.laneSpacing;
+        ctx.beginPath();
+        ctx.moveTo(div1X2 - dashW2 * 0.5, p2.y);
+        ctx.lineTo(div1X2 + dashW2 * 0.5, p2.y);
+        ctx.lineTo(div1X1 + dashW1 * 0.5, p1.y);
+        ctx.lineTo(div1X1 - dashW1 * 0.5, p1.y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Divider 2 (between Center Lane 0 and Right Lane 1: lane offset +0.5)
+        const div2X1 = vanishX + 0.5 * p1.laneSpacing;
+        const div2X2 = vanishX + 0.5 * p2.laneSpacing;
+        ctx.beginPath();
+        ctx.moveTo(div2X2 - dashW2 * 0.5, p2.y);
+        ctx.lineTo(div2X2 + dashW2 * 0.5, p2.y);
+        ctx.lineTo(div2X1 + dashW1 * 0.5, p1.y);
+        ctx.lineTo(div2X1 - dashW1 * 0.5, p1.y);
+        ctx.closePath();
+        ctx.fill();
+      }
 
       // 2. Left Red & White Strip (100% Aligned to Asphalt Outer Edge)
       ctx.fillStyle = isOdd ? '#ef4444' : '#ffffff';
@@ -430,7 +460,8 @@ export class SodaDashRenderer {
     height: number,
     horizonY: number,
     vanishX: number,
-    cameraZ: number
+    cameraZ: number,
+    dt: number
   ): void {
     const isMobile = width < 768 || height > width;
     const zCrest = isMobile ? 28 : 38;
@@ -504,7 +535,7 @@ export class SodaDashRenderer {
     for (let i = 0; i < count; i++) {
       const slot = this.renderSlots[i];
       if (slot.isRunner && slot.runner) {
-        this.drawRunner(ctx, slot.runner, width, height, horizonY, vanishX, cameraZ, slot.isPlayer);
+        this.drawRunner(ctx, slot.runner, width, height, horizonY, vanishX, cameraZ, slot.isPlayer, dt);
       } else if (!slot.isRunner && slot.item) {
         this.drawTrackItem(ctx, slot.item, width, height, horizonY, vanishX, cameraZ);
       }
@@ -1207,7 +1238,8 @@ export class SodaDashRenderer {
     horizonY: number,
     vanishX: number,
     cameraZ: number,
-    isPlayer: boolean
+    isPlayer: boolean,
+    dt: number = 0.016
   ): void {
     const relZ = runner.distance - cameraZ;
     if (relZ <= 0.4) return;
@@ -1267,8 +1299,8 @@ export class SodaDashRenderer {
     const accentColor = isPlayer ? '#facc15' : '#38bdf8';
     const visorColor = '#fef08a';
 
-    // Running cycle phase based on distance
-    const runPhase = (runner.distance * 0.65) % (Math.PI * 2);
+    // Running cycle phase based on distance (energetic 1.35x cadence avoids slow-motion look on 144Hz)
+    const runPhase = (runner.distance * 1.35) % (Math.PI * 2);
     const legSwing = Math.sin(runPhase);
     const armSwingLeft = -legSwing;
     const armSwingRight = legSwing;
@@ -1296,8 +1328,9 @@ export class SodaDashRenderer {
       ctx.fill();
       ctx.stroke();
 
-      // Slide spark particles
-      if (Math.random() < 0.4) {
+      // Slide spark particles (Frame-rate independent Poisson rate)
+      const slideSparkProb = 1 - Math.pow(1 - 0.4, dt * 60);
+      if (Math.random() < slideSparkProb) {
         this.addSplash(p.x + (Math.random() - 0.5) * 40 * s, p.y - 2, '#fde047', 2);
       }
     } else {
@@ -1484,8 +1517,9 @@ export class SodaDashRenderer {
         ctx.fill();
       }
 
-      // Trailing rocket spark particles
-      if (Math.random() < 0.6) {
+      // Trailing rocket spark particles (Frame-rate independent Poisson rate)
+      const rocketSparkProb = 1 - Math.pow(1 - 0.6, dt * 60);
+      if (Math.random() < rocketSparkProb) {
         this.addSplash(p.x + (Math.random() - 0.5) * 20 * s, p.y + rocketY + 24 * s, '#fbbf24', 2);
       }
     }
@@ -1583,7 +1617,7 @@ export class SodaDashRenderer {
   }
 
   private drawScreenOverlays(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-    // Speed Wind Streaks if Turbo is active (batched into single draw call)
+    // Speed Wind Streaks: Full intensity on Turbo, subtle ambient peripheral streaks at normal running
     if (this.engine.player.isTurbo) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
       ctx.lineWidth = 1.5;
@@ -1594,6 +1628,23 @@ export class SodaDashRenderer {
         const len = 40 + Math.random() * 80;
         ctx.moveTo(sx, sy);
         ctx.lineTo(sx - len * 0.4, sy + len);
+      }
+      ctx.stroke();
+    } else if (this.engine.player.speed > 17) {
+      // Subtle peripheral speed streaks for optical flow on high refresh rate displays
+      const speedRatio = Math.min(1.0, Math.max(0, (this.engine.player.speed - 17) / 28));
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.14 + speedRatio * 0.18})`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      const numStreaks = Math.min(4, Math.floor(2 + speedRatio * 2));
+      for (let i = 0; i < numStreaks; i++) {
+        // Keep to outer 25% edges of screen so main track stays crystal clear
+        const isLeft = Math.random() < 0.5;
+        const sx = isLeft ? Math.random() * (width * 0.25) : width * 0.75 + Math.random() * (width * 0.25);
+        const sy = Math.random() * height;
+        const len = 25 + Math.random() * 45;
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx - len * 0.35, sy + len);
       }
       ctx.stroke();
     }

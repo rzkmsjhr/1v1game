@@ -39,7 +39,7 @@ export class SodaDashGame implements GameInstance {
 
   // Remote Opponent Smooth Netcode State (Dead reckoning + LERP interpolation)
   private remoteTargetDistance: number = 0;
-  private remoteTargetSpeed: number = 16;
+  private remoteTargetSpeed: number = 18;
   private remoteTargetLane: Lane = 1;
   private remoteTargetX: number = 1;
   private remoteTargetJumpY: number = 0;
@@ -169,7 +169,7 @@ export class SodaDashGame implements GameInstance {
             </div>
             <div class="flex items-baseline justify-between pt-0.5">
               <div id="player-dist" class="text-base sm:text-2xl font-black font-mono text-slate-900 dark:text-white tracking-tight">0 m</div>
-              <div id="player-speed" class="text-[10px] sm:text-xs font-bold font-mono text-cyan-500 dark:text-cyan-300">58 km/h</div>
+              <div id="player-speed" class="text-[10px] sm:text-xs font-bold font-mono text-cyan-500 dark:text-cyan-300">65 km/h</div>
             </div>
           </div>
 
@@ -681,7 +681,7 @@ export class SodaDashGame implements GameInstance {
         this.isInitialSeedSynced = true;
         this.engine.reset(msg.seed);
         this.remoteTargetDistance = 0;
-        this.remoteTargetSpeed = 16;
+        this.remoteTargetSpeed = 18;
         this.remoteTargetLane = 1;
         this.remoteTargetX = 1;
         this.remoteTargetJumpY = 0;
@@ -743,7 +743,7 @@ export class SodaDashGame implements GameInstance {
     } else if (msg.type === 'DASH_REMATCH') {
       this.engine.reset(msg.seed);
       this.remoteTargetDistance = 0;
-      this.remoteTargetSpeed = 16;
+      this.remoteTargetSpeed = 18;
       this.remoteTargetLane = 1;
       this.remoteTargetX = 1;
       this.remoteTargetJumpY = 0;
@@ -809,7 +809,7 @@ export class SodaDashGame implements GameInstance {
 
   private startLoop(): void {
     const loop = (time: number) => {
-      const dt = Math.min((time - this.lastTime) / 1000, 0.1);
+      const dt = Math.max(0.001, Math.min((time - this.lastTime) / 1000, 0.1));
       this.lastTime = time;
 
       // 1. In online mode: Dead reckoning & liquid exponential LERP smoothing for remote opponent
@@ -822,21 +822,21 @@ export class SodaDashGame implements GameInstance {
           this.remoteTargetDistance += this.remoteTargetSpeed * dt;
         }
 
-        // Smoothly blend distance toward target
+        // Smoothly blend distance toward target (exact frame-rate independent exponential decay)
         const distDiff = this.remoteTargetDistance - opp.distance;
         if (Math.abs(distDiff) > 6.0) {
           opp.distance = this.remoteTargetDistance;
         } else {
-          opp.distance += distDiff * Math.min(1.0, 14.0 * dt);
+          opp.distance += distDiff * (1 - Math.exp(-14.0 * dt));
         }
 
         // Smoothly blend lateral position toward target
         const xDiff = this.remoteTargetX - opp.currentX;
-        opp.currentX += xDiff * Math.min(1.0, 18.0 * dt);
+        opp.currentX += xDiff * (1 - Math.exp(-18.0 * dt));
 
         // Smoothly blend vertical jump position toward target
         const yDiff = this.remoteTargetJumpY - opp.jumpY;
-        opp.jumpY += yDiff * Math.min(1.0, 22.0 * dt);
+        opp.jumpY += yDiff * (1 - Math.exp(-22.0 * dt));
 
         opp.speed = this.remoteTargetSpeed;
         opp.lane = this.remoteTargetLane;
@@ -1019,7 +1019,7 @@ export class SodaDashGame implements GameInstance {
     const newSeed = Date.now();
     this.engine.reset(newSeed);
     this.remoteTargetDistance = 0;
-    this.remoteTargetSpeed = 16;
+    this.remoteTargetSpeed = 18;
     this.remoteTargetLane = 1;
     this.remoteTargetX = 1;
     this.remoteTargetJumpY = 0;

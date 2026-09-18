@@ -42,7 +42,7 @@ export class SodaDashEngine {
       hearts: 3,
       maxHearts: 3,
       distance: 0,
-      speed: 16, // Start at a friendly, approachable 16 m/s (~58 km/h)
+      speed: 18, // Start at an energetic 18 m/s (~65 km/h)
       lane: id === 'player' ? -1 : 1, // Player starts left, rival starts right
       currentX: id === 'player' ? -1 : 1,
       jumpY: 0,
@@ -174,10 +174,10 @@ export class SodaDashEngine {
 
   private updateRunner(r: RunnerState, dt: number): void {
     // 1. Calculate Target Base Speed with Smooth Asymptotic Scaling Curve
-    // Starts at a friendly, kid-accessible 16 m/s (~58 km/h) and gently scales towards 45 m/s (~162 km/h)
-    const baseSpeed = 16;
+    // Starts at an energetic 18 m/s (~65 km/h) and smoothly scales towards 45 m/s (~162 km/h)
+    const baseSpeed = 18;
     const maxSpeed = 45;
-    const targetBaseSpeed = baseSpeed + (maxSpeed - baseSpeed) * (1 - Math.exp(-r.distance / 1000));
+    const targetBaseSpeed = baseSpeed + (maxSpeed - baseSpeed) * (1 - Math.exp(-r.distance / 700));
 
     let effectiveSpeed = targetBaseSpeed;
 
@@ -201,9 +201,9 @@ export class SodaDashEngine {
     r.speed = effectiveSpeed;
     r.distance += effectiveSpeed * dt;
 
-    // 2. Smooth Lateral Position Interpolation (Lane Switching)
+    // 2. Smooth Lateral Position Interpolation (Exact frame-rate independent exponential decay)
     const lateralSpeed = 16.0;
-    r.currentX += (r.lane - r.currentX) * Math.min(1.0, lateralSpeed * dt);
+    r.currentX += (r.lane - r.currentX) * (1 - Math.exp(-lateralSpeed * dt));
 
     // 3. Vertical Jump Arc Physics
     if (r.isJumping || r.jumpY > 0) {
