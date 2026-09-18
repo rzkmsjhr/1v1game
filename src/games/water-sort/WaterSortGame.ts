@@ -96,7 +96,19 @@ export class WaterSortGame implements GameInstance {
     this.mount();
     this.setupNetwork();
     this.setupAI();
-    this.startCountdown();
+
+    if (session.mode === 'online' && session.peer?.role === 'guest') {
+      // Guest waits for host to send match seed before counting down!
+      this.phase = 'COUNTDOWN';
+      if (this.countdownOverlayEl && this.countdownNumberEl && this.countdownSubtitleEl) {
+        this.countdownOverlayEl.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+        this.countdownNumberEl.className = 'text-4xl sm:text-5xl font-black text-amber-400 animate-pulse';
+        this.countdownNumberEl.textContent = '⏳';
+        this.countdownSubtitleEl.textContent = 'WAITING FOR HOST...';
+      }
+    } else {
+      this.startCountdown();
+    }
   }
 
   private getAudioContext(): AudioContext | null {
@@ -177,6 +189,18 @@ export class WaterSortGame implements GameInstance {
         },
         onStatusChange: (status: string, message?: string) => {
           origOnStatusChange?.(status as any, message);
+          if (status === 'connected') {
+            if (this.session.peer?.role === 'host') {
+              this.session.peer.sendMessage({
+                type: 'WATER_INIT',
+                seed: this.matchSeed
+              });
+            } else if (this.session.peer?.role === 'guest') {
+              this.session.peer.sendMessage({
+                type: 'WATER_REQUEST_SEED'
+              });
+            }
+          }
           if (status === 'disconnected') {
             if (this.phase !== 'MATCH_OVER' && !this.opponentWon && !this.engine.state.isWon) {
               this.handleMatchEnd('player', 'Opponent disconnected. You win by forfeit!');
@@ -200,11 +224,15 @@ export class WaterSortGame implements GameInstance {
       });
     }
 
-    // Host shares seed
+    // Host shares seed, guest requests if already connected
     if (this.session.peer.role === 'host') {
       this.session.peer.sendMessage({
         type: 'WATER_INIT',
         seed: this.matchSeed
+      });
+    } else if (this.session.peer.role === 'guest') {
+      this.session.peer.sendMessage({
+        type: 'WATER_REQUEST_SEED'
       });
     }
   }
@@ -246,12 +274,26 @@ export class WaterSortGame implements GameInstance {
           this.handleMatchEnd('player', 'Opponent forfeited the match.');
         }
         break;
+      case 'WATER_REQUEST_SEED':
+        if (this.session.peer?.role === 'host') {
+          this.session.peer.sendMessage({
+            type: 'WATER_INIT',
+            seed: this.matchSeed
+          });
+        }
+        break;
       case 'WATER_INIT':
         this.matchSeed = msg.seed;
         this.startNewMatch(this.matchSeed);
         break;
       case 'WATER_POUR_TUBE':
-        // Opponent made a tube pour
+        // Opponent tube pour heartbeat: subtle bounce on opponent avatar
+        if (this.oppAvatarEl) {
+          this.oppAvatarEl.classList.add('scale-110');
+          setTimeout(() => {
+            if (this.oppAvatarEl) this.oppAvatarEl.classList.remove('scale-110');
+          }, 150);
+        }
         break;
       case 'WATER_POUR_BOWL': {
         const color = msg.color;
@@ -262,13 +304,16 @@ export class WaterSortGame implements GameInstance {
             this.opponentCompletedColors.push(color);
           }
           this.opponentReservoirState = { color: null, count: 0 };
+          this.opponentScore = msg.score !== undefined ? msg.score : this.opponentCompletedColors.length;
           this.showOpponentActionToast('clear', color);
           this.updateOpponentClearedTray();
           this.updateOpponentBowlStatus();
+          this.updateHUD(true);
         } else {
           this.opponentReservoirState = { color, count: msg.newBowlCount || count };
           this.showOpponentActionToast('pour', color, this.opponentReservoirState.count);
           this.updateOpponentBowlStatus();
+          this.updateHUD(true);
         }
         break;
       }
