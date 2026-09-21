@@ -242,27 +242,38 @@ export class DriftRacingGame implements GameInstance {
     bindBtn('#btn-touch-handbrake', () => this.inputs.handbrake = true, () => this.inputs.handbrake = false);
   }
 
+  private activeKeys = new Set<string>();
+
+  private updateInputsFromKeys() {
+    this.inputs.throttle = (this.activeKeys.has('KeyW') || this.activeKeys.has('ArrowUp')) ? 1 : 0;
+    this.inputs.brake = (this.activeKeys.has('KeyS') || this.activeKeys.has('ArrowDown'));
+    this.inputs.handbrake = this.activeKeys.has('Space');
+
+    const left = this.activeKeys.has('KeyA') || this.activeKeys.has('ArrowLeft');
+    const right = this.activeKeys.has('KeyD') || this.activeKeys.has('ArrowRight');
+    if (left && !right) this.inputs.steer = -1;
+    else if (right && !left) this.inputs.steer = 1;
+    else this.inputs.steer = 0;
+  }
+
   private handleKeyDown(e: KeyboardEvent) {
-    if (['ArrowUp', 'KeyW'].includes(e.code)) this.inputs.throttle = 1;
-    if (['ArrowDown', 'KeyS'].includes(e.code)) this.inputs.brake = true;
-    if (['ArrowLeft', 'KeyA'].includes(e.code)) this.inputs.steer = -1;
-    if (['ArrowRight', 'KeyD'].includes(e.code)) this.inputs.steer = 1;
-    if (e.code === 'Space') {
-      this.inputs.handbrake = true;
-      e.preventDefault();
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyS', 'KeyA', 'KeyD', 'Space'].includes(e.code)) {
+      this.activeKeys.add(e.code);
+      this.updateInputsFromKeys();
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        e.preventDefault();
+      }
     }
   }
 
   private handleKeyUp(e: KeyboardEvent) {
-    if (['ArrowUp', 'KeyW'].includes(e.code)) this.inputs.throttle = 0;
-    if (['ArrowDown', 'KeyS'].includes(e.code)) this.inputs.brake = false;
-    if (['ArrowLeft', 'KeyA'].includes(e.code)) {
-      if (this.inputs.steer === -1) this.inputs.steer = 0;
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyS', 'KeyA', 'KeyD', 'Space'].includes(e.code)) {
+      this.activeKeys.delete(e.code);
+      this.updateInputsFromKeys();
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        e.preventDefault();
+      }
     }
-    if (['ArrowRight', 'KeyD'].includes(e.code)) {
-      if (this.inputs.steer === 1) this.inputs.steer = 0;
-    }
-    if (e.code === 'Space') this.inputs.handbrake = false;
   }
 
   private handleResize() {

@@ -1,19 +1,20 @@
 export const DRIFT_CONSTANTS = {
-  // Vehicle Dynamics
-  MAX_SPEED: 7.2,
-  MAX_REVERSE_SPEED: 2.2,
-  ACCEL_FORWARD: 0.20,
-  BRAKE_RATE: 0.30,
-  HANDBRAKE_RATE: 0.16,
-  ROLLING_DRAG: 0.985,
-  TURN_SPEED: 0.048,
-  STEER_RETURN_RATE: 0.20,
-  MAX_STEER_RAD: 0.55, // ~31.5 degrees
+  // Vehicle Dynamics (Balanced for responsive, controllable 2D drifting)
+  MAX_SPEED: 4.4,            // Controllable top speed (was 7.2)
+  MAX_REVERSE_SPEED: 1.8,
+  ACCEL_FORWARD: 0.075,      // Smooth, progressive acceleration (was 0.20)
+  BRAKE_RATE: 0.16,          // Controlled deceleration
+  HANDBRAKE_RATE: 0.07,      // Handbrake cuts speed slightly while sustaining slide
+  ROLLING_DRAG: 0.988,       // Coasting deceleration
+  TURN_SPEED: 0.075,         // Responsive normal steering (was 0.048)
+  DRIFT_TURN_SPEED: 0.105,   // Agile tail kick-out when drifting
+  STEER_RETURN_RATE: 0.28,   // Snappy wheel return and counter-steering
+  MAX_STEER_RAD: 0.58,       // ~33 degrees max front wheel lock
 
-  // Tire Grip Coefficients
-  TIRE_GRIP_NORMAL: 0.945,
-  TIRE_GRIP_DRIFT: 0.885,
-  TIRE_GRIP_HANDBRAKE: 0.825,
+  // Lateral Grip Coefficients
+  LATERAL_GRIP_NORMAL: 0.76, // Snappy road grip when driving normally
+  LATERAL_GRIP_DRIFT: 0.965, // Low lateral friction: glides sideways smoothly in a drift!
+  LATERAL_GRIP_HANDBRAKE: 0.98, // Maximum slide when yanking handbrake
 
   // Vehicle Dimensions (px)
   AE86: {
@@ -32,19 +33,19 @@ export const DRIFT_CONSTANTS = {
   },
 
   // Scoring Rules & Thresholds
-  DRIFT_INIT_ANGLE_DEG: 16, // Slip angle needed to start scoring drift points
+  DRIFT_INIT_ANGLE_DEG: 12, // Lower threshold so getting sideways rewards points immediately
   MAX_DRIFT_ANGLE_DEG: 95, // Spinout threshold: > 95° = TWIST FAULT (0 pts round)
   
   // Throttle Commitment
-  COMMITMENT_MIN_THROTTLE: 0.35,
+  COMMITMENT_MIN_THROTTLE: 0.30,
 
   // Green Clipping Zone Multipliers
   ZONE_TIRE_MULTIPLIERS: [0, 0.25, 0.50, 0.75, 1.00], // 0, 1, 2, 3, 4 tires
 
   // Chase Proximity Brackets (px)
-  PROXIMITY_DOOR_TO_DOOR: 50, // Ultra close tandem
-  PROXIMITY_POCKET: 90,       // Tight chase
-  PROXIMITY_OUT_OF_RANGE: 160,
+  PROXIMITY_DOOR_TO_DOOR: 46, // Ultra close tandem
+  PROXIMITY_POCKET: 82,       // Tight chase
+  PROXIMITY_OUT_OF_RANGE: 150,
 
   // Penalties
   OVERTAKE_LEAD_AXLE_PENALTY: 200,

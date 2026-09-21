@@ -107,81 +107,105 @@ export class DriftEngine {
     state.brake = inputs.brake;
     state.handbrake = inputs.handbrake;
 
-    // 1. Steering Articulation
+    // 1. Steering Articulation (front wheels)
     const targetSteer = inputs.steer * DRIFT_CONSTANTS.MAX_STEER_RAD;
     state.steerAngle += (targetSteer - state.steerAngle) * DRIFT_CONSTANTS.STEER_RETURN_RATE;
 
-    // 2. Acceleration & Braking
+    // 2. Decompose current velocity into Forward (vFwd) and Lateral (vLat) components
+    // Heading unit vectors: forward = (sin(angle), -cos(angle)), right = (cos(angle), sin(angle))
+    const cosAngle = Math.cos(state.angle);
+    const sinAngle = Math.sin(state.angle);
+    let vFwd = state.vx * sinAngle - state.vy * cosAngle;
+    let vLat = state.vx * cosAngle + state.vy * sinAngle;
+
+    // 3. Forward Acceleration & Braking
     if (inputs.throttle > 0) {
-      state.speed = Math.min(
-        state.speed + inputs.throttle * DRIFT_CONSTANTS.ACCEL_FORWARD,
-        DRIFT_CONSTANTS.MAX_SPEED
-      );
+      vFwd += inputs.throttle * DRIFT_CONSTANTS.ACCEL_FORWARD;
+      if (vFwd > DRIFT_CONSTANTS.MAX_SPEED) vFwd = DRIFT_CONSTANTS.MAX_SPEED;
     } else if (inputs.brake) {
-      state.speed = Math.max(state.speed - DRIFT_CONSTANTS.BRAKE_RATE, -DRIFT_CONSTANTS.MAX_REVERSE_SPEED);
+      if (vFwd > 0.1) {
+        vFwd = Math.max(0, vFwd - DRIFT_CONSTANTS.BRAKE_RATE);
+      } else {
+        vFwd = Math.max(-DRIFT_CONSTANTS.MAX_REVERSE_SPEED, vFwd - DRIFT_CONSTANTS.BRAKE_RATE * 0.6);
+      }
     } else {
-      state.speed *= DRIFT_CONSTANTS.ROLLING_DRAG;
+      vFwd *= DRIFT_CONSTANTS.ROLLING_DRAG;
     }
 
     if (inputs.handbrake) {
-      state.speed *= (1.0 - DRIFT_CONSTANTS.HANDBRAKE_RATE);
+      vFwd *= (1.0 - DRIFT_CONSTANTS.HANDBRAKE_RATE);
     }
 
-    // 3. Angular Rotation & Drift Oversteer
-    const forwardDirection = (state.speed >= 0 ? 1 : -1);
-    const isDrifting = (state.driftSlipAngle >= DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG);
-    const driftMultiplier = (inputs.handbrake ? 2.1 : (isDrifting ? 1.45 : 1.0));
+    const currentSpeed = Math.hypot(vFwd, vLat);
 
-    // Power-oversteer kick: turning hard under full throttle breaks rear traction
-    const isPowerOversteer = Math.abs(inputs.steer) > 0.55 && inputs.throttle > 0.75 && state.speed > 2.0;
+    // 4. Drift State & Oversteer Detection
+    // The car effortlessly initiates a drift when:
+    // a) Handbrake (Space / DRIFT button) is tapped
+    // b) Power-oversteer: turning with throttle at speed (Math.abs(inputs.steer) > 0.45 && inputs.throttle > 0.5 && currentSpeed > 1.2)
+    const isPowerOversteer = (Math.abs(inputs.steer) > 0.45 && inputs.throttle > 0.5 && currentSpeed > 1.2);
+    const wantsDrift = inputs.handbrake || isPowerOversteer;
 
-    if (Math.abs(state.speed) > 0.15) {
-      state.angle += state.steerAngle * DRIFT_CONSTANTS.TURN_SPEED * (state.speed / DRIFT_CONSTANTS.MAX_SPEED) * forwardDirection * driftMultiplier;
-      if (isPowerOversteer) {
-        state.angle += inputs.steer * 0.018;
+    // Current drift slip angle in degrees
+    const currentSlipAngle = Math.atan2(Math.abs(vLat), Math.max(0.15, Math.abs(vFwd))) * (180 / Math.PI);
+    const isCurrentlyDrifting = currentSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG || wantsDrift;
+
+    // 5. Angular Yaw Rotation
+    const speedRatio = Math.min(1.0, currentSpeed / 1.6);
+    const forwardDirection = (vFwd >= -0.1 ? 1 : -1);
+
+    if (currentSpeed > 0.15) {
+      if (isCurrentlyDrifting) {
+        // DRIFTING YAW: Tail kicks out quickly with steering, counter-steering balances slide
+        const yawRate = DRIFT_CONSTANTS.DRIFT_TURN_SPEED * speedRatio * forwardDirection;
+        state.angle += state.steerAngle * yawRate;
+
+        // Additional tail-whip kick on handbrake or power oversteer
+        if (wantsDrift && Math.abs(inputs.steer) > 0.2) {
+          state.angle += inputs.steer * 0.022 * speedRatio;
+        }
+      } else {
+        // NORMAL GRIP YAW: Tight, precise, responsive cornering
+        const yawRate = DRIFT_CONSTANTS.TURN_SPEED * speedRatio * forwardDirection;
+        state.angle += state.steerAngle * yawRate;
       }
     }
 
-    // 4. Lateral Grip vs Drift Slip
-    const headingX = Math.sin(state.angle);
-    const headingY = -Math.cos(state.angle);
-
-    let grip = DRIFT_CONSTANTS.TIRE_GRIP_NORMAL;
+    // 6. Lateral Friction (Grip vs Drift Glide)
     if (inputs.handbrake) {
-      grip = DRIFT_CONSTANTS.TIRE_GRIP_HANDBRAKE;
-    } else if (isDrifting && inputs.throttle > 0.3) {
-      // Sustained throttle keeps rear tires spinning in continuous drift
-      grip = DRIFT_CONSTANTS.TIRE_GRIP_DRIFT;
-    } else if (isPowerOversteer) {
-      grip = DRIFT_CONSTANTS.TIRE_GRIP_DRIFT;
+      vLat *= DRIFT_CONSTANTS.LATERAL_GRIP_HANDBRAKE;
+    } else if (isCurrentlyDrifting && (inputs.throttle > 0.2 || wantsDrift)) {
+      vLat *= DRIFT_CONSTANTS.LATERAL_GRIP_DRIFT;
+    } else {
+      vLat *= DRIFT_CONSTANTS.LATERAL_GRIP_NORMAL;
     }
 
-    state.vx = state.vx * grip + headingX * state.speed * (1 - grip);
-    state.vy = state.vy * grip + headingY * state.speed * (1 - grip);
+    // 7. Reconstruct velocity in world coordinates
+    state.vx = vFwd * sinAngle + vLat * cosAngle;
+    state.vy = -vFwd * cosAngle + vLat * sinAngle;
 
+    state.speed = Math.hypot(state.vx, state.vy);
     state.x += state.vx;
     state.y += state.vy;
 
-    // 5. Wheel Spin Angle (for tire rolling animation)
-    state.wheelSpinAngle += state.speed * 1.2;
+    // 8. Wheel spin for tire tread animation
+    state.wheelSpinAngle += state.speed * 1.4;
 
-    // 6. Calculate Drift Slip Angle (Degrees between heading and velocity vector)
-    const moveSpeed = Math.hypot(state.vx, state.vy);
-    if (moveSpeed > 0.8) {
+    // 9. Accurate Drift Slip Angle
+    if (state.speed > 0.4) {
       const moveAngle = Math.atan2(state.vy, state.vx);
-      const forwardAngle = Math.atan2(-Math.cos(state.angle), Math.sin(state.angle));
-      let diff = Math.abs(moveAngle - forwardAngle);
+      const headingAngle = Math.atan2(-cosAngle, sinAngle);
+      let diff = Math.abs(moveAngle - headingAngle);
       if (diff > Math.PI) diff = Math.PI * 2 - diff;
       state.driftSlipAngle = Math.round((diff * 180) / Math.PI);
     } else {
       state.driftSlipAngle = 0;
     }
 
-    // 7. Update Tires
+    // 10. Update 4 tire positions & contact
     this.updateTirePositions(state, carType);
 
-    // 8. Anti-stall countdown check
-    if (moveSpeed < 0.4) {
+    // 11. Anti-stall stationary timer
+    if (state.speed < 0.3) {
       state.stationaryTimer += dt;
     } else {
       state.stationaryTimer = Math.max(0, state.stationaryTimer - dt * 1.5);
@@ -331,7 +355,7 @@ export class DriftEngine {
     }
 
     // Active Drift Scoring
-    if (state.driftSlipAngle >= DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG && state.speed > 1.2) {
+    if (state.driftSlipAngle >= DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG && state.speed > 0.8) {
       // Angle points (higher degrees approaching 90° awards more points)
       const angleRatio = Math.min(1.0, state.driftSlipAngle / 85);
       const angleRate = Math.pow(angleRatio, 1.6) * 45;
@@ -406,7 +430,7 @@ export class DriftEngine {
     }
 
     // Minor Angle & Zone Additions
-    if (chaseState.driftSlipAngle >= DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG && chaseState.speed > 1.2) {
+    if (chaseState.driftSlipAngle >= DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG && chaseState.speed > 0.8) {
       chaseScore.driftAngleScore += (chaseState.driftSlipAngle / 90) * 15 * dt;
       let tiresInZone = 0;
       for (let i = 0; i < 4; i++) {

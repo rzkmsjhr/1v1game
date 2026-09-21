@@ -153,15 +153,26 @@ export class DriftRenderer {
     this.camX += (playerState.x - this.camX) * 0.16;
     this.camY += (playerState.y - this.camY) * 0.16;
 
-    // 2. Heading rotation tracking (shortest angular arc lerp)
-    let diff = playerState.angle - this.camAngle;
+    // 2. Heading / Trajectory rotation tracking
+    // Blend travel direction (velocity vector) with car heading for cinematic, steady drift camera!
+    let targetAngle = playerState.angle;
+    if (playerState.speed > 0.8) {
+      const velAngle = Math.atan2(playerState.vx, -playerState.vy);
+      let velDiff = velAngle - playerState.angle;
+      while (velDiff > Math.PI) velDiff -= Math.PI * 2;
+      while (velDiff < -Math.PI) velDiff += Math.PI * 2;
+      // 65% follows track travel direction, 35% follows car nose
+      targetAngle = playerState.angle + velDiff * 0.65;
+    }
+
+    let diff = targetAngle - this.camAngle;
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
-    this.camAngle += diff * 0.14;
+    this.camAngle += diff * 0.085; // Silky smooth, stable chase camera rotation!
 
     // 3. Dynamic speed-based zoom
-    const targetZoom = 1.05 - Math.min(0.22, (playerState.speed / DRIFT_CONSTANTS.MAX_SPEED) * 0.2);
-    this.camZoom += (targetZoom - this.camZoom) * 0.1;
+    const targetZoom = 1.06 - Math.min(0.18, (playerState.speed / DRIFT_CONSTANTS.MAX_SPEED) * 0.16);
+    this.camZoom += (targetZoom - this.camZoom) * 0.08;
   }
 
   /**
@@ -401,19 +412,19 @@ export class DriftRenderer {
    */
   private updateAndRenderSmoke(ctx: CanvasRenderingContext2D, car: VehiclePhysicsState, isDay: boolean) {
     // Deposit Skidmarks
-    if (car.driftSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG && car.speed > 1.4) {
+    if (car.driftSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG && car.speed > 0.8) {
       this.skidmarks.push({ x: car.tires[2].x, y: car.tires[2].y, alpha: isDay ? 0.35 : 0.6 });
       this.skidmarks.push({ x: car.tires[3].x, y: car.tires[3].y, alpha: isDay ? 0.35 : 0.6 });
     }
     if (this.skidmarks.length > 600) this.skidmarks.splice(0, 50);
 
-    // Smoke Generation
+    // Smoke Generation (billows with throttle commitment & drift angle)
     const isDrifting = (car.driftSlipAngle >= DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG);
-    const hasThrottle = (car.throttle > 0.1);
+    const hasThrottle = (car.throttle > 0.08);
 
-    if (isDrifting && car.speed > 1.2 && hasThrottle) {
-      const intensity = (car.driftSlipAngle / 50) + (car.throttle * 1.2);
-      const spawnCount = Math.min(4, Math.ceil(intensity));
+    if (isDrifting && car.speed > 0.75 && hasThrottle) {
+      const intensity = (car.driftSlipAngle / 35) + (car.throttle * 1.6);
+      const spawnCount = Math.min(5, Math.ceil(intensity));
 
       for (let i = 0; i < spawnCount; i++) {
         const isLeft = (Math.random() > 0.5);
@@ -421,13 +432,13 @@ export class DriftRenderer {
         const py = isLeft ? car.tires[2].y : car.tires[3].y;
 
         this.smokeParticles.push({
-          x: px + (Math.random() - 0.5) * 4,
-          y: py + (Math.random() - 0.5) * 4,
-          vx: -car.vx * 0.2 + (Math.random() - 0.5) * 0.8,
-          vy: -car.vy * 0.2 + (Math.random() - 0.5) * 0.8,
-          size: 3.5 + Math.random() * 4,
-          alpha: 0.65,
-          decay: 0.015 + Math.random() * 0.01
+          x: px + (Math.random() - 0.5) * 6,
+          y: py + (Math.random() - 0.5) * 6,
+          vx: -car.vx * 0.15 + (Math.random() - 0.5) * 0.9,
+          vy: -car.vy * 0.15 + (Math.random() - 0.5) * 0.9,
+          size: 4.5 + Math.random() * 5,
+          alpha: 0.70,
+          decay: 0.012 + Math.random() * 0.008
         });
       }
     }
