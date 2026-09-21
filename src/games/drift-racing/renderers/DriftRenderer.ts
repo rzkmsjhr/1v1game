@@ -565,6 +565,16 @@ export class DriftRenderer {
     drawTire(-halfTrack, frontY, state.steerAngle);
     drawTire(halfTrack, frontY, state.steerAngle);
 
+    // Chassis Suspension & Weight Transfer (Body Roll & Dive/Squat)
+    // Under lateral G, chassis rolls & shifts laterally over the tires; under accel/brake, it squats/dives
+    const rollOffset = -(state.bodyRoll || 0) * 26;
+    const pitchOffset = -(state.bodyPitch || 0) * 22;
+    const rollAngle = -(state.bodyRoll || 0) * 0.42;
+
+    ctx.save();
+    ctx.translate(rollOffset, pitchOffset);
+    ctx.rotate(rollAngle);
+
     // Bodywork
     if (carType === 'ae86') {
       // TOYOTA AE86 TRUENO
@@ -748,7 +758,8 @@ export class DriftRenderer {
       ctx.restore();
     }
 
-    ctx.restore();
+    ctx.restore(); // Restore suspension body roll & pitch transform
+    ctx.restore(); // Restore car position & angle transform
   }
 
   /**
@@ -850,10 +861,10 @@ export class DriftRenderer {
       ctx.restore();
     }
 
-    // Bottom Player Telemetry: Drift Angle Meter & Clipping Zone Indicator
+    // Bottom Player Telemetry: Drift Angle Meter, Clipping Zone Indicator & G-Force Meter
     ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
     ctx.beginPath();
-    ctx.roundRect(14, viewH - 66, 256, 54, 14);
+    ctx.roundRect(14, viewH - 66, 360, 54, 14);
     ctx.fill();
     ctx.stroke();
 
@@ -869,14 +880,60 @@ export class DriftRenderer {
     // Green Clipping Zone Tire Dots (FL, FR, RL, RR)
     ctx.font = '700 9px sans-serif';
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText('ZONE TIRES:', 150, viewH - 46);
+    ctx.fillText('ZONE TIRES:', 140, viewH - 46);
 
     for (let i = 0; i < 4; i++) {
       ctx.fillStyle = p1.tires[i].inZone ? '#10b981' : '#334155';
       ctx.beginPath();
-      ctx.arc(158 + i * 20, viewH - 26, 5, 0, Math.PI * 2);
+      ctx.arc(146 + i * 17, viewH - 26, 4.5, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    // Real-Time G-Force Crosshair Telemetry Meter
+    const gMeterX = 275;
+    const gMeterY = viewH - 39;
+    const gRadius = 18;
+
+    ctx.save();
+    ctx.translate(gMeterX, gMeterY);
+
+    // G-meter label
+    ctx.font = '700 8.5px sans-serif';
+    ctx.fillStyle = '#94a3b8';
+    ctx.textAlign = 'center';
+    ctx.fillText('G-METER', 0, -gRadius - 3);
+
+    // Meter ring & crosshairs
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, gRadius, 0, Math.PI * 2);
+    ctx.moveTo(-gRadius, 0); ctx.lineTo(gRadius, 0);
+    ctx.moveTo(0, -gRadius); ctx.lineTo(0, gRadius);
+    ctx.stroke();
+
+    // 0.5G inner guide ring
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.beginPath();
+    ctx.arc(0, 0, gRadius * 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // G-Force Vector Dot (shows lateral and longitudinal G)
+    const dotX = Math.max(-gRadius + 2, Math.min(gRadius - 2, (p1.lateralG || 0) * 11));
+    const dotY = Math.max(-gRadius + 2, Math.min(gRadius - 2, (p1.bodyPitch || 0) * 160));
+    ctx.fillStyle = Math.abs(p1.lateralG || 0) > 0.8 ? '#f43f5e' : (Math.abs(p1.lateralG || 0) > 0.4 ? '#f59e0b' : '#38bdf8');
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Numeric G readout
+    ctx.font = '900 11px monospace';
+    ctx.fillStyle = '#f8fafc';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${Math.abs(p1.lateralG || 0).toFixed(1)}G`, gMeterX + 46, viewH - 35);
 
     // Fault Alert Banners
     if (p1Score.isZeroFault) {

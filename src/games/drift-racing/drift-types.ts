@@ -27,6 +27,9 @@ export interface VehiclePhysicsState {
   handbrake: boolean;
   wheelSpinAngle: number;
   stationaryTimer: number; // Seconds stationary for anti-stall
+  bodyRoll: number;        // Chassis lateral roll angle from G-forces (-0.1 to 0.1 rad)
+  bodyPitch: number;       // Chassis pitch (dive on brake, squat on accel)
+  lateralG: number;        // Lateral G-force acceleration
   tires: [TireContactPoint, TireContactPoint, TireContactPoint, TireContactPoint]; // FL, FR, RL, RR
 }
 

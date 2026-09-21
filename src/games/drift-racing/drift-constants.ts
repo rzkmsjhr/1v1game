@@ -1,18 +1,25 @@
 export const DRIFT_CONSTANTS = {
-  // Vehicle Dynamics (Balanced for responsive, controllable 2D drifting)
-  MAX_SPEED: 4.4,            // Controllable top speed (was 7.2)
+  // Vehicle Dynamics (Balanced for realistic chassis weight & G-forces)
+  MAX_SPEED: 4.4,            // Controllable top speed
   MAX_REVERSE_SPEED: 1.8,
-  ACCEL_FORWARD: 0.075,      // Smooth, progressive acceleration (was 0.20)
+  ACCEL_FORWARD: 0.075,      // Progressive acceleration
   BRAKE_RATE: 0.16,          // Controlled deceleration
   HANDBRAKE_RATE: 0.07,      // Handbrake cuts speed slightly while sustaining slide
   ROLLING_DRAG: 0.988,       // Coasting deceleration
-  TURN_SPEED: 0.075,         // Responsive normal steering (was 0.048)
-  DRIFT_TURN_SPEED: 0.105,   // Agile tail kick-out when drifting
-  STEER_RETURN_RATE: 0.28,   // Snappy wheel return and counter-steering
-  MAX_STEER_RAD: 0.58,       // ~33 degrees max front wheel lock
+  TURN_SPEED: 0.052,         // Smooth, natural turning rate with body weight (not twitchy!)
+  DRIFT_TURN_SPEED: 0.078,   // Controlled yaw rotation during drift
+  STEER_RETURN_RATE: 0.16,   // Progressive steering rack movement (replaces instant twitch)
+  MAX_STEER_RAD: 0.54,       // ~31 degrees max front wheel lock
+
+  // Chassis Suspension & Weight Transfer (Body Weight & G-Movement)
+  CHASSIS_INERTIA: 0.16,     // How fast chassis yaw catches up to steering (weight latency)
+  SUSPENSION_ROLL_RATE: 0.18,// Suspension damping for body roll under lateral G
+  SUSPENSION_PITCH_RATE: 0.20,// Suspension damping for nose dive & squat
+  MAX_BODY_ROLL_RAD: 0.065,  // Max visual body roll angle (~3.7 degrees)
+  MAX_BODY_PITCH_RAD: 0.055, // Max visual dive/squat
 
   // Lateral Grip Coefficients
-  LATERAL_GRIP_NORMAL: 0.76, // Snappy road grip when driving normally
+  LATERAL_GRIP_NORMAL: 0.78, // Progressive road grip
   LATERAL_GRIP_DRIFT: 0.965, // Low lateral friction: glides sideways smoothly in a drift!
   LATERAL_GRIP_HANDBRAKE: 0.98, // Maximum slide when yanking handbrake
 

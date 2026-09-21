@@ -20,11 +20,11 @@ export class DriftRacingGame implements GameInstance {
   private canvas: HTMLCanvasElement;
   private track: DriftTrack;
   private engine: DriftEngine;
-  private renderer: DriftRenderer;
+  public renderer: DriftRenderer;
   private ai: DriftAI;
 
   // Match & Round States
-  private roundState: RoundState;
+  public roundState: RoundState;
   private matchHistory: MatchHistoryEntry[] = [];
   private isOnline: boolean;
   private isHost: boolean = true;
@@ -33,15 +33,15 @@ export class DriftRacingGame implements GameInstance {
   private isDestroyed: boolean = false;
 
   // Vehicle States
-  private playerCar: VehiclePhysicsState;
-  private enemyCar: VehiclePhysicsState;
-  private playerModel: CarModelType = 'ae86';
-  private enemyModel: CarModelType = 's15';
-  private playerRoofNum: number = 86;
-  private enemyRoofNum: number = 15;
+  public playerCar: VehiclePhysicsState;
+  public enemyCar: VehiclePhysicsState;
+  public playerModel: CarModelType = 'ae86';
+  public enemyModel: CarModelType = 's15';
+  public playerRoofNum: number = 86;
+  public enemyRoofNum: number = 15;
 
   // Input States
-  private inputs = {
+  public inputs = {
     throttle: 0,
     steer: 0,
     brake: false,
@@ -118,6 +118,8 @@ export class DriftRacingGame implements GameInstance {
     // Resize and start game loop
     this.handleResize();
     sounds.playRoundGong();
+
+    (window as any).activeDriftGame = this;
     this.lastTimestamp = performance.now();
     this.animationFrameId = requestAnimationFrame(this.gameLoop.bind(this));
   }

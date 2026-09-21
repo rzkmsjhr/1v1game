@@ -35,6 +35,9 @@ export class DriftEngine {
       handbrake: false,
       wheelSpinAngle: 0,
       stationaryTimer: 0,
+      bodyRoll: 0,
+      bodyPitch: 0,
+      lateralG: 0,
       tires: [{ ...dummyTire }, { ...dummyTire }, { ...dummyTire }, { ...dummyTire }]
     };
     this.updateTirePositions(state, carType);
@@ -149,31 +152,45 @@ export class DriftEngine {
     const currentSlipAngle = Math.atan2(Math.abs(vLat), Math.max(0.15, Math.abs(vFwd))) * (180 / Math.PI);
     const isCurrentlyDrifting = currentSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG || wantsDrift;
 
-    // 5. Angular Yaw Rotation
-    const speedRatio = Math.min(1.0, currentSpeed / 1.6);
+    // 5. Angular Yaw Dynamics with Real Chassis Rotational Inertia (Body Weight)
+    const speedRatio = Math.min(1.0, currentSpeed / 1.5);
     const forwardDirection = (vFwd >= -0.1 ? 1 : -1);
 
-    if (currentSpeed > 0.15) {
-      if (isCurrentlyDrifting) {
-        // DRIFTING YAW: Tail kicks out quickly with steering, counter-steering balances slide
-        const yawRate = DRIFT_CONSTANTS.DRIFT_TURN_SPEED * speedRatio * forwardDirection;
-        state.angle += state.steerAngle * yawRate;
+    if (currentSpeed > 0.1) {
+      let targetYaw = state.steerAngle * DRIFT_CONSTANTS.TURN_SPEED * speedRatio * forwardDirection;
 
-        // Additional tail-whip kick on handbrake or power oversteer
-        if (wantsDrift && Math.abs(inputs.steer) > 0.2) {
-          state.angle += inputs.steer * 0.022 * speedRatio;
-        }
+      if (isCurrentlyDrifting) {
+        // In drift: tail kicks out with momentum, counter-steering balances slide
+        targetYaw = state.steerAngle * DRIFT_CONSTANTS.DRIFT_TURN_SPEED * speedRatio * forwardDirection;
+        if (inputs.handbrake) targetYaw *= 1.35;
+        // Rotational momentum when sliding
+        state.angularVelocity += (targetYaw - state.angularVelocity) * 0.20;
       } else {
-        // NORMAL GRIP YAW: Tight, precise, responsive cornering
-        const yawRate = DRIFT_CONSTANTS.TURN_SPEED * speedRatio * forwardDirection;
-        state.angle += state.steerAngle * yawRate;
+        // Normal grip: heavy chassis inertia resists instant turning, builds progressive cornering bite!
+        state.angularVelocity += (targetYaw - state.angularVelocity) * DRIFT_CONSTANTS.CHASSIS_INERTIA;
       }
+    } else {
+      state.angularVelocity *= 0.8;
     }
 
-    // 6. Lateral Friction (Grip vs Drift Glide)
+    state.angle += state.angularVelocity;
+
+    // 6. Calculate Lateral & Longitudinal G-Forces (Weight Transfer)
+    // Lateral G from cornering rate & lateral slide
+    state.lateralG = (vFwd * state.angularVelocity * 14.0) + (vLat * 0.3);
+    const targetRoll = Math.max(-DRIFT_CONSTANTS.MAX_BODY_ROLL_RAD, Math.min(DRIFT_CONSTANTS.MAX_BODY_ROLL_RAD, state.lateralG * 0.04));
+    state.bodyRoll += (targetRoll - state.bodyRoll) * DRIFT_CONSTANTS.SUSPENSION_ROLL_RATE;
+
+    // Longitudinal G from throttle squat & brake dive
+    let targetPitch = 0;
+    if (inputs.throttle > 0) targetPitch = -inputs.throttle * 0.04; // Rear squats down
+    else if (inputs.brake) targetPitch = 0.05; // Nose dives forward
+    state.bodyPitch += (targetPitch - state.bodyPitch) * DRIFT_CONSTANTS.SUSPENSION_PITCH_RATE;
+
+    // 7. Lateral Friction (Grip vs Drift Glide)
     if (inputs.handbrake) {
       vLat *= DRIFT_CONSTANTS.LATERAL_GRIP_HANDBRAKE;
-    } else if (isCurrentlyDrifting && (inputs.throttle > 0.2 || wantsDrift)) {
+    } else if (isCurrentlyDrifting && (inputs.throttle > 0.15 || wantsDrift)) {
       vLat *= DRIFT_CONSTANTS.LATERAL_GRIP_DRIFT;
     } else {
       vLat *= DRIFT_CONSTANTS.LATERAL_GRIP_NORMAL;
