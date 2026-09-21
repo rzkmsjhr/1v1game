@@ -29,9 +29,10 @@ export class DriftRenderer {
   private canvas: HTMLCanvasElement;
   private track: DriftTrack;
 
-  // Camera State
+  // Camera State (Car-Centric Top-Down Rotating View)
   private camX: number = 800;
   private camY: number = 500;
+  private camAngle: number = 0;
   private camZoom: number = 1.0;
 
   // Particles & Skidmarks
@@ -42,6 +43,13 @@ export class DriftRenderer {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.track = track;
+  }
+
+  public snapCamera(playerState: VehiclePhysicsState) {
+    this.camX = playerState.x;
+    this.camY = playerState.y;
+    this.camAngle = playerState.angle;
+    this.camZoom = 1.0;
   }
 
   public resize(width: number, height: number) {
@@ -76,8 +84,8 @@ export class DriftRenderer {
     const viewW = this.canvas.width / (window.devicePixelRatio || 1);
     const viewH = this.canvas.height / (window.devicePixelRatio || 1);
 
-    // 1. Update Camera to Follow Both Cars (Centroid & Dynamic Zoom)
-    this.updateCamera(playerState, enemyState);
+    // 1. Update Camera to Follow Player Car (Car-Centric Top-Down View)
+    this.updateCamera(playerState);
 
     // 2. Clear Screen
     ctx.clearRect(0, 0, viewW, viewH);
@@ -88,25 +96,31 @@ export class DriftRenderer {
 
     ctx.save();
 
-    // Camera Transform
-    ctx.translate(viewW / 2, viewH / 2);
+    // Camera Transform:
+    // Position car in lower-center of viewport (50% horizontal, 68% vertical) so road stretches ahead
+    ctx.translate(viewW * 0.5, viewH * 0.68);
+    // Rotate world inversely so car always points straight UP on screen, while circuit flows & rotates!
+    ctx.rotate(-this.camAngle);
     ctx.scale(this.camZoom, this.camZoom);
     ctx.translate(-this.camX, -this.camY);
 
-    // 3. Render Track Surface, Curbs, Bridge, and Green Clipping Zones
+    // 3. Render Track Surface, Curbs, and Green Clipping Zones
     this.renderTrack(ctx, isDay);
 
-    // 4. Render Tire Skidmarks
+    // 4. Render Checkered Start / Finish Line & Starting Grids
+    this.renderCheckeredStartFinish(ctx);
+
+    // 5. Render Tire Skidmarks
     this.renderSkidmarks(ctx, isDay);
 
-    // 5. Emit & Render Dynamic Rear Tire Smoke
+    // 6. Emit & Render Dynamic Rear Tire Smoke
     this.updateAndRenderSmoke(ctx, playerState, isDay);
     this.updateAndRenderSmoke(ctx, enemyState, isDay);
 
-    // 6. Render Tether Line between Lead & Chase
+    // 7. Render Tether Line between Lead & Chase
     this.renderTandemTether(ctx, playerState, enemyState, roundState.playerRole);
 
-    // 7. Render OEM Vehicles
+    // 8. Render OEM Vehicles
     // Render Enemy Car
     this.renderOEMCar(ctx, enemyModel, enemyState, {
       roofNumber: enemyRoofNum,
@@ -125,10 +139,6 @@ export class DriftRenderer {
       isLightMode: isDay
     });
 
-    // 8. Render Start / Finish Overhead Banners
-    this.renderCheckeredBanner(ctx, this.track.startLine, 'START');
-    this.renderCheckeredBanner(ctx, this.track.finishLine, 'FINISH');
-
     ctx.restore();
 
     // 9. Render On-Screen Live HUD
@@ -136,19 +146,22 @@ export class DriftRenderer {
   }
 
   /**
-   * Smoothly lerps camera to track the centroid of both vehicles
+   * Smoothly tracks player car position, heading angle, and dynamic zoom
    */
-  private updateCamera(p1: VehiclePhysicsState, p2: VehiclePhysicsState) {
-    const midX = (p1.x + p2.x) / 2;
-    const midY = (p1.y + p2.y) / 2;
+  private updateCamera(playerState: VehiclePhysicsState) {
+    // 1. Position tracking (smooth lerp towards player position)
+    this.camX += (playerState.x - this.camX) * 0.16;
+    this.camY += (playerState.y - this.camY) * 0.16;
 
-    this.camX += (midX - this.camX) * 0.12;
-    this.camY += (midY - this.camY) * 0.12;
+    // 2. Heading rotation tracking (shortest angular arc lerp)
+    let diff = playerState.angle - this.camAngle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    this.camAngle += diff * 0.14;
 
-    // Dynamic zoom based on separation distance
-    const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-    const targetZoom = Math.max(0.72, Math.min(1.15, 600 / (dist + 380)));
-    this.camZoom += (targetZoom - this.camZoom) * 0.08;
+    // 3. Dynamic speed-based zoom
+    const targetZoom = 1.05 - Math.min(0.22, (playerState.speed / DRIFT_CONSTANTS.MAX_SPEED) * 0.2);
+    this.camZoom += (targetZoom - this.camZoom) * 0.1;
   }
 
   /**
@@ -228,41 +241,6 @@ export class DriftRenderer {
     this.renderCurbs(ctx, this.track.outerWalls, isDay);
     this.renderCurbs(ctx, this.track.innerWalls, isDay);
 
-    // D. Overpass Bridge Crossover Depth & Shadows
-    ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-    ctx.shadowBlur = 18;
-    ctx.shadowOffsetX = 8;
-    ctx.shadowOffsetY = 10;
-
-    // Re-draw the elevated bridge section of waypoints with drop shadow
-    ctx.beginPath();
-    let bridgeStarted = false;
-    for (let i = 0; i < pts.length; i++) {
-      const wp = pts[i];
-      if (wp.isBridge) {
-        if (!bridgeStarted) {
-          ctx.moveTo(wp.x, wp.y);
-          bridgeStarted = true;
-        } else {
-          ctx.lineTo(wp.x, wp.y);
-        }
-      }
-    }
-    ctx.lineWidth = DRIFT_CONSTANTS.TRACK_WIDTH + 6;
-    ctx.strokeStyle = isDay ? '#cbd5e1' : '#0f172a';
-    ctx.stroke();
-
-    ctx.lineWidth = DRIFT_CONSTANTS.TRACK_WIDTH;
-    ctx.strokeStyle = isDay ? '#e2e8f0' : '#1e293b';
-    ctx.stroke();
-
-    // Bridge Guardrails
-    ctx.shadowColor = 'transparent';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#f59e0b';
-    ctx.stroke();
-    ctx.restore();
   }
 
   private renderCurbs(ctx: CanvasRenderingContext2D, walls: any[], _isDay: boolean) {
@@ -279,22 +257,116 @@ export class DriftRenderer {
     ctx.restore();
   }
 
-  private renderCheckeredBanner(ctx: CanvasRenderingContext2D, line: { p1: any; p2: any; angle: number }, label: string) {
+  /**
+   * Renders 2-row alternating black-and-white checkered Start/Finish line
+   * and clearly marked starting grid boxes [ 1 ] and [ 2 ]
+   */
+  private renderCheckeredStartFinish(ctx: CanvasRenderingContext2D) {
+    const line = this.track.startLine;
+    const p1 = line.p1;
+    const p2 = line.p2;
+
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+
+    // Heading vector along track
+    const fwdX = Math.sin(line.angle);
+    const fwdY = -Math.cos(line.angle);
+
+    const cols = 8;
+    const rows = 2;
+    const rowH = 12;
+
     ctx.save();
-    ctx.strokeStyle = '#f8fafc';
-    ctx.lineWidth = 6;
+    // 1. Alternating Checkered Flag Line across Track
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const isWhite = (r + c) % 2 === 0;
+        ctx.fillStyle = isWhite ? '#f8fafc' : '#0f172a';
+
+        const t1 = c / cols;
+        const t2 = (c + 1) / cols;
+
+        const aX = p1.x + dx * t1 + fwdX * (r * rowH - rowH);
+        const aY = p1.y + dy * t1 + fwdY * (r * rowH - rowH);
+
+        const bX = p1.x + dx * t2 + fwdX * (r * rowH - rowH);
+        const bY = p1.y + dy * t2 + fwdY * (r * rowH - rowH);
+
+        const cX = p1.x + dx * t2 + fwdX * ((r + 1) * rowH - rowH);
+        const cY = p1.y + dy * t2 + fwdY * ((r + 1) * rowH - rowH);
+
+        const dX = p1.x + dx * t1 + fwdX * ((r + 1) * rowH - rowH);
+        const dY = p1.y + dy * t1 + fwdY * ((r + 1) * rowH - rowH);
+
+        ctx.beginPath();
+        ctx.moveTo(aX, aY);
+        ctx.lineTo(bX, bY);
+        ctx.lineTo(cX, cY);
+        ctx.lineTo(dX, dY);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    // Checkered line outline borders
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.moveTo(line.p1.x, line.p1.y);
-    ctx.lineTo(line.p2.x, line.p2.y);
+    ctx.moveTo(p1.x - fwdX * rowH, p1.y - fwdY * rowH);
+    ctx.lineTo(p2.x - fwdX * rowH, p2.y - fwdY * rowH);
+    ctx.moveTo(p1.x + fwdX * rowH, p1.y + fwdY * rowH);
+    ctx.lineTo(p2.x + fwdX * rowH, p2.y + fwdY * rowH);
     ctx.stroke();
 
-    // Label Text
-    const midX = (line.p1.x + line.p2.x) / 2;
-    const midY = (line.p1.y + line.p2.y) / 2;
-    ctx.font = '900 13px sans-serif';
-    ctx.fillStyle = '#0f172a';
+    // START / FINISH asphalt lettering
+    ctx.save();
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+    ctx.translate(midX, midY);
+    ctx.rotate(line.angle);
+    ctx.font = '900 13px monospace';
+    ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
-    ctx.fillText(label, midX, midY - 6);
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+    ctx.shadowBlur = 4;
+    ctx.fillText('FINISH  🏁  START', 0, -20);
+    ctx.restore();
+
+    // 2. Painted Grid Slots on Asphalt
+    this.renderGridSlotBox(ctx, this.track.gridSlot1, '1  LEAD', '#38bdf8');
+    this.renderGridSlotBox(ctx, this.track.gridSlot2, '2  CHASE', '#f43f5e');
+
+    ctx.restore();
+  }
+
+  private renderGridSlotBox(
+    ctx: CanvasRenderingContext2D,
+    slot: { x: number; y: number; angle: number },
+    label: string,
+    accentColor: string
+  ) {
+    ctx.save();
+    ctx.translate(slot.x, slot.y);
+    ctx.rotate(slot.angle);
+
+    // Box perimeter outline
+    ctx.strokeStyle = accentColor;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-18, -34, 36, 68);
+
+    // Front limit bar
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(-18, -36, 36, 4);
+
+    // Grid Slot Label
+    ctx.font = '900 9px monospace';
+    ctx.fillStyle = accentColor;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 0, 0);
+
     ctx.restore();
   }
 
@@ -677,7 +749,7 @@ export class DriftRenderer {
     viewH: number,
     p1: VehiclePhysicsState,
     p1Score: RunScoreBreakdown,
-    _p2: VehiclePhysicsState,
+    p2: VehiclePhysicsState,
     p2Score: RunScoreBreakdown,
     roundState: RoundState
   ) {
@@ -709,6 +781,63 @@ export class DriftRenderer {
 
     ctx.fillStyle = '#f43f5e';
     ctx.fillText(`RIVAL: ${roundState.enemyRole.toUpperCase()} (${p2Score.totalScore} pts)`, viewW / 2 + 85, 45);
+
+    // Off-screen Rival Tracker Indicator
+    const rdx = p2.x - this.camX;
+    const rdy = p2.y - this.camY;
+    const cos = Math.cos(-this.camAngle);
+    const sin = Math.sin(-this.camAngle);
+    const screenRotX = (rdx * cos - rdy * sin) * this.camZoom;
+    const screenRotY = (rdx * sin + rdy * cos) * this.camZoom;
+    const screenEnemyX = viewW * 0.5 + screenRotX;
+    const screenEnemyY = viewH * 0.68 + screenRotY;
+
+    const pad = 42;
+    const isOffScreen = 
+      screenEnemyX < pad || screenEnemyX > viewW - pad ||
+      screenEnemyY < 65 || screenEnemyY > viewH - pad;
+
+    if (isOffScreen) {
+      const clampX = Math.max(pad, Math.min(viewW - pad, screenEnemyX));
+      const clampY = Math.max(75, Math.min(viewH - pad, screenEnemyY));
+      const arrowAngle = Math.atan2(screenEnemyY - clampY, screenEnemyX - clampX);
+      const distMeters = Math.round(Math.hypot(rdx, rdy) / 10);
+
+      ctx.save();
+      ctx.translate(clampX, clampY);
+      ctx.fillStyle = '#f43f5e';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+
+      // Outer Glow
+      ctx.shadowColor = 'rgba(244, 63, 94, 0.6)';
+      ctx.shadowBlur = 8;
+
+      // Pointer chevron towards rival
+      ctx.rotate(arrowAngle);
+      ctx.beginPath();
+      ctx.moveTo(10, -6);
+      ctx.lineTo(20, 0);
+      ctx.lineTo(10, 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.rotate(-arrowAngle);
+
+      // Distance Badge
+      ctx.beginPath();
+      ctx.arc(0, 0, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = '900 8.5px monospace';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowBlur = 0;
+      ctx.fillText(`${distMeters}m`, 0, 0);
+      ctx.restore();
+    }
 
     // Bottom Player Telemetry: Drift Angle Meter & Clipping Zone Indicator
     ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';

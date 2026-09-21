@@ -63,10 +63,11 @@ A modern, competitive 1v1 web arcade featuring **10 real-time games** built with
 - **Tailored AI Difficulties**: Finely balanced tiers ranging from kid-friendly Easy to lightning-fast Boss mode.
 
 ### 10. Tandem Drift Battle 1v1
-- **Figure-8 Crossover Track**: Continuous Figure-8 racing ribbon with elevated overpass bridge, red-and-white striped curbs, and 6 high-visibility green drift clipping zones.
+- **Car-Centric Rotating Bird's-Eye Camera**: Dynamic top-down camera capturing from behind the vehicle; the player's car stays facing forward while the circuit, rivals, and scenery flow and rotate smoothly beneath you.
+- **Figure-8 Crossover Track**: Continuous Figure-8 racing circuit with an unobstructed center X intersection (zero barriers, lines, or curb obstacles in the crossover), a 2-row black-and-white checkered start/finish line, and clearly marked Lead & Chase starting grid slots.
 - **2-Round Alternating Format**: Battle over two rounds alternating Lead and Chase roles. Cumulative scores determine the victor.
-- **Green Zone Multiplier**: Scaled by 4-wheel contact (1 tire = 25%, 2 tires = 50%, 3 tires = 75%, 4 tires = 100% full zone bonus).
-- **Commitment & Slip Angle**: Throttle commitment generates thicker rear tire smoke clouds and boosts score; steeper slip angles approaching $90^\circ$ yield rapid score gains.
+- **Green Zone Multiplier**: Scaled by 4-wheel contact (1 tire = 25%, 2 tires = 50%, 3 tires = 75%, 4 tires = 100% full zone bonus across 6 clipping zones).
+- **Commitment & Slip Angle**: Throttle commitment generates thicker rear tire smoke clouds and boosts score; steeper slip angles approaching $90^\circ$ yield rapid score gains with power-oversteer and throttle-sustained sliding.
 - **Championship Regulations**: Over-rotation spinouts ($> 95^\circ$) and hard wall stops trigger an instant 0 pts Zero Fault. Chase car cannot overtake Lead's front axle. Stationary $\ge 5.0\text{s}$ triggers an anti-stall DQ countdown.
 - **One More Time (OMT) & Sudden Death**: Exact score ties trigger OMT (repeats 2-round battle). Persistent ties advance to a 1-by-1 Sudden Death Solo Drift Sprint where the highest score combined with the lowest elapsed time wins!
 - **Authentic OEM Car Models**: Pure OEM factory proportions for the **Toyota Sprinter Trueno AE86** and **Nissan Silvia S15 Spec-R** with tucked wheels that articulate upon counter-steering, rolling tire treads, specular edge contrast, and roof numbers (0–99).

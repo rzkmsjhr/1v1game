@@ -127,12 +127,19 @@ export class DriftEngine {
       state.speed *= (1.0 - DRIFT_CONSTANTS.HANDBRAKE_RATE);
     }
 
-    // 3. Angular Rotation
+    // 3. Angular Rotation & Drift Oversteer
     const forwardDirection = (state.speed >= 0 ? 1 : -1);
-    const driftMultiplier = (inputs.handbrake ? 1.75 : 1.0);
+    const isDrifting = (state.driftSlipAngle >= DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG);
+    const driftMultiplier = (inputs.handbrake ? 2.1 : (isDrifting ? 1.45 : 1.0));
+
+    // Power-oversteer kick: turning hard under full throttle breaks rear traction
+    const isPowerOversteer = Math.abs(inputs.steer) > 0.55 && inputs.throttle > 0.75 && state.speed > 2.0;
 
     if (Math.abs(state.speed) > 0.15) {
       state.angle += state.steerAngle * DRIFT_CONSTANTS.TURN_SPEED * (state.speed / DRIFT_CONSTANTS.MAX_SPEED) * forwardDirection * driftMultiplier;
+      if (isPowerOversteer) {
+        state.angle += inputs.steer * 0.018;
+      }
     }
 
     // 4. Lateral Grip vs Drift Slip
@@ -142,7 +149,10 @@ export class DriftEngine {
     let grip = DRIFT_CONSTANTS.TIRE_GRIP_NORMAL;
     if (inputs.handbrake) {
       grip = DRIFT_CONSTANTS.TIRE_GRIP_HANDBRAKE;
-    } else if (state.driftSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG) {
+    } else if (isDrifting && inputs.throttle > 0.3) {
+      // Sustained throttle keeps rear tires spinning in continuous drift
+      grip = DRIFT_CONSTANTS.TIRE_GRIP_DRIFT;
+    } else if (isPowerOversteer) {
       grip = DRIFT_CONSTANTS.TIRE_GRIP_DRIFT;
     }
 
@@ -189,37 +199,54 @@ export class DriftEngine {
     let collided = false;
     let wallStop = false;
 
-    // Test car perimeter points against wall segments
     const allWalls = [...this.track.outerWalls, ...this.track.innerWalls];
-    const carRadius = 18;
+    const carRadius = 16;
+    const prevSpeed = Math.hypot(state.vx, state.vy);
 
     for (const wall of allWalls) {
-      const dist = this.pointToSegmentDistance({ x: state.x, y: state.y }, wall.p1, wall.p2);
+      const closest = this.closestPointOnSegment({ x: state.x, y: state.y }, wall.p1, wall.p2);
+      const toCarX = state.x - closest.x;
+      const toCarY = state.y - closest.y;
+      const dist = Math.hypot(toCarX, toCarY);
+
       if (dist < carRadius) {
         collided = true;
         score.collisionPenalty += DRIFT_CONSTANTS.WALL_SCRAPE_PENALTY_PER_SEC * dt;
 
-        // Normal bounce push out
-        const segDx = wall.p2.x - wall.p1.x;
-        const segDy = wall.p2.y - wall.p1.y;
-        const segLen = Math.hypot(segDx, segDy) || 1;
-        const nx = -segDy / segLen;
-        const ny = segDx / segLen;
+        // Push car directly AWAY from the segment towards open track!
+        const pushDist = carRadius - dist;
+        let pushX = 0;
+        let pushY = 0;
+        if (dist > 0.001) {
+          pushX = toCarX / dist;
+          pushY = toCarY / dist;
+        } else {
+          const segDx = wall.p2.x - wall.p1.x;
+          const segDy = wall.p2.y - wall.p1.y;
+          const segLen = Math.hypot(segDx, segDy) || 1;
+          pushX = -segDy / segLen;
+          pushY = segDx / segLen;
+        }
 
-        // Reposition
-        state.x += nx * (carRadius - dist);
-        state.y += ny * (carRadius - dist);
+        state.x += pushX * (pushDist + 0.5);
+        state.y += pushY * (pushDist + 0.5);
 
-        // Dampen velocity
-        state.vx *= 0.65;
-        state.vy *= 0.65;
-        state.speed *= 0.65;
+        // Deflect velocity: preserve momentum sliding along the barrier
+        const dot = state.vx * pushX + state.vy * pushY;
+        if (dot < 0) {
+          state.vx -= dot * pushX * 1.25;
+          state.vy -= dot * pushY * 1.25;
+          state.vx *= 0.82;
+          state.vy *= 0.82;
+          state.speed = Math.min(state.speed, Math.hypot(state.vx, state.vy));
+        }
 
-        // Check if wall stopped the car completely (Rule 7: Hard wall stop = 0 pts round)
-        if (Math.hypot(state.vx, state.vy) < 0.2) {
+        // Hard wall stop DQ check: ONLY if car slammed into barrier from high speed!
+        const currentSpeed = Math.hypot(state.vx, state.vy);
+        if (prevSpeed > 2.8 && currentSpeed < 0.3) {
           wallStop = true;
           score.isZeroFault = true;
-          score.faultReason = 'WALL STOP (CRASH)';
+          score.faultReason = 'HARD CRASH (WALL STOP)';
         }
         break;
       }
@@ -229,14 +256,17 @@ export class DriftEngine {
   }
 
   /**
-   * Distance from point P to line segment AB
+   * Finds closest point on segment AB to point P
    */
-  private pointToSegmentDistance(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
+  private closestPointOnSegment(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number } {
     const l2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
-    if (l2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+    if (l2 === 0) return { x: a.x, y: a.y };
     let t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2;
     t = Math.max(0, Math.min(1, t));
-    return Math.hypot(p.x - (a.x + t * (b.x - a.x)), p.y - (a.y + t * (b.y - a.y)));
+    return {
+      x: a.x + t * (b.x - a.x),
+      y: a.y + t * (b.y - a.y)
+    };
   }
 
   /**

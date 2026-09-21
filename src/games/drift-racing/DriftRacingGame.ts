@@ -56,6 +56,10 @@ export class DriftRacingGame implements GameInstance {
   // Audio Screech Throttle
   private lastScreechTime: number = 0;
 
+  // Lap Completion Gate Tracking
+  private playerPassedMidpoint: boolean = false;
+  private enemyPassedMidpoint: boolean = false;
+
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
     this.session = session;
@@ -73,8 +77,8 @@ export class DriftRacingGame implements GameInstance {
     this.renderer = new DriftRenderer(this.canvas, this.track);
 
     // Initial Vehicles
-    this.playerCar = this.engine.createVehicleState(750, 480, 0, this.playerModel);
-    this.enemyCar = this.engine.createVehicleState(750, 530, 0, this.enemyModel);
+    this.playerCar = this.engine.createVehicleState(this.track.gridSlot1.x, this.track.gridSlot1.y, this.track.gridSlot1.angle, this.playerModel);
+    this.enemyCar = this.engine.createVehicleState(this.track.gridSlot2.x, this.track.gridSlot2.y, this.track.gridSlot2.angle, this.enemyModel);
 
     // Initial Match Round State (Round 1: Normal Tandem)
     const isGuest = this.isOnline && !this.isHost;
@@ -109,6 +113,7 @@ export class DriftRacingGame implements GameInstance {
 
     // Reset grid for round 1
     this.resetGridPositions();
+    this.renderer.snapCamera(this.playerCar);
 
     // Resize and start game loop
     this.handleResize();
@@ -356,6 +361,10 @@ export class DriftRacingGame implements GameInstance {
           sounds.playHardDrop();
         }
         r.phase = 'racing';
+        // Reset stationary timers so anti-stall starts fresh at green light
+        this.playerCar.stationaryTimer = 0;
+        this.enemyCar.stationaryTimer = 0;
+
         // Hide countdown after 0.6s
         setTimeout(() => {
           const overlay = this.container.querySelector('#drift-countdown-overlay');
@@ -413,9 +422,9 @@ export class DriftRacingGame implements GameInstance {
         dt
       );
 
-      // 6. Check Finish Line Crossings
-      this.checkFinishLine(this.playerCar, r.playerScore);
-      this.checkFinishLine(this.enemyCar, r.enemyScore);
+      // 6. Check Finish Line Crossings (after driving full Figure-8)
+      this.checkFinishLine(this.playerCar, r.playerScore, true);
+      this.checkFinishLine(this.enemyCar, r.enemyScore, false);
 
       // Check Round Completion Condition
       if (r.playerScore.finished && r.enemyScore.finished) {
@@ -427,11 +436,20 @@ export class DriftRacingGame implements GameInstance {
     }
   }
 
-  private checkFinishLine(car: VehiclePhysicsState, score: RunScoreBreakdown) {
+  private checkFinishLine(car: VehiclePhysicsState, score: RunScoreBreakdown, isPlayer: boolean) {
     if (score.finished) return;
-    const { progress } = this.track.getClosestProgress(car.x, car.y);
-    // Crossed through the final 98% -> 100% of figure-8
-    if (progress > 0.96 && car.speed > 0.5) {
+    const { progress, waypointIndex } = this.track.getClosestProgress(car.x, car.y);
+
+    // Midpoint gate: vehicles must reach Loop 2 (progress 0.45 to 0.85)
+    if (progress > 0.45 && progress < 0.85) {
+      if (isPlayer) this.playerPassedMidpoint = true;
+      else this.enemyPassedMidpoint = true;
+    }
+
+    const passedMid = isPlayer ? this.playerPassedMidpoint : this.enemyPassedMidpoint;
+
+    // After completing the figure-8 loops and returning to checkered finish line at wp 10:
+    if (passedMid && waypointIndex >= 9 && waypointIndex <= 15 && car.speed > 0.4) {
       score.finished = true;
       sounds.playDriftBonus();
     }
@@ -584,22 +602,31 @@ export class DriftRacingGame implements GameInstance {
   }
 
   private resetGridPositions() {
-    // Lead is placed ahead on start line; Chase placed 45px directly behind Lead
-    const wp = this.track.waypoints[0];
     const isPlayerLead = (this.roundState.playerRole === 'lead' || this.roundState.playerRole === 'solo');
 
-    const leadX = wp.x;
-    const leadY = wp.y;
-    const chaseX = wp.x - Math.sin(wp.angle) * 45;
-    const chaseY = wp.y + Math.cos(wp.angle) * 45;
+    // Grid Slot 1: Pole Position (Lead)
+    // Grid Slot 2: Chase Position (~91px behind Lead on straightaway)
+    const leadSlot = this.track.gridSlot1;
+    const chaseSlot = this.track.gridSlot2;
 
     if (isPlayerLead) {
-      this.playerCar = this.engine.createVehicleState(leadX, leadY, wp.angle, this.playerModel);
-      this.enemyCar = this.engine.createVehicleState(chaseX, chaseY, wp.angle, this.enemyModel);
+      this.playerCar = this.engine.createVehicleState(leadSlot.x, leadSlot.y, leadSlot.angle, this.playerModel);
+      this.enemyCar = this.engine.createVehicleState(chaseSlot.x, chaseSlot.y, chaseSlot.angle, this.enemyModel);
     } else {
-      this.enemyCar = this.engine.createVehicleState(leadX, leadY, wp.angle, this.enemyModel);
-      this.playerCar = this.engine.createVehicleState(chaseX, chaseY, wp.angle, this.playerModel);
+      this.enemyCar = this.engine.createVehicleState(leadSlot.x, leadSlot.y, leadSlot.angle, this.enemyModel);
+      this.playerCar = this.engine.createVehicleState(chaseSlot.x, chaseSlot.y, chaseSlot.angle, this.playerModel);
     }
+
+    // Reset stationary timeout timers
+    this.playerCar.stationaryTimer = 0;
+    this.enemyCar.stationaryTimer = 0;
+
+    // Reset lap midpoint gates
+    this.playerPassedMidpoint = false;
+    this.enemyPassedMidpoint = false;
+
+    // Immediately snap camera to player vehicle
+    this.renderer.snapCamera(this.playerCar);
   }
 
   private restartFullMatch() {

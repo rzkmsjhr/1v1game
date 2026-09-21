@@ -9,7 +9,6 @@ export interface TrackWaypoint {
   ny: number;          // Normal vector Y
   width: number;
   progress: number;    // 0 to 1
-  isBridge?: boolean;  // Overpass bridge segment
 }
 
 export interface WallSegment {
@@ -25,33 +24,37 @@ export class DriftTrack {
   public clippingZones: ClippingZone[] = [];
   public startLine: { p1: Point2D; p2: Point2D; angle: number };
   public finishLine: { p1: Point2D; p2: Point2D; angle: number };
-  public bridgeOverpass: { p1: Point2D; p2: Point2D; width: number; height: number };
+  public gridSlot1: { x: number; y: number; angle: number }; // Lead car starting grid
+  public gridSlot2: { x: number; y: number; angle: number }; // Chase car starting grid
 
   constructor() {
     this.generateFigure8();
     this.generateWallsAndZones();
 
-    // Start Line on Entry Straight of Loop 1
-    const wpStart = this.waypoints[0];
+    // Checkered Start / Finish Line on Straightaway (wp 10)
+    const wp10 = this.waypoints[10];
     this.startLine = {
-      p1: { x: wpStart.x - wpStart.nx * (wpStart.width / 2), y: wpStart.y - wpStart.ny * (wpStart.width / 2) },
-      p2: { x: wpStart.x + wpStart.nx * (wpStart.width / 2), y: wpStart.y + wpStart.ny * (wpStart.width / 2) },
-      angle: wpStart.angle
+      p1: { x: wp10.x - wp10.nx * (wp10.width / 2), y: wp10.y - wp10.ny * (wp10.width / 2) },
+      p2: { x: wp10.x + wp10.nx * (wp10.width / 2), y: wp10.y + wp10.ny * (wp10.width / 2) },
+      angle: wp10.angle
+    };
+    this.finishLine = this.startLine; // Start is also the Finish line!
+
+    // Starting Grids with ~91px spacing between Lead and Chase
+    // Grid 1: Lead car in slot [ 1 ] just behind checkered start line
+    const wp9 = this.waypoints[9];
+    this.gridSlot1 = {
+      x: wp9.x,
+      y: wp9.y,
+      angle: wp9.angle
     };
 
-    // Finish Line at the end of Loop 2 return straight
-    const wpFinish = this.waypoints[this.waypoints.length - 1];
-    this.finishLine = {
-      p1: { x: wpFinish.x - wpFinish.nx * (wpFinish.width / 2), y: wpFinish.y - wpFinish.ny * (wpFinish.width / 2) },
-      p2: { x: wpFinish.x + wpFinish.nx * (wpFinish.width / 2), y: wpFinish.y + wpFinish.ny * (wpFinish.width / 2) },
-      angle: wpFinish.angle
-    };
-
-    this.bridgeOverpass = {
-      p1: { x: 700, y: 460 },
-      p2: { x: 900, y: 540 },
-      width: 150,
-      height: 120
+    // Grid 2: Chase car in slot [ 2 ] ~91px behind Lead car on straightaway
+    const wp6 = this.waypoints[6];
+    this.gridSlot2 = {
+      x: wp6.x,
+      y: wp6.y,
+      angle: wp6.angle
     };
   }
 
@@ -91,9 +94,6 @@ export class DriftTrack {
       // Angle of travel (radians from up)
       const angle = Math.atan2(tx, -ty);
 
-      // Overpass bridge segment is around t near Math.PI (crossing over)
-      const isBridge = (t > Math.PI * 0.9 && t < Math.PI * 1.1);
-
       this.waypoints.push({
         x,
         y,
@@ -101,8 +101,7 @@ export class DriftTrack {
         nx,
         ny,
         width,
-        progress: i / numPoints,
-        isBridge
+        progress: i / numPoints
       });
     }
   }
@@ -110,8 +109,11 @@ export class DriftTrack {
   private generateWallsAndZones() {
     const pts = this.waypoints;
     const n = pts.length;
+    // The center X crossover intersection is at (800, 500)
+    // Rule: Zero barriers/lines/boundaries in the middle X area!
+    const isNearCrossover = (pt: Point2D) => Math.hypot(pt.x - 800, pt.y - 500) < 145;
 
-    // Build Continuous Outer & Inner Wall segments
+    // Build Continuous Outer & Inner Wall segments, skipping the crossover
     for (let i = 0; i < n; i++) {
       const curr = pts[i];
       const next = pts[(i + 1) % n];
@@ -119,12 +121,16 @@ export class DriftTrack {
       // Outer edge
       const out1 = { x: curr.x + curr.nx * (curr.width / 2), y: curr.y + curr.ny * (curr.width / 2) };
       const out2 = { x: next.x + next.nx * (next.width / 2), y: next.y + next.ny * (next.width / 2) };
-      this.outerWalls.push({ p1: out1, p2: out2, isInner: false });
+      if (!isNearCrossover(out1) && !isNearCrossover(out2)) {
+        this.outerWalls.push({ p1: out1, p2: out2, isInner: false });
+      }
 
       // Inner edge
       const in1 = { x: curr.x - curr.nx * (curr.width / 2), y: curr.y - curr.ny * (curr.width / 2) };
       const in2 = { x: next.x - next.nx * (next.width / 2), y: next.y - next.ny * (next.width / 2) };
-      this.innerWalls.push({ p1: in1, p2: in2, isInner: true });
+      if (!isNearCrossover(in1) && !isNearCrossover(in2)) {
+        this.innerWalls.push({ p1: in1, p2: in2, isInner: true });
+      }
     }
 
     // --- High-Visibility Green Drift Clipping Zones ---
