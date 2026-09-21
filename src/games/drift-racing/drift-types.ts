@@ -15,10 +15,13 @@ export interface TireContactPoint {
 export interface VehiclePhysicsState {
   x: number;
   y: number;
+  prevX: number;
+  prevY: number;
   vx: number;
   vy: number;
   speed: number;          // Forward speed in px/frame
   angle: number;          // Heading in radians (0 = pointing up)
+  prevAngle: number;
   steerAngle: number;     // Front wheels angle in radians relative to body (-0.55 to 0.55)
   angularVelocity: number;
   driftSlipAngle: number; // Degrees between heading and velocity vector (0 to 180)
@@ -39,6 +42,10 @@ export interface ClippingZone {
   polygon: Point2D[];
   outerEdge: Point2D[];
   zoneWeight: number; // Score multiplier for this section
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
 }
 
 export interface RunScoreBreakdown {

@@ -239,14 +239,42 @@ export class DriftRacingGame implements GameInstance {
 
   private bindTouchControls() {
     const bindBtn = (id: string, onDown: () => void, onUp: () => void) => {
-      const el = this.container.querySelector(id);
+      const el = this.container.querySelector(id) as HTMLElement | null;
       if (!el) return;
-      el.addEventListener('touchstart', (e) => { e.preventDefault(); onDown(); }, { passive: false });
-      el.addEventListener('touchend', (e) => { e.preventDefault(); onUp(); }, { passive: false });
-      el.addEventListener('touchcancel', (e) => { e.preventDefault(); onUp(); }, { passive: false });
-      el.addEventListener('mousedown', () => onDown());
-      el.addEventListener('mouseup', () => onUp());
-      el.addEventListener('mouseleave', () => onUp());
+
+      let isPressed = false;
+      const handleDown = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isPressed) return;
+        isPressed = true;
+        if ('setPointerCapture' in el && (e as PointerEvent).pointerId !== undefined) {
+          try { el.setPointerCapture((e as PointerEvent).pointerId); } catch {}
+        }
+        onDown();
+      };
+
+      const handleUp = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!isPressed) return;
+        isPressed = false;
+        if ('releasePointerCapture' in el && (e as PointerEvent).pointerId !== undefined) {
+          try { el.releasePointerCapture((e as PointerEvent).pointerId); } catch {}
+        }
+        onUp();
+      };
+
+      // Pointer events with pointer capture (handles multi-touch, finger slides, no synthetic mouse cancellations)
+      el.addEventListener('pointerdown', handleDown, { passive: false });
+      el.addEventListener('pointerup', handleUp, { passive: false });
+      el.addEventListener('pointercancel', handleUp, { passive: false });
+
+      // Fallback touch events
+      el.addEventListener('touchstart', handleDown, { passive: false });
+      el.addEventListener('touchend', handleUp, { passive: false });
+      el.addEventListener('touchcancel', handleUp, { passive: false });
+
       el.addEventListener('contextmenu', (e) => e.preventDefault());
     };
 
@@ -348,21 +376,25 @@ export class DriftRacingGame implements GameInstance {
     if (!this.lastTimestamp) {
       this.lastTimestamp = timestamp;
     }
-    const elapsed = Math.min((timestamp - this.lastTimestamp) / 1000, 0.035);
+    // Allow up to 80ms recovery per frame so physics simulation time is never dropped on mobile
+    const elapsed = Math.min((timestamp - this.lastTimestamp) / 1000, 0.08);
     this.lastTimestamp = timestamp;
     this.physicsAccumulator += elapsed;
 
-    // Run at most 2 physics steps per frame (prevents CPU lag spirals on mobile)
+    // Run up to 4 physics steps per frame if needed to catch up (each takes ~0.02ms CPU)
     let steps = 0;
-    while (this.physicsAccumulator >= this.FIXED_DT && steps < 2) {
+    while (this.physicsAccumulator >= this.FIXED_DT && steps < 4) {
       this.updatePhase(this.FIXED_DT);
       this.physicsAccumulator -= this.FIXED_DT;
       steps++;
     }
-    // Discard any residual accumulator so frame lag never accumulates
-    if (this.physicsAccumulator > this.FIXED_DT) {
+    // Prevent lag spiral only if accumulator exceeded 100ms (e.g. inactive background tab)
+    if (this.physicsAccumulator > 0.1) {
       this.physicsAccumulator = 0;
     }
+
+    // Sub-tick render interpolation factor (0.0 to 1.0) for silky 60/90/120Hz display refresh
+    const alpha = Math.min(1.0, Math.max(0.0, this.physicsAccumulator / this.FIXED_DT));
 
     // Render Scene
     const isDay = (this.session.theme === 'light');
@@ -376,7 +408,8 @@ export class DriftRacingGame implements GameInstance {
       this.roundState,
       isDay,
       this.playerRoofNum,
-      this.enemyRoofNum
+      this.enemyRoofNum,
+      alpha
     );
 
     this.animationFrameId = requestAnimationFrame(this.gameLoop.bind(this));

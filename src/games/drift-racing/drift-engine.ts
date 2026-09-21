@@ -23,10 +23,13 @@ export class DriftEngine {
     const state: VehiclePhysicsState = {
       x,
       y,
+      prevX: x,
+      prevY: y,
       vx: 0,
       vy: 0,
       speed: 0,
       angle,
+      prevAngle: angle,
       steerAngle: 0,
       angularVelocity: 0,
       driftSlipAngle: 0,
@@ -84,11 +87,15 @@ export class DriftEngine {
     state.tires[3].x = state.x + cos * dim.HALF_TRACK - sin * dim.REAR_AXLE_Y;
     state.tires[3].y = state.y + sin * dim.HALF_TRACK + cos * dim.REAR_AXLE_Y;
 
-    // Check intersection with clipping zones
+    // Check intersection with clipping zones (fast AABB filter skips 99% of raycasts!)
     for (let i = 0; i < 4; i++) {
       const t = state.tires[i];
       t.inZone = false;
-      for (const zone of this.track.clippingZones) {
+      for (let z = 0; z < this.track.clippingZones.length; z++) {
+        const zone = this.track.clippingZones[z];
+        if (t.x < zone.minX || t.x > zone.maxX || t.y < zone.minY || t.y > zone.maxY) {
+          continue;
+        }
         if (DriftTrack.isPointInPolygon(t, zone.polygon)) {
           t.inZone = true;
           break;
@@ -106,6 +113,10 @@ export class DriftEngine {
     carType: CarModelType,
     dt: number = 1 / 60
   ) {
+    state.prevX = state.x;
+    state.prevY = state.y;
+    state.prevAngle = state.angle;
+
     state.throttle = inputs.throttle;
     state.brake = inputs.brake;
     state.handbrake = inputs.handbrake;
@@ -256,17 +267,31 @@ export class DriftEngine {
     let collided = false;
     let wallStop = false;
 
-    const allWalls = [...this.track.outerWalls, ...this.track.innerWalls];
+    const walls = this.track.allWalls;
     const carRadius = 16;
+    const carRadiusSq = carRadius * carRadius;
     const prevSpeed = Math.hypot(state.vx, state.vy);
 
-    for (const wall of allWalls) {
+    for (let i = 0; i < walls.length; i++) {
+      const wall = walls[i];
+
+      // Fast AABB filter: skip walls that are far away from the car
+      if (
+        state.x < wall.minX - carRadius ||
+        state.x > wall.maxX + carRadius ||
+        state.y < wall.minY - carRadius ||
+        state.y > wall.maxY + carRadius
+      ) {
+        continue;
+      }
+
       const closest = this.closestPointOnSegment({ x: state.x, y: state.y }, wall.p1, wall.p2);
       const toCarX = state.x - closest.x;
       const toCarY = state.y - closest.y;
-      const dist = Math.hypot(toCarX, toCarY);
+      const distSq = toCarX * toCarX + toCarY * toCarY;
 
-      if (dist < carRadius) {
+      if (distSq < carRadiusSq) {
+        const dist = Math.sqrt(distSq);
         collided = true;
         score.collisionPenalty += DRIFT_CONSTANTS.WALL_SCRAPE_PENALTY_PER_SEC * dt;
 

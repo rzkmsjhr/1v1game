@@ -15,12 +15,17 @@ export interface WallSegment {
   p1: Point2D;
   p2: Point2D;
   isInner: boolean;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
 }
 
 export class DriftTrack {
   public waypoints: TrackWaypoint[] = [];
   public innerWalls: WallSegment[] = [];
   public outerWalls: WallSegment[] = [];
+  public allWalls: WallSegment[] = [];
   public clippingZones: ClippingZone[] = [];
   public startLine: { p1: Point2D; p2: Point2D; angle: number };
   public finishLine: { p1: Point2D; p2: Point2D; angle: number };
@@ -30,6 +35,7 @@ export class DriftTrack {
   constructor() {
     this.generateFigure8();
     this.generateWallsAndZones();
+    this.allWalls = [...this.outerWalls, ...this.innerWalls];
 
     // Checkered Start / Finish Line on Straightaway (wp 10)
     const wp10 = this.waypoints[10];
@@ -122,14 +128,30 @@ export class DriftTrack {
       const out1 = { x: curr.x + curr.nx * (curr.width / 2), y: curr.y + curr.ny * (curr.width / 2) };
       const out2 = { x: next.x + next.nx * (next.width / 2), y: next.y + next.ny * (next.width / 2) };
       if (!isNearCrossover(out1) && !isNearCrossover(out2)) {
-        this.outerWalls.push({ p1: out1, p2: out2, isInner: false });
+        this.outerWalls.push({
+          p1: out1,
+          p2: out2,
+          isInner: false,
+          minX: Math.min(out1.x, out2.x),
+          maxX: Math.max(out1.x, out2.x),
+          minY: Math.min(out1.y, out2.y),
+          maxY: Math.max(out1.y, out2.y)
+        });
       }
 
       // Inner edge
       const in1 = { x: curr.x - curr.nx * (curr.width / 2), y: curr.y - curr.ny * (curr.width / 2) };
       const in2 = { x: next.x - next.nx * (next.width / 2), y: next.y - next.ny * (next.width / 2) };
       if (!isNearCrossover(in1) && !isNearCrossover(in2)) {
-        this.innerWalls.push({ p1: in1, p2: in2, isInner: true });
+        this.innerWalls.push({
+          p1: in1,
+          p2: in2,
+          isInner: true,
+          minX: Math.min(in1.x, in2.x),
+          maxX: Math.max(in1.x, in2.x),
+          minY: Math.min(in1.y, in2.y),
+          maxY: Math.max(in1.y, in2.y)
+        });
       }
     }
 
@@ -168,12 +190,18 @@ export class DriftTrack {
     // Follow track edge
     const dir = (side === 'outer' ? 1 : -1);
 
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+
     for (let i = startIdx; i <= endIdx; i++) {
       const wp = pts[i % pts.length];
       const edgeX = wp.x + wp.nx * (wp.width / 2) * dir;
       const edgeY = wp.y + wp.ny * (wp.width / 2) * dir;
       outerEdge.push({ x: edgeX, y: edgeY });
       polygon.push({ x: edgeX, y: edgeY });
+      if (edgeX < minX) minX = edgeX;
+      if (edgeX > maxX) maxX = edgeX;
+      if (edgeY < minY) minY = edgeY;
+      if (edgeY > maxY) maxY = edgeY;
     }
 
     // Return along inward offset depth
@@ -182,6 +210,10 @@ export class DriftTrack {
       const inX = wp.x + wp.nx * (wp.width / 2 - depth) * dir;
       const inY = wp.y + wp.ny * (wp.width / 2 - depth) * dir;
       polygon.push({ x: inX, y: inY });
+      if (inX < minX) minX = inX;
+      if (inX > maxX) maxX = inX;
+      if (inY < minY) minY = inY;
+      if (inY > maxY) maxY = inY;
     }
 
     this.clippingZones.push({
@@ -189,7 +221,11 @@ export class DriftTrack {
       name,
       polygon,
       outerEdge,
-      zoneWeight: 1.0
+      zoneWeight: 1.0,
+      minX,
+      maxX,
+      minY,
+      maxY
     });
   }
 

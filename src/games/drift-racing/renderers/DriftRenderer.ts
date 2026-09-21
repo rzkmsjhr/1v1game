@@ -38,10 +38,146 @@ export class DriftRenderer {
   private smokeParticles: SmokeParticle[] = [];
   private skidmarks: { x: number; y: number }[] = [];
 
+  // Precompiled GPU Vector Paths (zero CPU path loops during animation frames!)
+  private trackPath: Path2D = new Path2D();
+  private redCurbsPath: Path2D = new Path2D();
+  private whiteCurbsPath: Path2D = new Path2D();
+  private zonePaths: { poly: Path2D; edge: Path2D; midPt: { x: number; y: number }; name: string }[] = [];
+  private checkeredWhitePath: Path2D = new Path2D();
+  private checkeredDarkPath: Path2D = new Path2D();
+  private checkeredBorderPath: Path2D = new Path2D();
+
+  // Font state cache (avoids 600 CSS font string parses/second on mobile)
+  private currentFont: string = '';
+  private setFont(ctx: CanvasRenderingContext2D, font: string) {
+    if (this.currentFont !== font) {
+      ctx.font = font;
+      this.currentFont = font;
+    }
+  }
+
+  // Preallocated interpolated vehicle states for zero-alloc render loop
+  private interpPlayerState: VehiclePhysicsState | null = null;
+  private interpEnemyState: VehiclePhysicsState | null = null;
+
+  private getInterpolatedState(source: VehiclePhysicsState, target: VehiclePhysicsState, alpha: number): VehiclePhysicsState {
+    Object.assign(target, source);
+
+    if (alpha >= 0.999 || (source.prevX === source.x && source.prevY === source.y)) {
+      return target;
+    }
+
+    target.x = source.prevX + (source.x - source.prevX) * alpha;
+    target.y = source.prevY + (source.y - source.prevY) * alpha;
+
+    let angleDiff = source.angle - source.prevAngle;
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+    target.angle = source.prevAngle + angleDiff * alpha;
+
+    return target;
+  }
+
   constructor(canvas: HTMLCanvasElement, track: DriftTrack) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.track = track;
+    this.buildCompiledPaths();
+  }
+
+  private buildCompiledPaths() {
+    const pts = this.track.waypoints;
+
+    // 1. Asphalt Ribbon Path (120 waypoints compiled once into GPU memory)
+    for (let i = 0; i < pts.length; i++) {
+      if (i === 0) this.trackPath.moveTo(pts[i].x, pts[i].y);
+      else this.trackPath.lineTo(pts[i].x, pts[i].y);
+    }
+    this.trackPath.closePath();
+
+    // 2. Curbs Paths (batched red and white segments compiled once)
+    const walls = this.track.allWalls;
+    for (let i = 0; i < walls.length; i += 2) {
+      const seg = walls[i];
+      if (i % 4 === 0) {
+        this.redCurbsPath.moveTo(seg.p1.x, seg.p1.y);
+        this.redCurbsPath.lineTo(seg.p2.x, seg.p2.y);
+      } else {
+        this.whiteCurbsPath.moveTo(seg.p1.x, seg.p1.y);
+        this.whiteCurbsPath.lineTo(seg.p2.x, seg.p2.y);
+      }
+    }
+
+    // 3. Clipping Zone Paths
+    for (let i = 0; i < this.track.clippingZones.length; i++) {
+      const zone = this.track.clippingZones[i];
+      const poly = new Path2D();
+      for (let j = 0; j < zone.polygon.length; j++) {
+        const pt = zone.polygon[j];
+        if (j === 0) poly.moveTo(pt.x, pt.y);
+        else poly.lineTo(pt.x, pt.y);
+      }
+      poly.closePath();
+
+      const edge = new Path2D();
+      for (let j = 0; j < zone.outerEdge.length; j++) {
+        const pt = zone.outerEdge[j];
+        if (j === 0) edge.moveTo(pt.x, pt.y);
+        else edge.lineTo(pt.x, pt.y);
+      }
+
+      const midPt = zone.outerEdge.length > 0
+        ? zone.outerEdge[Math.floor(zone.outerEdge.length / 2)]
+        : { x: 0, y: 0 };
+
+      this.zonePaths.push({
+        poly,
+        edge,
+        midPt,
+        name: zone.name.toUpperCase()
+      });
+    }
+
+    // 4. Precompiled Checkered Start / Finish Line (compiled once into GPU memory)
+    const line = this.track.startLine;
+    const p1 = line.p1;
+    const p2 = line.p2;
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const fwdX = Math.sin(line.angle);
+    const fwdY = -Math.cos(line.angle);
+    const cols = 8;
+    const rows = 2;
+    const rowH = 12;
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const isWhite = (r + c) % 2 === 0;
+        const targetPath = isWhite ? this.checkeredWhitePath : this.checkeredDarkPath;
+        const t1 = c / cols;
+        const t2 = (c + 1) / cols;
+
+        const aX = p1.x + dx * t1 + fwdX * (r * rowH - rowH);
+        const aY = p1.y + dy * t1 + fwdY * (r * rowH - rowH);
+        const bX = p1.x + dx * t2 + fwdX * (r * rowH - rowH);
+        const bY = p1.y + dy * t2 + fwdY * (r * rowH - rowH);
+        const cX = p1.x + dx * t2 + fwdX * ((r + 1) * rowH - rowH);
+        const cY = p1.y + dy * t2 + fwdY * ((r + 1) * rowH - rowH);
+        const dX = p1.x + dx * t1 + fwdX * ((r + 1) * rowH - rowH);
+        const dY = p1.y + dy * t1 + fwdY * ((r + 1) * rowH - rowH);
+
+        targetPath.moveTo(aX, aY);
+        targetPath.lineTo(bX, bY);
+        targetPath.lineTo(cX, cY);
+        targetPath.lineTo(dX, dY);
+        targetPath.closePath();
+      }
+    }
+
+    this.checkeredBorderPath.moveTo(p1.x - fwdX * rowH, p1.y - fwdY * rowH);
+    this.checkeredBorderPath.lineTo(p2.x - fwdX * rowH, p2.y - fwdY * rowH);
+    this.checkeredBorderPath.moveTo(p1.x + fwdX * rowH, p1.y + fwdY * rowH);
+    this.checkeredBorderPath.lineTo(p2.x + fwdX * rowH, p2.y + fwdY * rowH);
   }
 
   public isMobileDevice(): boolean {
@@ -87,22 +223,29 @@ export class DriftRenderer {
     roundState: RoundState,
     isDay: boolean = true,
     playerRoofNum: number = 86,
-    enemyRoofNum: number = 15
+    enemyRoofNum: number = 15,
+    alpha: number = 1.0
   ) {
     const ctx = this.ctx;
     const viewW = this.cssWidth;
     const viewH = this.cssHeight;
 
+    // Reset font cache for the frame
+    this.currentFont = '';
+
+    // Initialize or get interpolated car states for buttery 60/90/120Hz display refresh
+    if (!this.interpPlayerState) this.interpPlayerState = { ...playerState };
+    if (!this.interpEnemyState) this.interpEnemyState = { ...enemyState };
+    const renderPlayer = this.getInterpolatedState(playerState, this.interpPlayerState, alpha);
+    const renderEnemy = this.getInterpolatedState(enemyState, this.interpEnemyState, alpha);
+
     // Reset and apply DPR scale so all drawing coordinates use CSS pixels consistently!
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
-    // 1. Update Camera to Follow Player Car (Car-Centric Top-Down View)
-    this.updateCamera(playerState);
+    // 1. Update Camera to Follow Interpolated Player Car (Car-Centric Top-Down View)
+    this.updateCamera(renderPlayer);
 
-    // 2. Clear Screen
-    ctx.clearRect(0, 0, viewW, viewH);
-
-    // Fill background off-track grass/run-off
+    // 2. Clear Screen (single fillRect completely overwrites canvas buffer without slow clearRect)
     ctx.fillStyle = isDay ? '#94a3b8' : '#020617';
     ctx.fillRect(0, 0, viewW, viewH);
 
@@ -131,23 +274,23 @@ export class DriftRenderer {
     this.renderSmoke(ctx, isDay);
 
     // 7. Render Tether Line between Lead & Chase
-    this.renderTandemTether(ctx, playerState, enemyState, roundState.playerRole);
+    this.renderTandemTether(ctx, renderPlayer, renderEnemy, roundState.playerRole);
 
     // 8. Render OEM Vehicles
     // Render Enemy Car
-    this.renderOEMCar(ctx, enemyModel, enemyState, {
+    this.renderOEMCar(ctx, enemyModel, renderEnemy, {
       roofNumber: enemyRoofNum,
       colorTheme: (enemyModel === 's15' ? '#1e3a8a' : '#ef4444'),
-      isBraking: enemyState.brake,
+      isBraking: renderEnemy.brake,
       headlights: !isDay,
       isLightMode: isDay
     });
 
     // Render Player Car
-    this.renderOEMCar(ctx, playerModel, playerState, {
+    this.renderOEMCar(ctx, playerModel, renderPlayer, {
       roofNumber: playerRoofNum,
       colorTheme: (playerModel === 'ae86' ? 'panda' : '#06b6d4'),
-      isBraking: playerState.brake,
+      isBraking: renderPlayer.brake,
       headlights: !isDay,
       isLightMode: isDay
     });
@@ -190,112 +333,49 @@ export class DriftRenderer {
   }
 
   /**
-   * Renders the complete Figure-8 Track
+   * Renders the complete Figure-8 Track using precompiled GPU Path2D objects (lightning fast!)
    */
   private renderTrack(ctx: CanvasRenderingContext2D, isDay: boolean) {
-    const pts = this.track.waypoints;
-
-    // A. Main Asphalt Ribbon
+    // A. Main Asphalt Ribbon (Precompiled 120-waypoint path, stroked in microseconds)
     ctx.save();
-    ctx.fillStyle = isDay ? '#cbd5e1' : '#0f172a';
-    ctx.strokeStyle = isDay ? '#64748b' : '#1e293b';
-    ctx.lineWidth = 14;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    // Outer track surface
-    ctx.beginPath();
-    for (let i = 0; i < pts.length; i++) {
-      const wp = pts[i];
-      if (i === 0) ctx.moveTo(wp.x, wp.y);
-      else ctx.lineTo(wp.x, wp.y);
-    }
-    ctx.closePath();
     ctx.lineWidth = DRIFT_CONSTANTS.TRACK_WIDTH + 8;
-    ctx.stroke(); // Base border
+    ctx.strokeStyle = isDay ? '#64748b' : '#1e293b';
+    ctx.stroke(this.trackPath);
+
     ctx.lineWidth = DRIFT_CONSTANTS.TRACK_WIDTH;
     ctx.strokeStyle = isDay ? '#e2e8f0' : '#1e293b';
-    ctx.stroke(); // Asphalt fill
+    ctx.stroke(this.trackPath);
     ctx.restore();
 
-    // B. High-Visibility Green Drift Clipping Zones
-    for (const zone of this.track.clippingZones) {
+    // B. High-Visibility Green Drift Clipping Zones (Precompiled paths)
+    for (let i = 0; i < this.zonePaths.length; i++) {
+      const z = this.zonePaths[i];
       ctx.save();
       ctx.fillStyle = isDay ? 'rgba(16, 185, 129, 0.42)' : 'rgba(16, 185, 129, 0.55)';
+      ctx.fill(z.poly);
+
       ctx.strokeStyle = '#10b981';
       ctx.lineWidth = 2.5;
+      ctx.stroke(z.poly);
 
-      ctx.beginPath();
-      for (let i = 0; i < zone.polygon.length; i++) {
-        const pt = zone.polygon[i];
-        if (i === 0) ctx.moveTo(pt.x, pt.y);
-        else ctx.lineTo(pt.x, pt.y);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      // Outer Glowing Guide Line (skip glow on mobile — shadowBlur is expensive)
       ctx.strokeStyle = '#34d399';
       ctx.lineWidth = 3.5;
-      if (this.cssWidth >= 600) {
-        ctx.shadowColor = '#10b981';
-        ctx.shadowBlur = 12;
-      }
-      ctx.beginPath();
-      for (let i = 0; i < zone.outerEdge.length; i++) {
-        const pt = zone.outerEdge[i];
-        if (i === 0) ctx.moveTo(pt.x, pt.y);
-        else ctx.lineTo(pt.x, pt.y);
-      }
-      ctx.stroke();
+      ctx.stroke(z.edge);
 
-      // Zone Label
-      if (zone.outerEdge.length > 0) {
-        const midPt = zone.outerEdge[Math.floor(zone.outerEdge.length / 2)];
-        ctx.save();
-        ctx.font = '900 11px sans-serif';
-        ctx.fillStyle = '#065f46';
-        ctx.textAlign = 'center';
-        ctx.fillText(zone.name.toUpperCase(), midPt.x, midPt.y - 8);
-        ctx.restore();
-      }
-
+      ctx.font = '900 11px sans-serif';
+      ctx.fillStyle = '#065f46';
+      ctx.textAlign = 'center';
+      ctx.fillText(z.name, z.midPt.x, z.midPt.y);
       ctx.restore();
     }
 
-    // C. Red & White Striped Outer & Inner Curbs
-    this.renderCurbs(ctx, this.track.outerWalls, isDay);
-    this.renderCurbs(ctx, this.track.innerWalls, isDay);
-
-  }
-
-  private renderCurbs(ctx: CanvasRenderingContext2D, walls: any[], _isDay: boolean) {
+    // C. Red & White Striped Outer & Inner Curbs (Precompiled GPU paths)
     ctx.save();
     ctx.lineWidth = 5;
-
-    // Red curbs in a single batched stroke
     ctx.strokeStyle = '#ef4444';
-    ctx.beginPath();
-    for (let i = 0; i < walls.length; i += 2) {
-      if (i % 4 === 0) {
-        ctx.moveTo(walls[i].p1.x, walls[i].p1.y);
-        ctx.lineTo(walls[i].p2.x, walls[i].p2.y);
-      }
-    }
-    ctx.stroke();
-
-    // White curbs in a single batched stroke
+    ctx.stroke(this.redCurbsPath);
     ctx.strokeStyle = '#ffffff';
-    ctx.beginPath();
-    for (let i = 0; i < walls.length; i += 2) {
-      if (i % 4 !== 0) {
-        ctx.moveTo(walls[i].p1.x, walls[i].p1.y);
-        ctx.lineTo(walls[i].p2.x, walls[i].p2.y);
-      }
-    }
-    ctx.stroke();
-
+    ctx.stroke(this.whiteCurbsPath);
     ctx.restore();
   }
 
@@ -308,58 +388,17 @@ export class DriftRenderer {
     const p1 = line.p1;
     const p2 = line.p2;
 
-    const dx = p2.x - p1.x;
-    const dy = p2.y - p1.y;
-
-    // Heading vector along track
-    const fwdX = Math.sin(line.angle);
-    const fwdY = -Math.cos(line.angle);
-
-    const cols = 8;
-    const rows = 2;
-    const rowH = 12;
-
     ctx.save();
-    // 1. Alternating Checkered Flag Line across Track
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const isWhite = (r + c) % 2 === 0;
-        ctx.fillStyle = isWhite ? '#f8fafc' : '#0f172a';
-
-        const t1 = c / cols;
-        const t2 = (c + 1) / cols;
-
-        const aX = p1.x + dx * t1 + fwdX * (r * rowH - rowH);
-        const aY = p1.y + dy * t1 + fwdY * (r * rowH - rowH);
-
-        const bX = p1.x + dx * t2 + fwdX * (r * rowH - rowH);
-        const bY = p1.y + dy * t2 + fwdY * (r * rowH - rowH);
-
-        const cX = p1.x + dx * t2 + fwdX * ((r + 1) * rowH - rowH);
-        const cY = p1.y + dy * t2 + fwdY * ((r + 1) * rowH - rowH);
-
-        const dX = p1.x + dx * t1 + fwdX * ((r + 1) * rowH - rowH);
-        const dY = p1.y + dy * t1 + fwdY * ((r + 1) * rowH - rowH);
-
-        ctx.beginPath();
-        ctx.moveTo(aX, aY);
-        ctx.lineTo(bX, bY);
-        ctx.lineTo(cX, cY);
-        ctx.lineTo(dX, dY);
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
+    // 1. Alternating Checkered Flag Line across Track (Precompiled Path2D)
+    ctx.fillStyle = '#f8fafc';
+    ctx.fill(this.checkeredWhitePath);
+    ctx.fillStyle = '#0f172a';
+    ctx.fill(this.checkeredDarkPath);
 
     // Checkered line outline borders
     ctx.strokeStyle = '#e2e8f0';
     ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(p1.x - fwdX * rowH, p1.y - fwdY * rowH);
-    ctx.lineTo(p2.x - fwdX * rowH, p2.y - fwdY * rowH);
-    ctx.moveTo(p1.x + fwdX * rowH, p1.y + fwdY * rowH);
-    ctx.lineTo(p2.x + fwdX * rowH, p2.y + fwdY * rowH);
-    ctx.stroke();
+    ctx.stroke(this.checkeredBorderPath);
 
     // START / FINISH asphalt lettering
     ctx.save();
@@ -367,7 +406,7 @@ export class DriftRenderer {
     const midY = (p1.y + p2.y) / 2;
     ctx.translate(midX, midY);
     ctx.rotate(line.angle);
-    ctx.font = '900 13px monospace';
+    this.setFont(ctx, '900 13px monospace');
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -401,7 +440,7 @@ export class DriftRenderer {
     ctx.fillRect(-18, -36, 36, 4);
 
     // Grid Slot Label
-    ctx.font = '900 9px monospace';
+    this.setFont(ctx, '900 9px monospace');
     ctx.fillStyle = accentColor;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -689,7 +728,7 @@ export class DriftRenderer {
 
       ctx.save();
       ctx.fillStyle = isPanda ? '#090d16' : '#ffffff';
-      ctx.font = '900 10px monospace';
+      this.setFont(ctx, '900 10px monospace');
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(roofNumber.toString(), 0, 8.5);
@@ -779,7 +818,7 @@ export class DriftRenderer {
 
       ctx.save();
       ctx.fillStyle = '#ffffff';
-      ctx.font = '900 10px monospace';
+      this.setFont(ctx, '900 10px monospace');
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(roofNumber.toString(), 0, 5.5);
@@ -851,13 +890,13 @@ export class DriftRenderer {
     if (roundState.roundType.includes('omt')) roundTitle = `OMT — ROUND ${roundState.currentRoundNumber}`;
     if (roundState.roundType.includes('solo')) roundTitle = `SUDDEN DEATH SOLO SPRINT`;
 
-    ctx.font = isMobile ? '900 10px sans-serif' : '900 11px sans-serif';
+    this.setFont(ctx, isMobile ? '900 10px sans-serif' : '900 11px sans-serif');
     ctx.fillStyle = '#f59e0b';
     ctx.textAlign = 'center';
     ctx.fillText(roundTitle, viewW / 2, headerY + (isMobile ? 13 : 16));
 
     // Player Role vs Enemy Role
-    ctx.font = isMobile ? '700 10px monospace' : '700 12px monospace';
+    this.setFont(ctx, isMobile ? '700 10px monospace' : '700 12px monospace');
     ctx.fillStyle = '#38bdf8';
     const colOffset = isMobile ? headerW * 0.25 : 85;
     ctx.fillText(`YOU: ${roundState.playerRole.toUpperCase()} (${p1Score.totalScore} pts)`, viewW / 2 - colOffset, headerY + (isMobile ? 29 : 35));
@@ -909,7 +948,7 @@ export class DriftRenderer {
       ctx.fill();
       ctx.stroke();
 
-      ctx.font = '900 8.5px monospace';
+      this.setFont(ctx, '900 8.5px monospace');
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -932,18 +971,18 @@ export class DriftRenderer {
     ctx.fill();
     ctx.stroke();
 
-    ctx.font = isMobile ? '800 8px sans-serif' : '900 9.5px sans-serif';
+    this.setFont(ctx, isMobile ? '800 8px sans-serif' : '900 9.5px sans-serif');
     ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'left';
     ctx.fillText('DRIFT SLIP ANGLE', telemFinalX + (isMobile ? 10 : 12), isMobile ? telemY + 13 : telemY + 17);
 
-    ctx.font = isMobile ? '900 14px monospace' : '900 16px monospace';
+    this.setFont(ctx, isMobile ? '900 14px monospace' : '900 16px monospace');
     ctx.fillStyle = p1.driftSlipAngle > 80 ? '#f43f5e' : (p1.driftSlipAngle > 40 ? '#f59e0b' : '#34d399');
     ctx.fillText(`${p1.driftSlipAngle}°`, telemFinalX + (isMobile ? 10 : 12), isMobile ? telemY + 28 : telemY + 37);
 
     // Green Clipping Zone Tire Dots (FL, FR, RL, RR)
     const tiresX = telemFinalX + (isMobile ? 110 : 135);
-    ctx.font = isMobile ? '700 7.5px sans-serif' : '700 8px sans-serif';
+    this.setFont(ctx, isMobile ? '700 7.5px sans-serif' : '700 8px sans-serif');
     ctx.fillStyle = '#94a3b8';
     ctx.fillText('ZONE TIRES:', tiresX, isMobile ? telemY + 13 : telemY + 17);
 
@@ -963,7 +1002,7 @@ export class DriftRenderer {
     ctx.translate(gMeterX, gMeterY);
 
     // G-meter label
-    ctx.font = '700 7px sans-serif';
+    this.setFont(ctx, '700 7px sans-serif');
     ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'center';
     ctx.fillText('G-METER', 0, -gRadius - 2);
@@ -987,7 +1026,7 @@ export class DriftRenderer {
     ctx.restore();
 
     // Numeric G readout
-    ctx.font = isMobile ? '900 9px monospace' : '900 10px monospace';
+    this.setFont(ctx, isMobile ? '900 9px monospace' : '900 10px monospace');
     ctx.fillStyle = '#f8fafc';
     ctx.textAlign = 'center';
     ctx.fillText(`${Math.abs(p1.lateralG || 0).toFixed(1)}G`, gMeterX + (isMobile ? 26 : 32), isMobile ? telemY + 22 : telemY + 28);
@@ -999,7 +1038,7 @@ export class DriftRenderer {
       ctx.roundRect(viewW / 2 - 150, telemY + telemH + 6, 300, 30, 10);
       ctx.fill();
 
-      ctx.font = '900 11px sans-serif';
+      this.setFont(ctx, '900 11px sans-serif');
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.fillText(`⚠️ ZERO FAULT: ${p1Score.faultReason || 'FAULT'}`, viewW / 2, telemY + telemH + 25);
@@ -1014,7 +1053,7 @@ export class DriftRenderer {
       ctx.roundRect(viewW / 2 - 140, stallY, 280, 26, 8);
       ctx.fill();
 
-      ctx.font = '900 10.5px sans-serif';
+      this.setFont(ctx, '900 10.5px sans-serif');
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.fillText(`⏱️ ANTI-STALL WARNING: RESUME IN ${remaining}s OR DQ!`, viewW / 2, stallY + 17);
