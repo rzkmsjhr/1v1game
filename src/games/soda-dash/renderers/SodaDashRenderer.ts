@@ -1630,10 +1630,10 @@ export class SodaDashRenderer {
         ctx.lineTo(sx - len * 0.4, sy + len);
       }
       ctx.stroke();
-    } else if (this.engine.player.speed > 17) {
+    } else if (this.engine.player.speed >= 16) {
       // Subtle peripheral speed streaks for optical flow on high refresh rate displays
-      const speedRatio = Math.min(1.0, Math.max(0, (this.engine.player.speed - 17) / 28));
-      ctx.strokeStyle = `rgba(255, 255, 255, ${0.14 + speedRatio * 0.18})`;
+      const speedRatio = Math.min(1.0, Math.max(0, (this.engine.player.speed - 16) / 29));
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.12 + speedRatio * 0.18})`;
       ctx.lineWidth = 1.2;
       ctx.beginPath();
       const numStreaks = Math.min(4, Math.floor(2 + speedRatio * 2));

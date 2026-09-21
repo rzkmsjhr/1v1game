@@ -39,7 +39,7 @@ export class SodaDashGame implements GameInstance {
 
   // Remote Opponent Smooth Netcode State (Dead reckoning + LERP interpolation)
   private remoteTargetDistance: number = 0;
-  private remoteTargetSpeed: number = 18;
+  private remoteTargetSpeed: number = 16;
   private remoteTargetLane: Lane = 1;
   private remoteTargetX: number = 1;
   private remoteTargetJumpY: number = 0;
@@ -169,7 +169,7 @@ export class SodaDashGame implements GameInstance {
             </div>
             <div class="flex items-baseline justify-between pt-0.5">
               <div id="player-dist" class="text-base sm:text-2xl font-black font-mono text-slate-900 dark:text-white tracking-tight">0 m</div>
-              <div id="player-speed" class="text-[10px] sm:text-xs font-bold font-mono text-cyan-500 dark:text-cyan-300">65 km/h</div>
+              <div id="player-speed" class="text-[10px] sm:text-xs font-bold font-mono text-cyan-500 dark:text-cyan-300">58 km/h</div>
             </div>
           </div>
 
@@ -681,7 +681,7 @@ export class SodaDashGame implements GameInstance {
         this.isInitialSeedSynced = true;
         this.engine.reset(msg.seed);
         this.remoteTargetDistance = 0;
-        this.remoteTargetSpeed = 18;
+        this.remoteTargetSpeed = 16;
         this.remoteTargetLane = 1;
         this.remoteTargetX = 1;
         this.remoteTargetJumpY = 0;
@@ -743,7 +743,7 @@ export class SodaDashGame implements GameInstance {
     } else if (msg.type === 'DASH_REMATCH') {
       this.engine.reset(msg.seed);
       this.remoteTargetDistance = 0;
-      this.remoteTargetSpeed = 18;
+      this.remoteTargetSpeed = 16;
       this.remoteTargetLane = 1;
       this.remoteTargetX = 1;
       this.remoteTargetJumpY = 0;
@@ -1019,7 +1019,7 @@ export class SodaDashGame implements GameInstance {
     const newSeed = Date.now();
     this.engine.reset(newSeed);
     this.remoteTargetDistance = 0;
-    this.remoteTargetSpeed = 18;
+    this.remoteTargetSpeed = 16;
     this.remoteTargetLane = 1;
     this.remoteTargetX = 1;
     this.remoteTargetJumpY = 0;

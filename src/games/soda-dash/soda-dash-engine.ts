@@ -42,7 +42,7 @@ export class SodaDashEngine {
       hearts: 3,
       maxHearts: 3,
       distance: 0,
-      speed: 18, // Start at an energetic 18 m/s (~65 km/h)
+      speed: 16, // Start at 16 m/s (~58 km/h)
       lane: id === 'player' ? -1 : 1, // Player starts left, rival starts right
       currentX: id === 'player' ? -1 : 1,
       jumpY: 0,
@@ -174,10 +174,10 @@ export class SodaDashEngine {
 
   private updateRunner(r: RunnerState, dt: number): void {
     // 1. Calculate Target Base Speed with Smooth Asymptotic Scaling Curve
-    // Starts at an energetic 18 m/s (~65 km/h) and smoothly scales towards 45 m/s (~162 km/h)
-    const baseSpeed = 18;
+    // Starts at a friendly 16 m/s (~58 km/h) and smoothly scales towards 45 m/s (~162 km/h)
+    const baseSpeed = 16;
     const maxSpeed = 45;
-    const targetBaseSpeed = baseSpeed + (maxSpeed - baseSpeed) * (1 - Math.exp(-r.distance / 700));
+    const targetBaseSpeed = baseSpeed + (maxSpeed - baseSpeed) * (1 - Math.exp(-r.distance / 1000));
 
     let effectiveSpeed = targetBaseSpeed;
 
