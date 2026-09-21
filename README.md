@@ -1,23 +1,23 @@
-# 1v1 Arcade Arena (Multiplayer & AI)
+# 🎮 1v1 Arcade Arena (Multiplayer & AI)
 
-A modern, competitive 1v1 web arcade featuring four classic games built with TypeScript, Vite, Tailwind CSS, and HTML5 Canvas. Supports direct peer-to-peer multiplayer via WebRTC and single-player vs intelligent AI bots.
+A modern, competitive 1v1 web arcade featuring **9 real-time games** built with TypeScript, Vite, Tailwind CSS, HTML5 Canvas, and the Web Audio API. Play head-to-head against friends via direct peer-to-peer **WebRTC** or challenge intelligent **AI bots** with scalable difficulty tiers.
 
 ![Arcade Preview](preview.png)
 
 ---
 
-## 🎮 The Games
+## 🕹️ The Games
 
-### 1. 1v1 Battle Tetris
-- **Competitive Garbage Mechanics**: Clear lines to attack; 4-line Tetrises, combos, and Back-to-Backs send massive garbage bursts.
-- **Garbage Cancellation**: Clearing lines counter-acts incoming enemy garbage in real-time.
-- **Guideline Engine**: Authentic Super Rotation System (SRS) with full wall/floor kicks, 7-bag randomizer, hold slot, 4-piece next queue, DAS/ARR responsive keyboard controls, and High-DPI Retina canvas rendering.
-- **AI Opponents**: 4 difficulty tiers powered by Pierre Dellacherie evaluation algorithms (landing height, eroded cells, transitions, buried holes, and well depth).
+### 1. Tetris 1v1 Battle
+- **Competitive Garbage Mechanics**: Clear lines to attack; 4-line Tetrises, combos, and Back-to-Backs send massive garbage bursts to your opponent.
+- **Garbage Cancellation**: Counter incoming garbage in real-time by clearing lines before they rise into your matrix.
+- **Guideline Engine**: Authentic Super Rotation System (SRS) with full wall/floor kicks, 7-bag randomizer, hold slot, 4-piece next preview queue, responsive DAS/ARR keyboard timings, and High-DPI Retina canvas rendering.
+- **AI Opponents**: 4 difficulty tiers powered by Pierre Dellacherie evaluation heuristics (landing height, eroded cells, transitions, buried holes, and well depth).
 
 ### 2. 8-Ball & 9-Ball Pool (Billiards)
-- **Physics Engine**: Multi-substep continuous collision detection, realistic cushion restitution, angular momentum, and pocket attraction.
+- **Physics Engine**: Multi-substep continuous collision detection, realistic cushion restitution, angular momentum, and pocket attraction dynamics.
 - **Official Rules**: Opening lag contest to earn break rights, ball-in-hand placement after fouls, legal object ball contact rules, and open table on break.
-- **Controls & Aiming**: Interactive cue aiming, drag-to-aim cue stick, fine-tune angle slider, power charge bar, and ghost ball collision guideline.
+- **Controls & Aiming**: Interactive cue aiming, drag-to-aim cue stick, fine-tune angle slider, power charge bar, and ghost ball collision guidelines.
 - **Single-Player AI**: Geometric raycasting and cushion deflection scoring.
 
 ### 3. Othello / Reversi
@@ -26,10 +26,41 @@ A modern, competitive 1v1 web arcade featuring four classic games built with Typ
 - **Positional AI**: Multi-ply heuristic AI evaluating corner dominance, stable discs, danger X/C squares, and mobility.
 
 ### 4. Snakes & Ladders
-- **Dynamic 100-Tile Board**: Randomized snake and ladder placement with serpentine grid pathing.
+- **Dynamic 100-Tile Board**: Procedurally generated snake and ladder placements with serpentine grid pathing.
 - **Dual Dice Roll**: Authentic Asian-style dice rendering (big red 1, red 4, blue pips) with doubles rolling again rule.
 - **Opening Duel**: Roll-off tie-breaker to decide who moves first.
-- **Smooth Animation**: Step-by-step token hopping with slide down and climb animations.
+- **Smooth Animation**: Step-by-step token hopping with climb and slide animations.
+
+### 5. Fast Sling Puck
+- **High-Speed Tabletop Battle**: Wooden board dexterity duel where both players sling pucks simultaneously with zero turns.
+- **Elastic Cord Physics**: Pull pucks backward against flexible tension cords and slingshot them through the narrow center gate.
+- **Real-Time Synchronized Duel**: Clear all pucks from your side to win!
+- **Predictive AI**: Fast-reacting bot with dynamic shot angle calculation and bounce predictions.
+
+### 6. Block Fit Duel
+- **Polyomino Tangram Race**: Race against your opponent to pack colorful geometric shapes into randomized non-rectangular trays with no piece rotation.
+- **Best of 5 Duel**: Fast-paced rounds where the first player to successfully pack 3 trays wins the match.
+- **Opponent Shadow Tracker**: Real-time ghost silhouette showing your rival's tray fill percentage.
+- **Backtracking Solver AI**: Algorithmic puzzle solver that scales from relaxed beginner speeds to lightning-fast master tiers.
+
+### 7. Ninja Rush: 1v1 Dash (Soda Dash)
+- **3D Lane Parkour Runner**: Sprint down a sunny 3-lane highway in a high-speed parkour duel.
+- **Acrobatic Moves**: Leap over track hurdles and spike barricades, slide under overhead banners, and weave between towering brick walls.
+- **Competitive Survival**: Manage 3 hearts, dodge accelerating obstacle waves, collect coins, and outlast your rival.
+- **Full Touch & Keyboard**: Responsive swipe and arrow/WASD controls.
+
+### 8. Sheep Fight 1v1
+- **5-Lane Tactical Tug-of-War**: Deploy sheep across 5 pasture lanes in a head-to-head clash of mass and momentum.
+- **Weight Tiers & Collision Physics**: Choose between speedy runners, balanced sheep, and heavy rams. Colliding sheep lock horns, and net lane weight dictates push direction.
+- **Sudden Death Stalemates**: Push through to the opponent's baseline or claim dominance across majority lanes when the clock expires.
+- **Dynamic AI**: Lane-countering bot that detects undefended tracks and reinforces active push lanes.
+
+### 9. Water Sort 1v1
+- **Tactical Color Bottle Duel**: Pour and sort 10 vibrant liquid colors across test tubes in a fast-paced head-to-head puzzle.
+- **Central Reservoir Flask**: Extract 3 matching liquid units into the central flask to bank points and cycle to new color targets.
+- **Fluid Visuals & 60 FPS Performance**: GPU-composited liquid pouring animations, oscillating waves, meniscus reflections, and liquid surface glints.
+- **Assist HUD & Audio**: Undo move, smart Hint suggestions, Reset option, and tactile liquid splash audio synthesis.
+- **Tailored AI Difficulties**: Finely balanced tiers ranging from kid-friendly Easy to lightning-fast Boss mode.
 
 ---
 
@@ -41,13 +72,36 @@ A modern, competitive 1v1 web arcade featuring four classic games built with Typ
   - Automatic NAT traversal via Google STUN servers.
   - Sub-second room handshake with fast 250ms polling and early message queueing.
   - Built-in local mock signaling server in Vite dev mode so you can test two tabs locally out-of-the-box.
+  - Synchronized countdowns (`3.. 2.. 1.. GO!`), idle/tabbed-out peer away alerts, and real-time RTT latency HUD.
+  - 2-step rematch handshake flow.
 
 - **Intelligent AI Bots**:
-  - Available across all games with customizable difficulty (Easy, Medium, Hard, Extreme).
+  - Custom heuristic, physics, and tree-search AI bots for every game.
+  - Configurable difficulty tiers (Easy, Medium, Hard, Boss / Extreme).
 
-- **Zero Asset Dependencies**:
-  - Procedural Web Audio API sound synthesis (retro blips, hard drop hits, cue strikes, dice rolls, fanfares).
-  - SVG and Canvas rendering for lightweight, instant bundle loading.
+- **Zero External Media Dependencies**:
+  - **100% Procedural Sound Synthesis**: Built purely with the native Web Audio API (retro 8-bit blips, cue strikes, puck bounces, liquid splashes, sheep bleats, fanfares).
+  - Lightweight inline SVG icons and HTML5 Canvas rendering for instant bundle loading.
+
+- **Responsive & Mobile-Ready**:
+  - Native mobile touch support: virtual d-pads, touch gestures, swipe controls, and responsive viewport scaling.
+  - Dark and light theme modes with instant toggle.
+
+---
+
+## ⌨️ Controls Reference
+
+| Game | Keyboard / Mouse | Touch / Mobile |
+| :--- | :--- | :--- |
+| **Tetris** | `←` / `→` or `A` / `D`: Move<br>`↓` / `S`: Soft Drop<br>`Space`: Hard Drop<br>`↑` / `W` / `X`: Rotate CW<br>`Z` / `Ctrl`: Rotate CCW<br>`C` / `Shift`: Hold Piece | On-screen virtual D-Pad & action buttons |
+| **Pool (Billiards)** | Mouse Drag: Aim cue stick<br>Fine Angle Slider: Degree adjustment<br>Power Meter: Pull & release shot<br>Click Table: Ball-in-Hand reposition | Touch drag cue to aim<br>Touch power slider to strike<br>Tap table to position ball |
+| **Othello** | Click highlighted valid square | Tap highlighted valid square |
+| **Snakes & Ladders** | Click **Roll Dice** button | Tap **Roll Dice** button |
+| **Fast Sling Puck** | Click & drag puck backward against rubber cord; release to shoot | Touch & drag puck backward against rubber cord; release to shoot |
+| **Block Fit Duel** | Click & drag pieces into tray silhouette<br>Click placed piece to return to dock | Drag pieces into tray silhouette<br>Tap placed piece to return to dock |
+| **Ninja Rush (Soda Dash)** | `A` / `D` or `←` / `→`: Change lane<br>`W` / `↑` / `Space`: Jump<br>`S` / `↓`: Slide | Swipe Left / Right: Change lane<br>Swipe Up: Jump<br>Swipe Down: Slide |
+| **Sheep Fight** | Click lane deployment buttons (1–5) | Tap lane deployment buttons (1–5) |
+| **Water Sort** | Click source tube, then click destination tube<br>Click reservoir flask to extract target color<br>Undo / Hint / Reset buttons | Tap source tube, then tap target tube<br>Tap reservoir flask to extract target color<br>Undo / Hint / Reset buttons |
 
 ---
 
@@ -97,36 +151,11 @@ This runs TypeScript checking (`tsc`) and bundles optimized static assets into t
 
 ---
 
-## ⌨️ Controls Reference
+## 🛠️ Tech Stack & Architecture
 
-### Tetris
-| Key / Input | Action |
-| --- | --- |
-| `←` / `A` | Move Left |
-| `→` / `D` | Move Right |
-| `↓` / `S` | Soft Drop |
-| `Space` | Hard Drop (Instant drop & lock) |
-| `↑` / `X` / `W` | Rotate Clockwise |
-| `Z` / `Ctrl` | Rotate Counter-Clockwise |
-| `C` / `Shift` | Hold Piece |
-| `Esc` / `P` | Pause / Exit |
-| Touch Controls | On-screen virtual buttons |
-
-### Pool (Billiards)
-| Input | Action |
-| --- | --- |
-| Mouse / Touch Drag | Aim cue stick around cue ball |
-| Cue Stick Drag | Click and drag cue stick directly to rotate angle |
-| Fine Angle Slider | Precise degree adjustments |
-| Power Meter / Drag | Adjust shot power and release to shoot |
-| Click Board | Place cue ball during Ball-in-Hand phase |
-
-### Othello
-| Input | Action |
-| --- | --- |
-| Click Tile | Place disc on highlighted valid squares |
-
-### Snakes & Ladders
-| Input | Action |
-| --- | --- |
-| Click "Roll Dice" | Roll pair of dice on your turn |
+- **Language**: TypeScript 5.8
+- **Bundler & Tooling**: Vite 6, PostCSS, Tailwind CSS 3.4
+- **Rendering**: HTML5 Canvas (High-DPI Retina support), SVG, GPU-accelerated CSS transforms
+- **Audio Engine**: Procedural Web Audio API sound synthesis (zero audio files)
+- **Networking**: WebRTC DataChannels (P2P), Google STUN, Cloudflare Pages Functions + KV signaling
+- **VFX**: Canvas Confetti, particle emitters, dynamic lighting and glassmorphism shaders
