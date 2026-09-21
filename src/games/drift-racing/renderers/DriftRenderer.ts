@@ -58,7 +58,9 @@ export class DriftRenderer {
   }
 
   public resize(width: number, height: number) {
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // Cap DPR to 1 on mobile to avoid crippling GPU fill-rate
+    const rawDpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = width < 600 ? 1 : rawDpr;
     this.cssWidth = width;
     this.cssHeight = height;
     this.canvas.width = Math.round(width * this.dpr);
@@ -231,11 +233,13 @@ export class DriftRenderer {
       ctx.fill();
       ctx.stroke();
 
-      // Outer Glowing Guide Line
+      // Outer Glowing Guide Line (skip glow on mobile — shadowBlur is expensive)
       ctx.strokeStyle = '#34d399';
       ctx.lineWidth = 3.5;
-      ctx.shadowColor = '#10b981';
-      ctx.shadowBlur = 12;
+      if (this.cssWidth >= 600) {
+        ctx.shadowColor = '#10b981';
+        ctx.shadowBlur = 12;
+      }
       ctx.beginPath();
       for (let i = 0; i < zone.outerEdge.length; i++) {
         const pt = zone.outerEdge[i];
@@ -421,12 +425,17 @@ export class DriftRenderer {
    * Emits & renders dynamic rear tire smoke scaling with throttle & drift angle
    */
   private updateAndRenderSmoke(ctx: CanvasRenderingContext2D, car: VehiclePhysicsState, isDay: boolean) {
+    const isMobile = this.cssWidth < 600;
+
     // Deposit Skidmarks
     if (car.driftSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG && car.speed > 0.32) {
       this.skidmarks.push({ x: car.tires[2].x, y: car.tires[2].y, alpha: isDay ? 0.35 : 0.6 });
-      this.skidmarks.push({ x: car.tires[3].x, y: car.tires[3].y, alpha: isDay ? 0.35 : 0.6 });
+      if (!isMobile) {
+        this.skidmarks.push({ x: car.tires[3].x, y: car.tires[3].y, alpha: isDay ? 0.35 : 0.6 });
+      }
     }
-    if (this.skidmarks.length > 600) this.skidmarks.splice(0, 50);
+    const skidCap = isMobile ? 200 : 600;
+    if (this.skidmarks.length > skidCap) this.skidmarks.splice(0, 50);
 
     // Smoke Generation (billows with throttle commitment & drift angle)
     const isDrifting = (car.driftSlipAngle >= DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG);
@@ -434,7 +443,8 @@ export class DriftRenderer {
 
     if (isDrifting && car.speed > 0.30 && hasThrottle) {
       const intensity = (car.driftSlipAngle / 35) + (car.throttle * 1.6);
-      const spawnCount = Math.min(5, Math.ceil(intensity));
+      const maxSpawn = isMobile ? 2 : 5;
+      const spawnCount = Math.min(maxSpawn, Math.ceil(intensity));
 
       for (let i = 0; i < spawnCount; i++) {
         const isLeft = (Math.random() > 0.5);
@@ -448,9 +458,15 @@ export class DriftRenderer {
           vy: -car.vy * 0.15 + (Math.random() - 0.5) * 0.9,
           size: 4.5 + Math.random() * 5,
           alpha: 0.70,
-          decay: 0.012 + Math.random() * 0.008
+          decay: isMobile ? 0.022 + Math.random() * 0.012 : 0.012 + Math.random() * 0.008
         });
       }
+    }
+
+    // Hard cap total smoke particles on mobile
+    const smokeCap = isMobile ? 60 : 300;
+    if (this.smokeParticles.length > smokeCap) {
+      this.smokeParticles.splice(0, this.smokeParticles.length - smokeCap);
     }
 
     // Render & update particles
@@ -509,17 +525,16 @@ export class DriftRenderer {
     ctx.translate(state.x, state.y);
     ctx.rotate(state.angle);
 
-    // Ground Shadow
+    // Ground Shadow (simple fill, no blur filter — blur murders mobile perf)
     ctx.save();
-    ctx.fillStyle = isLightMode ? 'rgba(15, 23, 42, 0.45)' : 'rgba(0, 0, 0, 0.7)';
+    ctx.fillStyle = isLightMode ? 'rgba(15, 23, 42, 0.30)' : 'rgba(0, 0, 0, 0.50)';
     ctx.beginPath();
-    ctx.roundRect(-14, -32, 28, 64, 5);
-    ctx.filter = 'blur(4px)';
+    ctx.roundRect(-16, -34, 32, 68, 7);
     ctx.fill();
     ctx.restore();
 
-    // Headlight Beams (for Night mode)
-    if (headlights) {
+    // Headlight Beams (for Night mode — skip on mobile, gradient is expensive)
+    if (headlights && this.cssWidth >= 600) {
       ctx.save();
       const grad = ctx.createRadialGradient(0, -30, 8, 0, -85, 75);
       grad.addColorStop(0, 'rgba(254, 240, 138, 0.28)');
@@ -554,19 +569,21 @@ export class DriftRenderer {
       ctx.fill();
       ctx.stroke();
 
-      // Rolling tread animation
-      ctx.save();
-      ctx.clip();
-      ctx.strokeStyle = '#475569';
-      ctx.lineWidth = 1;
-      const offset = (state.wheelSpinAngle % 4);
-      for (let py = -tireL / 2 - 4 + offset; py <= tireL / 2 + 4; py += 4) {
-        ctx.beginPath();
-        ctx.moveTo(-tireW / 2, py);
-        ctx.lineTo(tireW / 2, py);
-        ctx.stroke();
+      // Rolling tread animation (skip on mobile — clip+stroke per tire is expensive)
+      if (this.cssWidth >= 600) {
+        ctx.save();
+        ctx.clip();
+        ctx.strokeStyle = '#475569';
+        ctx.lineWidth = 1;
+        const offset = (state.wheelSpinAngle % 4);
+        for (let py = -tireL / 2 - 4 + offset; py <= tireL / 2 + 4; py += 4) {
+          ctx.beginPath();
+          ctx.moveTo(-tireW / 2, py);
+          ctx.lineTo(tireW / 2, py);
+          ctx.stroke();
+        }
+        ctx.restore();
       }
-      ctx.restore();
       ctx.restore();
     };
 
@@ -848,9 +865,11 @@ export class DriftRenderer {
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.5;
 
-      // Outer Glow
-      ctx.shadowColor = 'rgba(244, 63, 94, 0.6)';
-      ctx.shadowBlur = 8;
+      // Outer Glow (skip on mobile)
+      if (!isMobile) {
+        ctx.shadowColor = 'rgba(244, 63, 94, 0.6)';
+        ctx.shadowBlur = 8;
+      }
 
       // Pointer chevron towards rival
       ctx.rotate(arrowAngle);

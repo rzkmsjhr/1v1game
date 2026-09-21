@@ -190,8 +190,8 @@ export class DriftRacingGame implements GameInstance {
 
         <!-- Virtual Touch Controls for Mobile -->
         <div class="sm:hidden absolute bottom-1 inset-x-1 pointer-events-none z-10" style="max-height:40vh">
-          <!-- Left side: Steer controls (vertically stacked) -->
-          <div class="absolute left-1 bottom-0 flex flex-col gap-1.5 pointer-events-auto">
+          <!-- Left side: Steer controls (inline side-by-side) -->
+          <div class="absolute left-1 bottom-0 flex items-center gap-1.5 pointer-events-auto">
             <button id="btn-touch-left" class="w-16 h-16 rounded-2xl bg-black/70 border border-white/20 text-2xl font-bold flex items-center justify-center active:bg-cyan-500/40 text-white select-none touch-none">◀</button>
             <button id="btn-touch-right" class="w-16 h-16 rounded-2xl bg-black/70 border border-white/20 text-2xl font-bold flex items-center justify-center active:bg-cyan-500/40 text-white select-none touch-none">▶</button>
           </div>
