@@ -29,35 +29,19 @@ export class DriftRenderer {
   private camAngle: number = 0;
   private camZoom: number = 1.0;
 
-  // Screen & Viewport Scaling (DPI-proof)
+  // Screen & Viewport Scaling (Crisp Retina DPI)
   private dpr: number = 1;
   private cssWidth: number = 960;
   private cssHeight: number = 640;
 
-  // Offscreen Pre-rendered Track Cache
-  private trackCanvas: HTMLCanvasElement | null = null;
-  private trackCanvasTheme: 'day' | 'night' | null = null;
-
-  // Offscreen Skidmarks Canvas (drawn once upon tire slide, zero per-frame circle redraws!)
-  private skidmarkCanvas: HTMLCanvasElement;
-  private skidmarkCtx: CanvasRenderingContext2D;
-  private readonly TRACK_ORIGIN_X = 200; // offsets MIN_X: -200
-  private readonly TRACK_ORIGIN_Y = 200; // offsets MIN_Y: -200
-  private readonly TRACK_CANVAS_W = 2000;
-  private readonly TRACK_CANVAS_H = 1600;
-
-  // Dynamic Smoke Particles
+  // Particle & Skidmark Buffers (batched in single draw calls, zero heavy offscreen canvases!)
   private smokeParticles: SmokeParticle[] = [];
+  private skidmarks: { x: number; y: number }[] = [];
 
   constructor(canvas: HTMLCanvasElement, track: DriftTrack) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.track = track;
-
-    this.skidmarkCanvas = document.createElement('canvas');
-    this.skidmarkCanvas.width = this.TRACK_CANVAS_W;
-    this.skidmarkCanvas.height = this.TRACK_CANVAS_H;
-    this.skidmarkCtx = this.skidmarkCanvas.getContext('2d')!;
   }
 
   public isMobileDevice(): boolean {
@@ -76,11 +60,9 @@ export class DriftRenderer {
   public resize(width: number, height: number) {
     this.cssWidth = width;
     this.cssHeight = height;
-    const isMobile = this.isMobileDevice();
     const rawDpr = window.devicePixelRatio || 1;
-    // On mobile, cap DPR to 1.0 to avoid filling millions of pixels on Retina/OLED phones
-    // On desktop, allow up to 1.5
-    this.dpr = isMobile ? 1.0 : Math.min(rawDpr, 1.5);
+    // Crisp Retina resolution (never downsampled to 1.0 which causes blurry graphics on mobile!)
+    this.dpr = Math.min(rawDpr, 2.0);
     this.canvas.width = Math.round(width * this.dpr);
     this.canvas.height = Math.round(height * this.dpr);
     this.canvas.style.width = `${width}px`;
@@ -88,35 +70,8 @@ export class DriftRenderer {
   }
 
   public clearSkidmarks() {
-    this.skidmarkCtx.clearRect(0, 0, this.TRACK_CANVAS_W, this.TRACK_CANVAS_H);
+    this.skidmarks = [];
     this.smokeParticles = [];
-  }
-
-  /**
-   * Pre-renders the static Figure-8 track, borders, curbs, checkered line, and green zones
-   * onto an offscreen canvas once. This eliminates hundreds of expensive stroke & fill calls per frame!
-   */
-  private buildTrackCanvas(isDay: boolean) {
-    if (!this.trackCanvas) {
-      this.trackCanvas = document.createElement('canvas');
-      this.trackCanvas.width = this.TRACK_CANVAS_W;
-      this.trackCanvas.height = this.TRACK_CANVAS_H;
-    }
-    const tCtx = this.trackCanvas.getContext('2d')!;
-    tCtx.clearRect(0, 0, this.TRACK_CANVAS_W, this.TRACK_CANVAS_H);
-
-    tCtx.save();
-    // Offset world coordinates
-    tCtx.translate(this.TRACK_ORIGIN_X, this.TRACK_ORIGIN_Y);
-
-    // 1. Render Track Surface, Curbs, and Green Clipping Zones
-    this.renderTrack(tCtx, isDay);
-
-    // 2. Render Checkered Start / Finish Line & Starting Grids
-    this.renderCheckeredStartFinish(tCtx);
-
-    tCtx.restore();
-    this.trackCanvasTheme = isDay ? 'day' : 'night';
   }
 
   /**
@@ -137,12 +92,6 @@ export class DriftRenderer {
     const ctx = this.ctx;
     const viewW = this.cssWidth;
     const viewH = this.cssHeight;
-
-    // Pre-render static track to offscreen canvas if theme changed or not built
-    const themeKey = isDay ? 'day' : 'night';
-    if (this.trackCanvasTheme !== themeKey) {
-      this.buildTrackCanvas(isDay);
-    }
 
     // Reset and apply DPR scale so all drawing coordinates use CSS pixels consistently!
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -167,21 +116,24 @@ export class DriftRenderer {
     ctx.scale(this.camZoom, this.camZoom);
     ctx.translate(-this.camX, -this.camY);
 
-    // 3. Render Pre-rendered Track (1 single drawImage call!)
-    ctx.drawImage(this.trackCanvas!, -this.TRACK_ORIGIN_X, -this.TRACK_ORIGIN_Y);
+    // 3. Render Track Surface & Green Clipping Zones directly
+    this.renderTrack(ctx, isDay);
 
-    // 4. Render Skidmarks (1 single drawImage call!)
-    ctx.drawImage(this.skidmarkCanvas, -this.TRACK_ORIGIN_X, -this.TRACK_ORIGIN_Y);
+    // 4. Render Checkered Start / Finish Line & Starting Grids directly
+    this.renderCheckeredStartFinish(ctx);
 
-    // 5. Emit & Render Dynamic Rear Tire Smoke
-    this.emitSmoke(playerState, isDay);
-    this.emitSmoke(enemyState, isDay);
+    // 5. Render Tire Skidmarks (batched in 1 single fill call!)
+    this.renderSkidmarks(ctx, isDay);
+
+    // 6. Emit & Render Dynamic Rear Tire Smoke (batched in 1 single fill call!)
+    this.emitSmoke(playerState);
+    this.emitSmoke(enemyState);
     this.renderSmoke(ctx, isDay);
 
-    // 6. Render Tether Line between Lead & Chase
+    // 7. Render Tether Line between Lead & Chase
     this.renderTandemTether(ctx, playerState, enemyState, roundState.playerRole);
 
-    // 7. Render OEM Vehicles
+    // 8. Render OEM Vehicles
     // Render Enemy Car
     this.renderOEMCar(ctx, enemyModel, enemyState, {
       roofNumber: enemyRoofNum,
@@ -205,6 +157,7 @@ export class DriftRenderer {
     // 9. Render On-Screen Live HUD
     this.renderHUD(ctx, viewW, viewH, playerState, playerScore, enemyState, enemyScore, roundState);
   }
+
 
   /**
    * Smoothly tracks player car position, heading angle, and dynamic zoom
@@ -484,20 +437,21 @@ export class DriftRenderer {
   }
 
   /**
-   * Emits dynamic rear tire smoke and stamps skidmarks directly onto the offscreen skidmark canvas
+   * Emits dynamic rear tire smoke and records skidmarks
    */
-  private emitSmoke(car: VehiclePhysicsState, isDay: boolean) {
+  private emitSmoke(car: VehiclePhysicsState) {
     const isMobile = this.isMobileDevice();
 
-    // Stamp Skidmarks onto Offscreen Skidmark Canvas (instant 0-overhead stamp!)
+    // Record Skidmarks
     if (car.driftSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG && car.speed > 0.32) {
-      this.skidmarkCtx.fillStyle = isDay ? 'rgba(30, 41, 59, 0.15)' : 'rgba(2, 6, 23, 0.30)';
-      this.skidmarkCtx.beginPath();
-      this.skidmarkCtx.arc(car.tires[2].x + this.TRACK_ORIGIN_X, car.tires[2].y + this.TRACK_ORIGIN_Y, 2.5, 0, Math.PI * 2);
+      this.skidmarks.push({ x: car.tires[2].x, y: car.tires[2].y });
       if (!isMobile) {
-        this.skidmarkCtx.arc(car.tires[3].x + this.TRACK_ORIGIN_X, car.tires[3].y + this.TRACK_ORIGIN_Y, 2.5, 0, Math.PI * 2);
+        this.skidmarks.push({ x: car.tires[3].x, y: car.tires[3].y });
       }
-      this.skidmarkCtx.fill();
+      const maxSkid = isMobile ? 80 : 200;
+      if (this.skidmarks.length > maxSkid) {
+        this.skidmarks.splice(0, 25);
+      }
     }
 
     // Smoke Generation (billows with throttle commitment & drift angle)
@@ -506,7 +460,7 @@ export class DriftRenderer {
 
     if (isDrifting && car.speed > 0.30 && hasThrottle) {
       const intensity = (car.driftSlipAngle / 35) + (car.throttle * 1.6);
-      const maxSpawn = isMobile ? 1 : 4;
+      const maxSpawn = isMobile ? 1 : 3;
       const spawnCount = Math.min(maxSpawn, Math.ceil(intensity));
 
       for (let i = 0; i < spawnCount; i++) {
@@ -521,21 +475,43 @@ export class DriftRenderer {
           vy: -car.vy * 0.15 + (Math.random() - 0.5) * 0.9,
           size: 4.5 + Math.random() * 5,
           alpha: 0.70,
-          decay: isMobile ? 0.030 + Math.random() * 0.015 : 0.014 + Math.random() * 0.008
+          decay: isMobile ? 0.035 + Math.random() * 0.015 : 0.015 + Math.random() * 0.010
         });
       }
     }
 
     // Hard cap total smoke particles
-    const smokeCap = isMobile ? 25 : 75;
+    const smokeCap = isMobile ? 25 : 60;
     if (this.smokeParticles.length > smokeCap) {
       this.smokeParticles.splice(0, this.smokeParticles.length - smokeCap);
     }
   }
 
+  /**
+   * Renders tire skidmarks batched into 1 single path (0 texture overhead, 0 stutter)
+   */
+  private renderSkidmarks(ctx: CanvasRenderingContext2D, isDay: boolean) {
+    if (this.skidmarks.length === 0) return;
+    ctx.save();
+    ctx.fillStyle = isDay ? 'rgba(51, 65, 85, 0.28)' : 'rgba(2, 6, 23, 0.45)';
+    ctx.beginPath();
+    for (let i = 0; i < this.skidmarks.length; i++) {
+      const sm = this.skidmarks[i];
+      ctx.moveTo(sm.x + 2.5, sm.y);
+      ctx.arc(sm.x, sm.y, 2.5, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /**
+   * Renders tire smoke particles batched into 1 single path (0 stutter)
+   */
   private renderSmoke(ctx: CanvasRenderingContext2D, isDay: boolean) {
     if (this.smokeParticles.length === 0) return;
     ctx.save();
+    ctx.fillStyle = isDay ? 'rgba(241, 245, 249, 0.42)' : 'rgba(203, 213, 225, 0.35)';
+    ctx.beginPath();
     for (let i = 0; i < this.smokeParticles.length; i++) {
       const p = this.smokeParticles[i];
       p.x += p.vx;
@@ -544,14 +520,11 @@ export class DriftRenderer {
       p.alpha -= p.decay;
 
       if (p.alpha > 0) {
-        ctx.fillStyle = isDay 
-          ? `rgba(241, 245, 249, ${Math.max(0, p.alpha * 0.8).toFixed(2)})` 
-          : `rgba(203, 213, 225, ${Math.max(0, p.alpha * 0.65).toFixed(2)})`;
-        ctx.beginPath();
+        ctx.moveTo(p.x + p.size, p.y);
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
       }
     }
+    ctx.fill();
     this.smokeParticles = this.smokeParticles.filter(p => p.alpha > 0);
     ctx.restore();
   }

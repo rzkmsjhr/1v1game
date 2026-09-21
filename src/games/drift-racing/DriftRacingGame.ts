@@ -247,6 +247,7 @@ export class DriftRacingGame implements GameInstance {
       el.addEventListener('mousedown', () => onDown());
       el.addEventListener('mouseup', () => onUp());
       el.addEventListener('mouseleave', () => onUp());
+      el.addEventListener('contextmenu', (e) => e.preventDefault());
     };
 
     bindBtn('#btn-touch-left', () => this.inputs.steer = -1, () => this.inputs.steer = 0);
@@ -336,6 +337,8 @@ export class DriftRacingGame implements GameInstance {
     };
   }
 
+  private tickCounter: number = 0;
+
   /**
    * Main Simulation & Render Loop
    */
@@ -345,16 +348,20 @@ export class DriftRacingGame implements GameInstance {
     if (!this.lastTimestamp) {
       this.lastTimestamp = timestamp;
     }
-    const elapsed = Math.min((timestamp - this.lastTimestamp) / 1000, 0.1);
+    const elapsed = Math.min((timestamp - this.lastTimestamp) / 1000, 0.035);
     this.lastTimestamp = timestamp;
     this.physicsAccumulator += elapsed;
 
-    // Run fixed 60Hz physics steps (guarantees identical real-time speed regardless of render FPS!)
+    // Run at most 2 physics steps per frame (prevents CPU lag spirals on mobile)
     let steps = 0;
-    while (this.physicsAccumulator >= this.FIXED_DT && steps < 5) {
+    while (this.physicsAccumulator >= this.FIXED_DT && steps < 2) {
       this.updatePhase(this.FIXED_DT);
       this.physicsAccumulator -= this.FIXED_DT;
       steps++;
+    }
+    // Discard any residual accumulator so frame lag never accumulates
+    if (this.physicsAccumulator > this.FIXED_DT) {
+      this.physicsAccumulator = 0;
     }
 
     // Render Scene
@@ -456,9 +463,12 @@ export class DriftRacingGame implements GameInstance {
         dt
       );
 
-      // 6. Check Finish Line Crossings (after driving full Figure-8)
-      this.checkFinishLine(this.playerCar, r.playerScore, true);
-      this.checkFinishLine(this.enemyCar, r.enemyScore, false);
+      // 6. Check Finish Line Crossings (throttled to every 6 ticks = 10 times/sec to save CPU)
+      this.tickCounter++;
+      if (this.tickCounter % 6 === 0) {
+        this.checkFinishLine(this.playerCar, r.playerScore, true);
+        this.checkFinishLine(this.enemyCar, r.enemyScore, false);
+      }
 
       // Check Round Completion Condition
       if (r.playerScore.finished && r.enemyScore.finished) {
