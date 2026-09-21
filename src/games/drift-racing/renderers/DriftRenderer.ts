@@ -412,7 +412,7 @@ export class DriftRenderer {
    */
   private updateAndRenderSmoke(ctx: CanvasRenderingContext2D, car: VehiclePhysicsState, isDay: boolean) {
     // Deposit Skidmarks
-    if (car.driftSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG && car.speed > 0.42) {
+    if (car.driftSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG && car.speed > 0.32) {
       this.skidmarks.push({ x: car.tires[2].x, y: car.tires[2].y, alpha: isDay ? 0.35 : 0.6 });
       this.skidmarks.push({ x: car.tires[3].x, y: car.tires[3].y, alpha: isDay ? 0.35 : 0.6 });
     }
@@ -422,7 +422,7 @@ export class DriftRenderer {
     const isDrifting = (car.driftSlipAngle >= DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG);
     const hasThrottle = (car.throttle > 0.08);
 
-    if (isDrifting && car.speed > 0.40 && hasThrottle) {
+    if (isDrifting && car.speed > 0.30 && hasThrottle) {
       const intensity = (car.driftSlipAngle / 35) + (car.throttle * 1.6);
       const spawnCount = Math.min(5, Math.ceil(intensity));
 
