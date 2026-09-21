@@ -1,13 +1,13 @@
 export const DRIFT_CONSTANTS = {
-  // Vehicle Dynamics (Balanced for realistic chassis weight & G-forces)
-  MAX_SPEED: 4.4,            // Controllable top speed
-  MAX_REVERSE_SPEED: 1.8,
-  ACCEL_FORWARD: 0.075,      // Progressive acceleration
-  BRAKE_RATE: 0.16,          // Controlled deceleration
-  HANDBRAKE_RATE: 0.07,      // Handbrake cuts speed slightly while sustaining slide
-  ROLLING_DRAG: 0.988,       // Coasting deceleration
-  TURN_SPEED: 0.052,         // Smooth, natural turning rate with body weight (not twitchy!)
-  DRIFT_TURN_SPEED: 0.078,   // Controlled yaw rotation during drift
+  // Vehicle Dynamics (Tuned for deliberate, controllable drift speed and pacing)
+  MAX_SPEED: 3.1,            // Calm, controllable top cruising speed
+  MAX_REVERSE_SPEED: 1.4,
+  ACCEL_FORWARD: 0.048,      // Deliberate, smooth acceleration curve (not too fast!)
+  BRAKE_RATE: 0.14,          // Controlled deceleration
+  HANDBRAKE_RATE: 0.055,     // Handbrake cuts speed slightly while sustaining slide
+  ROLLING_DRAG: 0.986,       // Natural engine coasting drag
+  TURN_SPEED: 0.048,         // Smooth, natural turning rate with body weight
+  DRIFT_TURN_SPEED: 0.072,   // Controlled yaw rotation during drift
   STEER_RETURN_RATE: 0.16,   // Progressive steering rack movement (replaces instant twitch)
   MAX_STEER_RAD: 0.54,       // ~31 degrees max front wheel lock
 

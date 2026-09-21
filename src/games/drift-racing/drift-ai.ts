@@ -66,16 +66,16 @@ export class DriftAI {
 
     // Drift initiation: if turning sharply or inside clipping zone, use handbrake
     const needDrift = (Math.abs(angleDiff) > 0.38 || inClippingZone);
-    const handbrake = needDrift && (state.speed > 1.6) && (state.driftSlipAngle < 22);
+    const handbrake = needDrift && (state.speed > 1.1) && (state.driftSlipAngle < 22);
 
     // Throttle modulation
-    let maxSpeed = 3.4;
-    if (this.difficulty === 'easy') maxSpeed = 2.7;
-    if (this.difficulty === 'hard') maxSpeed = 3.9;
-    if (this.difficulty === 'extreme') maxSpeed = 4.3;
+    let maxSpeed = 2.4;
+    if (this.difficulty === 'easy') maxSpeed = 1.8;
+    if (this.difficulty === 'hard') maxSpeed = 2.7;
+    if (this.difficulty === 'extreme') maxSpeed = 3.0;
 
     const throttle = (state.speed < maxSpeed) ? 1.0 : 0.35;
-    const brake = (state.speed > maxSpeed + 0.6);
+    const brake = (state.speed > maxSpeed + 0.4);
 
     return { throttle, steer, brake, handbrake };
   }
@@ -113,9 +113,9 @@ export class DriftAI {
     const steer = Math.max(-1, Math.min(1, angleDiff * 1.8));
 
     // Match Lead car's speed + close gap
-    let desiredSpeed = Math.min(leadState.speed, 4.2);
-    if (distToTarget > 30) desiredSpeed += 0.5;
-    if (distToTarget < 12) desiredSpeed -= 0.5;
+    let desiredSpeed = Math.min(leadState.speed, 3.0);
+    if (distToTarget > 28) desiredSpeed += 0.35;
+    if (distToTarget < 12) desiredSpeed -= 0.4;
 
     // Check front axle overtake prevention (Rule 8: cannot pass lead front axle)
     const relX = aiState.x - leadState.x;
@@ -123,12 +123,12 @@ export class DriftAI {
     const forwardProj = relX * leadSin - relY * leadCos;
     if (forwardProj > 8) {
       // Back off to prevent overtake penalty!
-      desiredSpeed = Math.max(0.8, leadState.speed - 0.8);
+      desiredSpeed = Math.max(0.6, leadState.speed - 0.6);
     }
 
     const throttle = (aiState.speed < desiredSpeed) ? 1.0 : 0.25;
-    const brake = (aiState.speed > desiredSpeed + 0.6);
-    const handbrake = (Math.abs(angleDiff) > 0.35 && aiState.speed > 1.8 && aiState.driftSlipAngle < 18);
+    const brake = (aiState.speed > desiredSpeed + 0.4);
+    const handbrake = (Math.abs(angleDiff) > 0.35 && aiState.speed > 1.2 && aiState.driftSlipAngle < 18);
 
     return { throttle, steer, brake, handbrake };
   }
