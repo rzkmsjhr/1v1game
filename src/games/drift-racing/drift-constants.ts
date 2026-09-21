@@ -18,10 +18,12 @@ export const DRIFT_CONSTANTS = {
   MAX_BODY_ROLL_RAD: 0.065,  // Max visual body roll angle (~3.7 degrees)
   MAX_BODY_PITCH_RAD: 0.055, // Max visual dive/squat
 
-  // Lateral Grip Coefficients
-  LATERAL_GRIP_NORMAL: 0.78, // Progressive road grip
-  LATERAL_GRIP_DRIFT: 0.965, // Low lateral friction: glides sideways smoothly in a drift!
-  LATERAL_GRIP_HANDBRAKE: 0.98, // Maximum slide when yanking handbrake
+  // Lateral Grip & Drift Sustain (Spinning Rear Wheels Sustain the Slide)
+  LATERAL_GRIP_NORMAL: 0.78, // High grip road adherence (clean recovery when lifting throttle)
+  LATERAL_GRIP_DRIFT: 0.992, // Ultra-low friction while rear wheels are spinning under gas
+  LATERAL_GRIP_HANDBRAKE: 0.985, // Friction when yanking handbrake
+  DRIFT_SUSTAIN_THRUST: 0.70, // Throttle powers lateral drift glide instead of killing the slide
+  DRIFT_OVERSTEER_TORQUE: 0.015, // Rear wheelspin yaw torque that counter-steering balances
 
   // Vehicle Dimensions (px)
   AE86: {

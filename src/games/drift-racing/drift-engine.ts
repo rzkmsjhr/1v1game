@@ -120,11 +120,26 @@ export class DriftEngine {
     const sinAngle = Math.sin(state.angle);
     let vFwd = state.vx * sinAngle - state.vy * cosAngle;
     let vLat = state.vx * cosAngle + state.vy * sinAngle;
+    let currentSpeed = Math.hypot(vFwd, vLat);
 
-    // 3. Forward Acceleration & Braking
+    // 3. Drift State & Oversteer Detection
+    // The car effortlessly initiates a drift when:
+    // a) Handbrake (Space / DRIFT button) is tapped
+    // b) Power-oversteer: turning with throttle at speed (Math.abs(inputs.steer) > 0.45 && inputs.throttle > 0.5 && currentSpeed > 0.50)
+    const isPowerOversteer = (Math.abs(inputs.steer) > 0.45 && inputs.throttle > 0.5 && currentSpeed > 0.50);
+    const wantsDrift = inputs.handbrake || isPowerOversteer;
+    const currentSlipAngle = Math.atan2(Math.abs(vLat), Math.max(0.15, Math.abs(vFwd))) * (180 / Math.PI);
+    const isCurrentlyDrifting = currentSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG || wantsDrift;
+
+    // 4. Forward & Lateral Acceleration (Throttle Sustains the Drift Slide!)
     if (inputs.throttle > 0) {
-      vFwd += inputs.throttle * DRIFT_CONSTANTS.ACCEL_FORWARD;
-      if (vFwd > DRIFT_CONSTANTS.MAX_SPEED) vFwd = DRIFT_CONSTANTS.MAX_SPEED;
+      if (isCurrentlyDrifting) {
+        // While drifting, spinning rear wheels drive forward AND sustain lateral drift glide!
+        vFwd += inputs.throttle * DRIFT_CONSTANTS.ACCEL_FORWARD * 0.70;
+        vLat += Math.sign(vLat || 1) * inputs.throttle * DRIFT_CONSTANTS.ACCEL_FORWARD * DRIFT_CONSTANTS.DRIFT_SUSTAIN_THRUST;
+      } else {
+        vFwd += inputs.throttle * DRIFT_CONSTANTS.ACCEL_FORWARD;
+      }
     } else if (inputs.brake) {
       if (vFwd > 0.1) {
         vFwd = Math.max(0, vFwd - DRIFT_CONSTANTS.BRAKE_RATE);
@@ -139,18 +154,7 @@ export class DriftEngine {
       vFwd *= (1.0 - DRIFT_CONSTANTS.HANDBRAKE_RATE);
     }
 
-    const currentSpeed = Math.hypot(vFwd, vLat);
-
-    // 4. Drift State & Oversteer Detection
-    // The car effortlessly initiates a drift when:
-    // a) Handbrake (Space / DRIFT button) is tapped
-    // b) Power-oversteer: turning with throttle at speed (Math.abs(inputs.steer) > 0.45 && inputs.throttle > 0.5 && currentSpeed > 0.50)
-    const isPowerOversteer = (Math.abs(inputs.steer) > 0.45 && inputs.throttle > 0.5 && currentSpeed > 0.50);
-    const wantsDrift = inputs.handbrake || isPowerOversteer;
-
-    // Current drift slip angle in degrees
-    const currentSlipAngle = Math.atan2(Math.abs(vLat), Math.max(0.15, Math.abs(vFwd))) * (180 / Math.PI);
-    const isCurrentlyDrifting = currentSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG || wantsDrift;
+    currentSpeed = Math.hypot(vFwd, vLat);
 
     // 5. Angular Yaw Dynamics with Real Chassis Rotational Inertia (Body Weight)
     const speedRatio = Math.min(1.0, currentSpeed / 0.65);
@@ -163,6 +167,10 @@ export class DriftEngine {
         // In drift: tail kicks out with momentum, counter-steering balances slide
         targetYaw = state.steerAngle * DRIFT_CONSTANTS.DRIFT_TURN_SPEED * speedRatio * forwardDirection;
         if (inputs.handbrake) targetYaw *= 1.35;
+        // Holding throttle in a drift produces rear wheelspin oversteer torque that counter-steering balances!
+        if (inputs.throttle > 0.1 && Math.abs(currentSlipAngle) > 6) {
+          targetYaw += Math.sign(vLat || 1) * inputs.throttle * DRIFT_CONSTANTS.DRIFT_OVERSTEER_TORQUE;
+        }
         // Rotational momentum when sliding
         state.angularVelocity += (targetYaw - state.angularVelocity) * 0.20;
       } else {
@@ -190,10 +198,18 @@ export class DriftEngine {
     // 7. Lateral Friction (Grip vs Drift Glide)
     if (inputs.handbrake) {
       vLat *= DRIFT_CONSTANTS.LATERAL_GRIP_HANDBRAKE;
-    } else if (isCurrentlyDrifting && (inputs.throttle > 0.15 || wantsDrift)) {
-      vLat *= DRIFT_CONSTANTS.LATERAL_GRIP_DRIFT;
+    } else if (isCurrentlyDrifting && (inputs.throttle > 0.12 || wantsDrift)) {
+      vLat *= DRIFT_CONSTANTS.LATERAL_GRIP_DRIFT; // 0.992: slide is sustained as long as gas is held!
     } else {
-      vLat *= DRIFT_CONSTANTS.LATERAL_GRIP_NORMAL;
+      vLat *= DRIFT_CONSTANTS.LATERAL_GRIP_NORMAL; // 0.78: clean grip recovery when lifting gas
+    }
+
+    // Speed Cap (proportional clamping so speed cap respects drift direction)
+    const rawSpeed = Math.hypot(vFwd, vLat);
+    if (rawSpeed > DRIFT_CONSTANTS.MAX_SPEED) {
+      const scale = DRIFT_CONSTANTS.MAX_SPEED / rawSpeed;
+      vFwd *= scale;
+      vLat *= scale;
     }
 
     // 7. Reconstruct velocity in world coordinates

@@ -35,6 +35,11 @@ export class DriftRenderer {
   private camAngle: number = 0;
   private camZoom: number = 1.0;
 
+  // Screen & Viewport Scaling (DPI-proof)
+  private dpr: number = 1;
+  private cssWidth: number = 960;
+  private cssHeight: number = 640;
+
   // Particles & Skidmarks
   private smokeParticles: SmokeParticle[] = [];
   private skidmarks: SkidmarkSegment[] = [];
@@ -53,11 +58,13 @@ export class DriftRenderer {
   }
 
   public resize(width: number, height: number) {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.canvas.width = width * dpr;
-    this.canvas.height = height * dpr;
-    this.ctx.resetTransform();
-    this.ctx.scale(dpr, dpr);
+    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.cssWidth = width;
+    this.cssHeight = height;
+    this.canvas.width = Math.round(width * this.dpr);
+    this.canvas.height = Math.round(height * this.dpr);
+    this.canvas.style.width = `${width}px`;
+    this.canvas.style.height = `${height}px`;
   }
 
   public clearSkidmarks() {
@@ -81,8 +88,11 @@ export class DriftRenderer {
     enemyRoofNum: number = 15
   ) {
     const ctx = this.ctx;
-    const viewW = this.canvas.width / (window.devicePixelRatio || 1);
-    const viewH = this.canvas.height / (window.devicePixelRatio || 1);
+    const viewW = this.cssWidth;
+    const viewH = this.cssHeight;
+
+    // Reset and apply DPR scale so all drawing coordinates use CSS pixels consistently!
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
     // 1. Update Camera to Follow Player Car (Car-Centric Top-Down View)
     this.updateCamera(playerState);
@@ -777,32 +787,39 @@ export class DriftRenderer {
   ) {
     ctx.save();
 
+    const isMobile = viewW < 600;
+    const headerW = isMobile ? Math.min(viewW - 24, 320) : 380;
+    const headerH = isMobile ? 42 : 48;
+    const headerX = (viewW - headerW) / 2;
+    const headerY = isMobile ? 48 : 10;
+
     // Top Match Header Panel
     ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(viewW / 2 - 190, 10, 380, 48, 16);
+    ctx.roundRect(headerX, headerY, headerW, headerH, 14);
     ctx.fill();
     ctx.stroke();
 
     // Round Title
     let roundTitle = `ROUND ${roundState.currentRoundNumber}: TANDEM BATTLE`;
-    if (roundState.roundType.includes('omt')) roundTitle = `ONE MORE TIME (OMT) — ROUND ${roundState.currentRoundNumber}`;
+    if (roundState.roundType.includes('omt')) roundTitle = `OMT — ROUND ${roundState.currentRoundNumber}`;
     if (roundState.roundType.includes('solo')) roundTitle = `SUDDEN DEATH SOLO SPRINT`;
 
-    ctx.font = '900 11px sans-serif';
+    ctx.font = isMobile ? '900 10px sans-serif' : '900 11px sans-serif';
     ctx.fillStyle = '#f59e0b';
     ctx.textAlign = 'center';
-    ctx.fillText(roundTitle, viewW / 2, 26);
+    ctx.fillText(roundTitle, viewW / 2, headerY + (isMobile ? 14 : 16));
 
     // Player Role vs Enemy Role
-    ctx.font = '700 12px monospace';
+    ctx.font = isMobile ? '700 10.5px monospace' : '700 12px monospace';
     ctx.fillStyle = '#38bdf8';
-    ctx.fillText(`YOU: ${roundState.playerRole.toUpperCase()} (${p1Score.totalScore} pts)`, viewW / 2 - 85, 45);
+    const colOffset = isMobile ? headerW * 0.25 : 85;
+    ctx.fillText(`YOU: ${roundState.playerRole.toUpperCase()} (${p1Score.totalScore} pts)`, viewW / 2 - colOffset, headerY + (isMobile ? 30 : 35));
 
     ctx.fillStyle = '#f43f5e';
-    ctx.fillText(`RIVAL: ${roundState.enemyRole.toUpperCase()} (${p2Score.totalScore} pts)`, viewW / 2 + 85, 45);
+    ctx.fillText(`RIVAL: ${roundState.enemyRole.toUpperCase()} (${p2Score.totalScore} pts)`, viewW / 2 + colOffset, headerY + (isMobile ? 30 : 35));
 
     // Off-screen Rival Tracker Indicator
     const rdx = p2.x - this.camX;
@@ -862,46 +879,52 @@ export class DriftRenderer {
     }
 
     // Bottom Player Telemetry: Drift Angle Meter, Clipping Zone Indicator & G-Force Meter
+    const telemW = isMobile ? Math.min(viewW - 24, 320) : 350;
+    const telemH = 50;
+    const telemX = isMobile ? (viewW - telemW) / 2 : 14;
+    const telemY = isMobile ? viewH - 180 : viewH - 66; // Above touch controls on mobile!
+
     ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
     ctx.beginPath();
-    ctx.roundRect(14, viewH - 66, 360, 54, 14);
+    ctx.roundRect(telemX, telemY, telemW, telemH, 14);
     ctx.fill();
     ctx.stroke();
 
-    ctx.font = '900 10px sans-serif';
+    ctx.font = '900 9.5px sans-serif';
     ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'left';
-    ctx.fillText('DRIFT SLIP ANGLE', 24, viewH - 46);
+    ctx.fillText('DRIFT SLIP ANGLE', telemX + 12, telemY + 18);
 
-    ctx.font = '900 18px monospace';
+    ctx.font = '900 17px monospace';
     ctx.fillStyle = p1.driftSlipAngle > 80 ? '#f43f5e' : (p1.driftSlipAngle > 40 ? '#f59e0b' : '#34d399');
-    ctx.fillText(`${p1.driftSlipAngle}°`, 24, viewH - 24);
+    ctx.fillText(`${p1.driftSlipAngle}°`, telemX + 12, telemY + 39);
 
     // Green Clipping Zone Tire Dots (FL, FR, RL, RR)
-    ctx.font = '700 9px sans-serif';
+    const tiresX = telemX + (isMobile ? 120 : 135);
+    ctx.font = '700 8.5px sans-serif';
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText('ZONE TIRES:', 140, viewH - 46);
+    ctx.fillText('ZONE TIRES:', tiresX, telemY + 18);
 
     for (let i = 0; i < 4; i++) {
       ctx.fillStyle = p1.tires[i].inZone ? '#10b981' : '#334155';
       ctx.beginPath();
-      ctx.arc(146 + i * 17, viewH - 26, 4.5, 0, Math.PI * 2);
+      ctx.arc(tiresX + 6 + i * 16, telemY + 33, 4.0, 0, Math.PI * 2);
       ctx.fill();
     }
 
     // Real-Time G-Force Crosshair Telemetry Meter
-    const gMeterX = 275;
-    const gMeterY = viewH - 39;
-    const gRadius = 18;
+    const gMeterX = telemX + telemW - 55;
+    const gMeterY = telemY + 25;
+    const gRadius = 16;
 
     ctx.save();
     ctx.translate(gMeterX, gMeterY);
 
     // G-meter label
-    ctx.font = '700 8.5px sans-serif';
+    ctx.font = '700 7.5px sans-serif';
     ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'center';
-    ctx.fillText('G-METER', 0, -gRadius - 3);
+    ctx.fillText('G-METER', 0, -gRadius - 2);
 
     // Meter ring & crosshairs
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
@@ -919,21 +942,21 @@ export class DriftRenderer {
     ctx.stroke();
 
     // G-Force Vector Dot (shows lateral and longitudinal G)
-    const dotX = Math.max(-gRadius + 2, Math.min(gRadius - 2, (p1.lateralG || 0) * 11));
-    const dotY = Math.max(-gRadius + 2, Math.min(gRadius - 2, (p1.bodyPitch || 0) * 160));
+    const dotX = Math.max(-gRadius + 2, Math.min(gRadius - 2, (p1.lateralG || 0) * 10));
+    const dotY = Math.max(-gRadius + 2, Math.min(gRadius - 2, (p1.bodyPitch || 0) * 150));
     ctx.fillStyle = Math.abs(p1.lateralG || 0) > 0.8 ? '#f43f5e' : (Math.abs(p1.lateralG || 0) > 0.4 ? '#f59e0b' : '#38bdf8');
     ctx.shadowColor = ctx.fillStyle;
     ctx.shadowBlur = 6;
     ctx.beginPath();
-    ctx.arc(dotX, dotY, 3.5, 0, Math.PI * 2);
+    ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
     // Numeric G readout
-    ctx.font = '900 11px monospace';
+    ctx.font = '900 10.5px monospace';
     ctx.fillStyle = '#f8fafc';
     ctx.textAlign = 'center';
-    ctx.fillText(`${Math.abs(p1.lateralG || 0).toFixed(1)}G`, gMeterX + 46, viewH - 35);
+    ctx.fillText(`${Math.abs(p1.lateralG || 0).toFixed(1)}G`, gMeterX + 34, telemY + 29);
 
     // Fault Alert Banners
     if (p1Score.isZeroFault) {
@@ -951,15 +974,16 @@ export class DriftRenderer {
     // Anti-Stall 5s Countdown Warning
     if (p1.stationaryTimer > 1.2 && !p1Score.finished) {
       const remaining = Math.max(0, DRIFT_CONSTANTS.ANTI_STALL_SECONDS - p1.stationaryTimer).toFixed(1);
+      const stallY = isMobile ? viewH - 240 : viewH - 85;
       ctx.fillStyle = 'rgba(234, 88, 12, 0.9)';
       ctx.beginPath();
-      ctx.roundRect(viewW / 2 - 140, viewH - 85, 280, 28, 8);
+      ctx.roundRect(viewW / 2 - 140, stallY, 280, 28, 8);
       ctx.fill();
 
       ctx.font = '900 11px sans-serif';
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
-      ctx.fillText(`⏱️ ANTI-STALL WARNING: RESUME IN ${remaining}s OR DQ!`, viewW / 2, viewH - 67);
+      ctx.fillText(`⏱️ ANTI-STALL WARNING: RESUME IN ${remaining}s OR DQ!`, viewW / 2, stallY + 18);
     }
 
     ctx.restore();

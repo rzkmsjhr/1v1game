@@ -189,15 +189,19 @@ export class DriftRacingGame implements GameInstance {
         </div>
 
         <!-- Virtual Touch Controls for Mobile -->
-        <div class="sm:hidden absolute bottom-3 inset-x-3 flex items-center justify-between pointer-events-none z-10">
-          <div class="flex items-center gap-2 pointer-events-auto">
-            <button id="btn-touch-left" class="w-14 h-14 rounded-2xl bg-black/70 border border-white/20 text-xl font-bold flex items-center justify-center active:bg-cyan-500/40 text-white">◀</button>
-            <button id="btn-touch-right" class="w-14 h-14 rounded-2xl bg-black/70 border border-white/20 text-xl font-bold flex items-center justify-center active:bg-cyan-500/40 text-white">▶</button>
+        <div class="sm:hidden absolute bottom-1 inset-x-1 pointer-events-none z-10" style="max-height:40vh">
+          <!-- Left side: Steer controls (vertically stacked) -->
+          <div class="absolute left-1 bottom-0 flex flex-col gap-1.5 pointer-events-auto">
+            <button id="btn-touch-left" class="w-16 h-16 rounded-2xl bg-black/70 border border-white/20 text-2xl font-bold flex items-center justify-center active:bg-cyan-500/40 text-white select-none touch-none">◀</button>
+            <button id="btn-touch-right" class="w-16 h-16 rounded-2xl bg-black/70 border border-white/20 text-2xl font-bold flex items-center justify-center active:bg-cyan-500/40 text-white select-none touch-none">▶</button>
           </div>
-          <div class="flex items-center gap-2 pointer-events-auto">
-            <button id="btn-touch-handbrake" class="w-14 h-14 rounded-2xl bg-amber-500/40 border border-amber-500/60 text-xs font-black flex items-center justify-center active:bg-amber-500 text-amber-200">DRIFT</button>
-            <button id="btn-touch-brake" class="w-14 h-14 rounded-2xl bg-red-500/40 border border-red-500/60 text-xs font-black flex items-center justify-center active:bg-red-500 text-white">BRAKE</button>
-            <button id="btn-touch-gas" class="w-14 h-14 rounded-2xl bg-emerald-500/50 border border-emerald-500/70 text-xl font-bold flex items-center justify-center active:bg-emerald-500 text-white">▲</button>
+          <!-- Right side: Action controls (Gas tall, Brake + Drift beside it) -->
+          <div class="absolute right-1 bottom-0 flex items-end gap-1.5 pointer-events-auto">
+            <div class="flex flex-col gap-1.5">
+              <button id="btn-touch-handbrake" class="w-14 h-14 rounded-2xl bg-amber-500/40 border border-amber-500/60 text-[10px] font-black flex items-center justify-center active:bg-amber-500 text-amber-200 select-none touch-none">DRIFT</button>
+              <button id="btn-touch-brake" class="w-14 h-14 rounded-2xl bg-red-500/40 border border-red-500/60 text-[10px] font-black flex items-center justify-center active:bg-red-500 text-white select-none touch-none">BRAKE</button>
+            </div>
+            <button id="btn-touch-gas" class="w-16 rounded-2xl bg-emerald-500/50 border border-emerald-500/70 text-2xl font-bold flex items-center justify-center active:bg-emerald-500 text-white select-none touch-none" style="height:7.5rem">▲</button>
           </div>
         </div>
 
