@@ -8,6 +8,7 @@ import { BlockFitGame } from './block-fit/BlockFitGame';
 import { SodaDashGame } from './soda-dash/SodaDashGame';
 import { SheepFightGame } from './sheep-fight/SheepFightGame';
 import { WaterSortGame } from './water-sort/WaterSortGame';
+import { DriftRacingGame } from './drift-racing/DriftRacingGame';
 
 export const GAMES_REGISTRY: GameDefinition[] = [
   {
@@ -416,5 +417,51 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     screenshotUrl: '/screenshots/water-sort.png',
     supportsAI: true,
     create: (container, session) => new WaterSortGame(container, session)
+  },
+  {
+    id: 'drift-racing',
+    title: 'Tandem Drift Battle 1v1',
+    subtitle: 'Top-Down 1v1 Lead & Chase Drift Duel',
+    description: 'Master green tire clipping zones, throttle commitment, and high-angle slides across a figure-8 crossover track! Battle over 2 alternating Lead & Chase rounds with sudden death OMT.',
+    genre: 'Top-Down Racing',
+    badge: '2-Round Tandem Battle',
+    bannerGradient: 'from-emerald-600 via-teal-700 to-slate-950',
+    accentColor: '#10b981',
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none">
+      <defs>
+        <linearGradient id="drift-car" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#34d399"/>
+          <stop offset="100%" stop-color="#059669"/>
+        </linearGradient>
+        <linearGradient id="drift-smoke" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#f8fafc" stop-opacity="0.8"/>
+          <stop offset="100%" stop-color="#94a3b8" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <!-- Skidmark / Smoke Arcs -->
+      <path d="M 3 19 C 5 17, 8 16.5, 11 17" stroke="#64748b" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+      <path d="M 5 21 C 7.5 19.5, 10.5 19, 13 19" stroke="#64748b" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+      <circle cx="5" cy="18" r="2.2" fill="url(#drift-smoke)"/>
+      <circle cx="8" cy="19.5" r="1.8" fill="url(#drift-smoke)"/>
+      <!-- Angled Drifting Car Body -->
+      <g transform="rotate(-28 13 11)">
+        <!-- Rear tires -->
+        <rect x="8" y="5" width="2.4" height="4.5" rx="1" fill="#1e293b"/>
+        <rect x="15.6" y="5" width="2.4" height="4.5" rx="1" fill="#1e293b"/>
+        <!-- Countersteered front tires -->
+        <rect x="7.8" y="14" width="2.4" height="4.5" rx="1" fill="#1e293b" transform="rotate(18 9 16)"/>
+        <rect x="15.8" y="14" width="2.4" height="4.5" rx="1" fill="#1e293b" transform="rotate(18 17 16)"/>
+        <!-- Car Chassis -->
+        <rect x="9" y="4" width="8" height="15" rx="3" fill="url(#drift-car)" stroke="#a7f3d0" stroke-width="0.8"/>
+        <!-- Windshield -->
+        <rect x="10.2" y="9.5" width="5.6" height="3.5" rx="1" fill="#0f172a"/>
+        <!-- Roof with number outline -->
+        <rect x="10.6" y="8" width="4.8" height="2" rx="0.5" fill="#059669"/>
+        <circle cx="13" cy="9" r="0.6" fill="#f8fafc"/>
+      </g>
+    </svg>`,
+    screenshotUrl: '/screenshots/drift-racing.png',
+    supportsAI: true,
+    create: (container, session) => new DriftRacingGame(container, session)
   }
 ];

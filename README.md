@@ -1,6 +1,6 @@
 # 🎮 1v1 Arcade Arena (Multiplayer & AI)
 
-A modern, competitive 1v1 web arcade featuring **9 real-time games** built with TypeScript, Vite, Tailwind CSS, HTML5 Canvas, and the Web Audio API. Play head-to-head against friends via direct peer-to-peer **WebRTC** or challenge intelligent **AI bots** with scalable difficulty tiers.
+A modern, competitive 1v1 web arcade featuring **10 real-time games** built with TypeScript, Vite, Tailwind CSS, HTML5 Canvas, and the Web Audio API. Play head-to-head against friends via direct peer-to-peer **WebRTC** or challenge intelligent **AI bots** with scalable difficulty tiers.
 
 ![Arcade Preview](preview.png)
 
@@ -62,6 +62,15 @@ A modern, competitive 1v1 web arcade featuring **9 real-time games** built with 
 - **Assist HUD & Audio**: Undo move, smart Hint suggestions, Reset option, and tactile liquid splash audio synthesis.
 - **Tailored AI Difficulties**: Finely balanced tiers ranging from kid-friendly Easy to lightning-fast Boss mode.
 
+### 10. Tandem Drift Battle 1v1
+- **Figure-8 Crossover Track**: Continuous Figure-8 racing ribbon with elevated overpass bridge, red-and-white striped curbs, and 6 high-visibility green drift clipping zones.
+- **2-Round Alternating Format**: Battle over two rounds alternating Lead and Chase roles. Cumulative scores determine the victor.
+- **Green Zone Multiplier**: Scaled by 4-wheel contact (1 tire = 25%, 2 tires = 50%, 3 tires = 75%, 4 tires = 100% full zone bonus).
+- **Commitment & Slip Angle**: Throttle commitment generates thicker rear tire smoke clouds and boosts score; steeper slip angles approaching $90^\circ$ yield rapid score gains.
+- **Championship Regulations**: Over-rotation spinouts ($> 95^\circ$) and hard wall stops trigger an instant 0 pts Zero Fault. Chase car cannot overtake Lead's front axle. Stationary $\ge 5.0\text{s}$ triggers an anti-stall DQ countdown.
+- **One More Time (OMT) & Sudden Death**: Exact score ties trigger OMT (repeats 2-round battle). Persistent ties advance to a 1-by-1 Sudden Death Solo Drift Sprint where the highest score combined with the lowest elapsed time wins!
+- **Authentic OEM Car Models**: Pure OEM factory proportions for the **Toyota Sprinter Trueno AE86** and **Nissan Silvia S15 Spec-R** with tucked wheels that articulate upon counter-steering, rolling tire treads, specular edge contrast, and roof numbers (0–99).
+
 ---
 
 ## ⚡ Core Features
@@ -102,6 +111,7 @@ A modern, competitive 1v1 web arcade featuring **9 real-time games** built with 
 | **Ninja Rush (Soda Dash)** | `A` / `D` or `←` / `→`: Change lane<br>`W` / `↑` / `Space`: Jump<br>`S` / `↓`: Slide | Swipe Left / Right: Change lane<br>Swipe Up: Jump<br>Swipe Down: Slide |
 | **Sheep Fight** | Click lane deployment buttons (1–5) | Tap lane deployment buttons (1–5) |
 | **Water Sort** | Click source tube, then click destination tube<br>Click reservoir flask to extract target color<br>Undo / Hint / Reset buttons | Tap source tube, then tap target tube<br>Tap reservoir flask to extract target color<br>Undo / Hint / Reset buttons |
+| **Tandem Drift Battle** | `W` / `↑`: Throttle<br>`S` / `↓`: Foot Brake<br>`A` / `D` or `←` / `→`: Steer<br>`Space`: Handbrake (Initiate Drift) | On-screen steering controls / pedals |
 
 ---
 

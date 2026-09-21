@@ -658,7 +658,7 @@ class ConsoleDashboard {
 
   private launchGame(gameDef: GameDefinition, mode: 'ai' | 'online', peer?: WebRTCPeer) {
     wakeLock.request();
-    const isFullscreen = gameDef.id === 'soda-dash' || gameDef.id === 'sheep-fight';
+    const isFullscreen = gameDef.id === 'soda-dash' || gameDef.id === 'sheep-fight' || gameDef.id === 'drift-racing';
     const dashBg = this.currentTheme === 'dark' ? 'bg-[#0a0c13]' : 'bg-slate-100';
     this.appContainer.innerHTML = `
       <div id="arena-container" class="w-full ${isFullscreen ? `h-screen max-h-screen p-0 m-0 overflow-hidden flex justify-center ${dashBg}` : 'min-h-screen flex flex-col items-center justify-between md:justify-start px-1 sm:px-4 py-1 sm:py-2'} select-none">
