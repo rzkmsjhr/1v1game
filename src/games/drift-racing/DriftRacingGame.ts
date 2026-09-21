@@ -60,6 +60,10 @@ export class DriftRacingGame implements GameInstance {
   private playerPassedMidpoint: boolean = false;
   private enemyPassedMidpoint: boolean = false;
 
+  // Fixed Timestep Physics Simulation (Guarantees steady 60Hz physics ticks regardless of device frame rate!)
+  private physicsAccumulator: number = 0;
+  private readonly FIXED_DT: number = 1 / 60;
+
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
     this.session = session;
@@ -188,20 +192,22 @@ export class DriftRacingGame implements GameInstance {
           </div>
         </div>
 
-        <!-- Virtual Touch Controls for Mobile -->
-        <div class="sm:hidden absolute bottom-1 inset-x-1 pointer-events-none z-10" style="max-height:40vh">
-          <!-- Left side: Steer controls (inline side-by-side) -->
-          <div class="absolute left-1 bottom-0 flex items-center gap-1.5 pointer-events-auto">
-            <button id="btn-touch-left" class="w-16 h-16 rounded-2xl bg-black/70 border border-white/20 text-2xl font-bold flex items-center justify-center active:bg-cyan-500/40 text-white select-none touch-none">◀</button>
-            <button id="btn-touch-right" class="w-16 h-16 rounded-2xl bg-black/70 border border-white/20 text-2xl font-bold flex items-center justify-center active:bg-cyan-500/40 text-white select-none touch-none">▶</button>
-          </div>
-          <!-- Right side: Action controls (Gas tall, Brake + Drift beside it) -->
-          <div class="absolute right-1 bottom-0 flex items-end gap-1.5 pointer-events-auto">
-            <div class="flex flex-col gap-1.5">
-              <button id="btn-touch-handbrake" class="w-14 h-14 rounded-2xl bg-amber-500/40 border border-amber-500/60 text-[10px] font-black flex items-center justify-center active:bg-amber-500 text-amber-200 select-none touch-none">DRIFT</button>
-              <button id="btn-touch-brake" class="w-14 h-14 rounded-2xl bg-red-500/40 border border-red-500/60 text-[10px] font-black flex items-center justify-center active:bg-red-500 text-white select-none touch-none">BRAKE</button>
+        <!-- Virtual Touch Controls for Mobile (Visible on mobile & tablets < 1024px) -->
+        <div id="drift-touch-controls" class="lg:hidden absolute inset-x-0 bottom-0 pointer-events-none z-10 select-none touch-none" style="padding-bottom: max(env(safe-area-inset-bottom, 8px), 10px); padding-left: max(env(safe-area-inset-left, 8px), 10px); padding-right: max(env(safe-area-inset-right, 8px), 10px);">
+          <div class="relative w-full h-32 flex items-end justify-between">
+            <!-- Left side: Steer controls (inline side-by-side) -->
+            <div class="flex items-center gap-2 pointer-events-auto">
+              <button id="btn-touch-left" class="w-16 h-16 rounded-2xl bg-black/75 active:bg-cyan-500/50 border border-white/20 text-2xl font-bold flex items-center justify-center text-white select-none touch-none shadow-lg active:scale-95 transition-transform">◀</button>
+              <button id="btn-touch-right" class="w-16 h-16 rounded-2xl bg-black/75 active:bg-cyan-500/50 border border-white/20 text-2xl font-bold flex items-center justify-center text-white select-none touch-none shadow-lg active:scale-95 transition-transform">▶</button>
             </div>
-            <button id="btn-touch-gas" class="w-16 rounded-2xl bg-emerald-500/50 border border-emerald-500/70 text-2xl font-bold flex items-center justify-center active:bg-emerald-500 text-white select-none touch-none" style="height:7.5rem">▲</button>
+            <!-- Right side: Action controls (Gas tall, Brake + Drift beside it) -->
+            <div class="flex items-end gap-2 pointer-events-auto">
+              <div class="flex flex-col gap-2">
+                <button id="btn-touch-handbrake" class="w-14 h-14 rounded-2xl bg-amber-500/40 active:bg-amber-500 border border-amber-500/60 text-[10px] font-black flex items-center justify-center text-amber-200 select-none touch-none shadow-lg active:scale-95 transition-transform">DRIFT</button>
+                <button id="btn-touch-brake" class="w-14 h-14 rounded-2xl bg-red-500/40 active:bg-red-500 border border-red-500/60 text-[10px] font-black flex items-center justify-center text-white select-none touch-none shadow-lg active:scale-95 transition-transform">BRAKE</button>
+              </div>
+              <button id="btn-touch-gas" class="w-16 rounded-2xl bg-emerald-500/50 active:bg-emerald-500 border border-emerald-500/70 text-2xl font-bold flex items-center justify-center text-white select-none touch-none shadow-lg active:scale-95 transition-transform" style="height:7.75rem">▲</button>
+            </div>
           </div>
         </div>
 
@@ -235,10 +241,12 @@ export class DriftRacingGame implements GameInstance {
     const bindBtn = (id: string, onDown: () => void, onUp: () => void) => {
       const el = this.container.querySelector(id);
       if (!el) return;
-      el.addEventListener('touchstart', (e) => { e.preventDefault(); onDown(); });
-      el.addEventListener('touchend', (e) => { e.preventDefault(); onUp(); });
+      el.addEventListener('touchstart', (e) => { e.preventDefault(); onDown(); }, { passive: false });
+      el.addEventListener('touchend', (e) => { e.preventDefault(); onUp(); }, { passive: false });
+      el.addEventListener('touchcancel', (e) => { e.preventDefault(); onUp(); }, { passive: false });
       el.addEventListener('mousedown', () => onDown());
       el.addEventListener('mouseup', () => onUp());
+      el.addEventListener('mouseleave', () => onUp());
     };
 
     bindBtn('#btn-touch-left', () => this.inputs.steer = -1, () => this.inputs.steer = 0);
@@ -334,13 +342,22 @@ export class DriftRacingGame implements GameInstance {
   private gameLoop(timestamp: number) {
     if (this.isDestroyed) return;
 
-    const dt = Math.min((timestamp - this.lastTimestamp) / 1000, 0.05);
+    if (!this.lastTimestamp) {
+      this.lastTimestamp = timestamp;
+    }
+    const elapsed = Math.min((timestamp - this.lastTimestamp) / 1000, 0.1);
     this.lastTimestamp = timestamp;
+    this.physicsAccumulator += elapsed;
 
-    // 1. Update Game Phase
-    this.updatePhase(dt);
+    // Run fixed 60Hz physics steps (guarantees identical real-time speed regardless of render FPS!)
+    let steps = 0;
+    while (this.physicsAccumulator >= this.FIXED_DT && steps < 5) {
+      this.updatePhase(this.FIXED_DT);
+      this.physicsAccumulator -= this.FIXED_DT;
+      steps++;
+    }
 
-    // 2. Render Scene
+    // Render Scene
     const isDay = (this.session.theme === 'light');
     this.renderer.render(
       this.playerCar,

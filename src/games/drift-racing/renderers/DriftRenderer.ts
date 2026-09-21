@@ -18,12 +18,6 @@ interface SmokeParticle {
   decay: number;
 }
 
-interface SkidmarkSegment {
-  x: number;
-  y: number;
-  alpha: number;
-}
-
 export class DriftRenderer {
   private ctx: CanvasRenderingContext2D;
   private canvas: HTMLCanvasElement;
@@ -40,14 +34,36 @@ export class DriftRenderer {
   private cssWidth: number = 960;
   private cssHeight: number = 640;
 
-  // Particles & Skidmarks
+  // Offscreen Pre-rendered Track Cache
+  private trackCanvas: HTMLCanvasElement | null = null;
+  private trackCanvasTheme: 'day' | 'night' | null = null;
+
+  // Offscreen Skidmarks Canvas (drawn once upon tire slide, zero per-frame circle redraws!)
+  private skidmarkCanvas: HTMLCanvasElement;
+  private skidmarkCtx: CanvasRenderingContext2D;
+  private readonly TRACK_ORIGIN_X = 200; // offsets MIN_X: -200
+  private readonly TRACK_ORIGIN_Y = 200; // offsets MIN_Y: -200
+  private readonly TRACK_CANVAS_W = 2000;
+  private readonly TRACK_CANVAS_H = 1600;
+
+  // Dynamic Smoke Particles
   private smokeParticles: SmokeParticle[] = [];
-  private skidmarks: SkidmarkSegment[] = [];
 
   constructor(canvas: HTMLCanvasElement, track: DriftTrack) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.track = track;
+
+    this.skidmarkCanvas = document.createElement('canvas');
+    this.skidmarkCanvas.width = this.TRACK_CANVAS_W;
+    this.skidmarkCanvas.height = this.TRACK_CANVAS_H;
+    this.skidmarkCtx = this.skidmarkCanvas.getContext('2d')!;
+  }
+
+  public isMobileDevice(): boolean {
+    const minDim = Math.min(this.cssWidth, this.cssHeight);
+    const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    return minDim < 600 || (hasTouch && minDim < 768);
   }
 
   public snapCamera(playerState: VehiclePhysicsState) {
@@ -58,11 +74,13 @@ export class DriftRenderer {
   }
 
   public resize(width: number, height: number) {
-    // Cap DPR to 1 on mobile to avoid crippling GPU fill-rate
-    const rawDpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.dpr = width < 600 ? 1 : rawDpr;
     this.cssWidth = width;
     this.cssHeight = height;
+    const isMobile = this.isMobileDevice();
+    const rawDpr = window.devicePixelRatio || 1;
+    // On mobile, cap DPR to 1.0 to avoid filling millions of pixels on Retina/OLED phones
+    // On desktop, allow up to 1.5
+    this.dpr = isMobile ? 1.0 : Math.min(rawDpr, 1.5);
     this.canvas.width = Math.round(width * this.dpr);
     this.canvas.height = Math.round(height * this.dpr);
     this.canvas.style.width = `${width}px`;
@@ -70,8 +88,35 @@ export class DriftRenderer {
   }
 
   public clearSkidmarks() {
-    this.skidmarks = [];
+    this.skidmarkCtx.clearRect(0, 0, this.TRACK_CANVAS_W, this.TRACK_CANVAS_H);
     this.smokeParticles = [];
+  }
+
+  /**
+   * Pre-renders the static Figure-8 track, borders, curbs, checkered line, and green zones
+   * onto an offscreen canvas once. This eliminates hundreds of expensive stroke & fill calls per frame!
+   */
+  private buildTrackCanvas(isDay: boolean) {
+    if (!this.trackCanvas) {
+      this.trackCanvas = document.createElement('canvas');
+      this.trackCanvas.width = this.TRACK_CANVAS_W;
+      this.trackCanvas.height = this.TRACK_CANVAS_H;
+    }
+    const tCtx = this.trackCanvas.getContext('2d')!;
+    tCtx.clearRect(0, 0, this.TRACK_CANVAS_W, this.TRACK_CANVAS_H);
+
+    tCtx.save();
+    // Offset world coordinates
+    tCtx.translate(this.TRACK_ORIGIN_X, this.TRACK_ORIGIN_Y);
+
+    // 1. Render Track Surface, Curbs, and Green Clipping Zones
+    this.renderTrack(tCtx, isDay);
+
+    // 2. Render Checkered Start / Finish Line & Starting Grids
+    this.renderCheckeredStartFinish(tCtx);
+
+    tCtx.restore();
+    this.trackCanvasTheme = isDay ? 'day' : 'night';
   }
 
   /**
@@ -92,6 +137,12 @@ export class DriftRenderer {
     const ctx = this.ctx;
     const viewW = this.cssWidth;
     const viewH = this.cssHeight;
+
+    // Pre-render static track to offscreen canvas if theme changed or not built
+    const themeKey = isDay ? 'day' : 'night';
+    if (this.trackCanvasTheme !== themeKey) {
+      this.buildTrackCanvas(isDay);
+    }
 
     // Reset and apply DPR scale so all drawing coordinates use CSS pixels consistently!
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -116,23 +167,21 @@ export class DriftRenderer {
     ctx.scale(this.camZoom, this.camZoom);
     ctx.translate(-this.camX, -this.camY);
 
-    // 3. Render Track Surface, Curbs, and Green Clipping Zones
-    this.renderTrack(ctx, isDay);
+    // 3. Render Pre-rendered Track (1 single drawImage call!)
+    ctx.drawImage(this.trackCanvas!, -this.TRACK_ORIGIN_X, -this.TRACK_ORIGIN_Y);
 
-    // 4. Render Checkered Start / Finish Line & Starting Grids
-    this.renderCheckeredStartFinish(ctx);
+    // 4. Render Skidmarks (1 single drawImage call!)
+    ctx.drawImage(this.skidmarkCanvas, -this.TRACK_ORIGIN_X, -this.TRACK_ORIGIN_Y);
 
-    // 5. Render Tire Skidmarks
-    this.renderSkidmarks(ctx, isDay);
+    // 5. Emit & Render Dynamic Rear Tire Smoke
+    this.emitSmoke(playerState, isDay);
+    this.emitSmoke(enemyState, isDay);
+    this.renderSmoke(ctx, isDay);
 
-    // 6. Emit & Render Dynamic Rear Tire Smoke
-    this.updateAndRenderSmoke(ctx, playerState, isDay);
-    this.updateAndRenderSmoke(ctx, enemyState, isDay);
-
-    // 7. Render Tether Line between Lead & Chase
+    // 6. Render Tether Line between Lead & Chase
     this.renderTandemTether(ctx, playerState, enemyState, roundState.playerRole);
 
-    // 8. Render OEM Vehicles
+    // 7. Render OEM Vehicles
     // Render Enemy Car
     this.renderOEMCar(ctx, enemyModel, enemyState, {
       roofNumber: enemyRoofNum,
@@ -271,14 +320,29 @@ export class DriftRenderer {
   private renderCurbs(ctx: CanvasRenderingContext2D, walls: any[], _isDay: boolean) {
     ctx.save();
     ctx.lineWidth = 5;
+
+    // Red curbs in a single batched stroke
+    ctx.strokeStyle = '#ef4444';
+    ctx.beginPath();
     for (let i = 0; i < walls.length; i += 2) {
-      const seg = walls[i];
-      ctx.strokeStyle = (i % 4 === 0) ? '#ef4444' : '#ffffff';
-      ctx.beginPath();
-      ctx.moveTo(seg.p1.x, seg.p1.y);
-      ctx.lineTo(seg.p2.x, seg.p2.y);
-      ctx.stroke();
+      if (i % 4 === 0) {
+        ctx.moveTo(walls[i].p1.x, walls[i].p1.y);
+        ctx.lineTo(walls[i].p2.x, walls[i].p2.y);
+      }
     }
+    ctx.stroke();
+
+    // White curbs in a single batched stroke
+    ctx.strokeStyle = '#ffffff';
+    ctx.beginPath();
+    for (let i = 0; i < walls.length; i += 2) {
+      if (i % 4 !== 0) {
+        ctx.moveTo(walls[i].p1.x, walls[i].p1.y);
+        ctx.lineTo(walls[i].p2.x, walls[i].p2.y);
+      }
+    }
+    ctx.stroke();
+
     ctx.restore();
   }
 
@@ -354,8 +418,6 @@ export class DriftRenderer {
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
-    ctx.shadowBlur = 4;
     ctx.fillText('FINISH  🏁  START', 0, -20);
     ctx.restore();
 
@@ -422,20 +484,21 @@ export class DriftRenderer {
   }
 
   /**
-   * Emits & renders dynamic rear tire smoke scaling with throttle & drift angle
+   * Emits dynamic rear tire smoke and stamps skidmarks directly onto the offscreen skidmark canvas
    */
-  private updateAndRenderSmoke(ctx: CanvasRenderingContext2D, car: VehiclePhysicsState, isDay: boolean) {
-    const isMobile = this.cssWidth < 600;
+  private emitSmoke(car: VehiclePhysicsState, isDay: boolean) {
+    const isMobile = this.isMobileDevice();
 
-    // Deposit Skidmarks
+    // Stamp Skidmarks onto Offscreen Skidmark Canvas (instant 0-overhead stamp!)
     if (car.driftSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG && car.speed > 0.32) {
-      this.skidmarks.push({ x: car.tires[2].x, y: car.tires[2].y, alpha: isDay ? 0.35 : 0.6 });
+      this.skidmarkCtx.fillStyle = isDay ? 'rgba(30, 41, 59, 0.15)' : 'rgba(2, 6, 23, 0.30)';
+      this.skidmarkCtx.beginPath();
+      this.skidmarkCtx.arc(car.tires[2].x + this.TRACK_ORIGIN_X, car.tires[2].y + this.TRACK_ORIGIN_Y, 2.5, 0, Math.PI * 2);
       if (!isMobile) {
-        this.skidmarks.push({ x: car.tires[3].x, y: car.tires[3].y, alpha: isDay ? 0.35 : 0.6 });
+        this.skidmarkCtx.arc(car.tires[3].x + this.TRACK_ORIGIN_X, car.tires[3].y + this.TRACK_ORIGIN_Y, 2.5, 0, Math.PI * 2);
       }
+      this.skidmarkCtx.fill();
     }
-    const skidCap = isMobile ? 200 : 600;
-    if (this.skidmarks.length > skidCap) this.skidmarks.splice(0, 50);
 
     // Smoke Generation (billows with throttle commitment & drift angle)
     const isDrifting = (car.driftSlipAngle >= DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG);
@@ -443,7 +506,7 @@ export class DriftRenderer {
 
     if (isDrifting && car.speed > 0.30 && hasThrottle) {
       const intensity = (car.driftSlipAngle / 35) + (car.throttle * 1.6);
-      const maxSpawn = isMobile ? 2 : 5;
+      const maxSpawn = isMobile ? 1 : 4;
       const spawnCount = Math.min(maxSpawn, Math.ceil(intensity));
 
       for (let i = 0; i < spawnCount; i++) {
@@ -458,18 +521,20 @@ export class DriftRenderer {
           vy: -car.vy * 0.15 + (Math.random() - 0.5) * 0.9,
           size: 4.5 + Math.random() * 5,
           alpha: 0.70,
-          decay: isMobile ? 0.022 + Math.random() * 0.012 : 0.012 + Math.random() * 0.008
+          decay: isMobile ? 0.030 + Math.random() * 0.015 : 0.014 + Math.random() * 0.008
         });
       }
     }
 
-    // Hard cap total smoke particles on mobile
-    const smokeCap = isMobile ? 60 : 300;
+    // Hard cap total smoke particles
+    const smokeCap = isMobile ? 25 : 75;
     if (this.smokeParticles.length > smokeCap) {
       this.smokeParticles.splice(0, this.smokeParticles.length - smokeCap);
     }
+  }
 
-    // Render & update particles
+  private renderSmoke(ctx: CanvasRenderingContext2D, isDay: boolean) {
+    if (this.smokeParticles.length === 0) return;
     ctx.save();
     for (let i = 0; i < this.smokeParticles.length; i++) {
       const p = this.smokeParticles[i];
@@ -480,26 +545,14 @@ export class DriftRenderer {
 
       if (p.alpha > 0) {
         ctx.fillStyle = isDay 
-          ? `rgba(241, 245, 249, ${Math.max(0, p.alpha * 0.8)})` 
-          : `rgba(203, 213, 225, ${Math.max(0, p.alpha * 0.65)})`;
+          ? `rgba(241, 245, 249, ${Math.max(0, p.alpha * 0.8).toFixed(2)})` 
+          : `rgba(203, 213, 225, ${Math.max(0, p.alpha * 0.65).toFixed(2)})`;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
       }
     }
     this.smokeParticles = this.smokeParticles.filter(p => p.alpha > 0);
-    ctx.restore();
-  }
-
-  private renderSkidmarks(ctx: CanvasRenderingContext2D, isDay: boolean) {
-    ctx.save();
-    ctx.fillStyle = isDay ? '#334155' : '#020617';
-    for (const sm of this.skidmarks) {
-      ctx.globalAlpha = sm.alpha;
-      ctx.beginPath();
-      ctx.arc(sm.x, sm.y, 2.8, 0, Math.PI * 2);
-      ctx.fill();
-    }
     ctx.restore();
   }
 
@@ -804,11 +857,12 @@ export class DriftRenderer {
   ) {
     ctx.save();
 
-    const isMobile = viewW < 600;
-    const headerW = isMobile ? Math.min(viewW - 24, 320) : 380;
-    const headerH = isMobile ? 42 : 48;
+    const isMobile = this.isMobileDevice();
+    const isLandscape = viewW > viewH;
+    const headerW = isMobile ? Math.min(viewW - 24, 330) : 380;
+    const headerH = isMobile ? 40 : 48;
     const headerX = (viewW - headerW) / 2;
-    const headerY = isMobile ? 48 : 10;
+    const headerY = isMobile ? (isLandscape ? 10 : 48) : 10;
 
     // Top Match Header Panel
     ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
@@ -827,16 +881,16 @@ export class DriftRenderer {
     ctx.font = isMobile ? '900 10px sans-serif' : '900 11px sans-serif';
     ctx.fillStyle = '#f59e0b';
     ctx.textAlign = 'center';
-    ctx.fillText(roundTitle, viewW / 2, headerY + (isMobile ? 14 : 16));
+    ctx.fillText(roundTitle, viewW / 2, headerY + (isMobile ? 13 : 16));
 
     // Player Role vs Enemy Role
-    ctx.font = isMobile ? '700 10.5px monospace' : '700 12px monospace';
+    ctx.font = isMobile ? '700 10px monospace' : '700 12px monospace';
     ctx.fillStyle = '#38bdf8';
     const colOffset = isMobile ? headerW * 0.25 : 85;
-    ctx.fillText(`YOU: ${roundState.playerRole.toUpperCase()} (${p1Score.totalScore} pts)`, viewW / 2 - colOffset, headerY + (isMobile ? 30 : 35));
+    ctx.fillText(`YOU: ${roundState.playerRole.toUpperCase()} (${p1Score.totalScore} pts)`, viewW / 2 - colOffset, headerY + (isMobile ? 29 : 35));
 
     ctx.fillStyle = '#f43f5e';
-    ctx.fillText(`RIVAL: ${roundState.enemyRole.toUpperCase()} (${p2Score.totalScore} pts)`, viewW / 2 + colOffset, headerY + (isMobile ? 30 : 35));
+    ctx.fillText(`RIVAL: ${roundState.enemyRole.toUpperCase()} (${p2Score.totalScore} pts)`, viewW / 2 + colOffset, headerY + (isMobile ? 29 : 35));
 
     // Off-screen Rival Tracker Indicator
     const rdx = p2.x - this.camX;
@@ -865,12 +919,6 @@ export class DriftRenderer {
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.5;
 
-      // Outer Glow (skip on mobile)
-      if (!isMobile) {
-        ctx.shadowColor = 'rgba(244, 63, 94, 0.6)';
-        ctx.shadowBlur = 8;
-      }
-
       // Pointer chevron towards rival
       ctx.rotate(arrowAngle);
       ctx.beginPath();
@@ -897,50 +945,52 @@ export class DriftRenderer {
       ctx.restore();
     }
 
-    // Bottom Player Telemetry: Drift Angle Meter, Clipping Zone Indicator & G-Force Meter
+    // Player Telemetry: Drift Angle Meter, Clipping Zone Indicator & G-Force Meter
     const telemW = isMobile ? Math.min(viewW - 24, 320) : 350;
-    const telemH = 50;
-    const telemX = isMobile ? (viewW - telemW) / 2 : 14;
-    const telemY = isMobile ? viewH - 180 : viewH - 66; // Above touch controls on mobile!
+    const telemH = isMobile ? 36 : 48;
+    const telemFinalX = isMobile ? (viewW - telemW) / 2 : 14;
+    // On mobile, pin telemetry cleanly below the header panel so the track and cars are 100% unobstructed!
+    // On desktop, keep at bottom-left (viewH - 66).
+    const telemY = isMobile ? headerY + headerH + 6 : viewH - 66;
 
     ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
     ctx.beginPath();
-    ctx.roundRect(telemX, telemY, telemW, telemH, 14);
+    ctx.roundRect(telemFinalX, telemY, telemW, telemH, isMobile ? 10 : 14);
     ctx.fill();
     ctx.stroke();
 
-    ctx.font = '900 9.5px sans-serif';
+    ctx.font = isMobile ? '800 8px sans-serif' : '900 9.5px sans-serif';
     ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'left';
-    ctx.fillText('DRIFT SLIP ANGLE', telemX + 12, telemY + 18);
+    ctx.fillText('DRIFT SLIP ANGLE', telemFinalX + (isMobile ? 10 : 12), isMobile ? telemY + 13 : telemY + 17);
 
-    ctx.font = '900 17px monospace';
+    ctx.font = isMobile ? '900 14px monospace' : '900 16px monospace';
     ctx.fillStyle = p1.driftSlipAngle > 80 ? '#f43f5e' : (p1.driftSlipAngle > 40 ? '#f59e0b' : '#34d399');
-    ctx.fillText(`${p1.driftSlipAngle}°`, telemX + 12, telemY + 39);
+    ctx.fillText(`${p1.driftSlipAngle}°`, telemFinalX + (isMobile ? 10 : 12), isMobile ? telemY + 28 : telemY + 37);
 
     // Green Clipping Zone Tire Dots (FL, FR, RL, RR)
-    const tiresX = telemX + (isMobile ? 120 : 135);
-    ctx.font = '700 8.5px sans-serif';
+    const tiresX = telemFinalX + (isMobile ? 110 : 135);
+    ctx.font = isMobile ? '700 7.5px sans-serif' : '700 8px sans-serif';
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText('ZONE TIRES:', tiresX, telemY + 18);
+    ctx.fillText('ZONE TIRES:', tiresX, isMobile ? telemY + 13 : telemY + 17);
 
     for (let i = 0; i < 4; i++) {
       ctx.fillStyle = p1.tires[i].inZone ? '#10b981' : '#334155';
       ctx.beginPath();
-      ctx.arc(tiresX + 6 + i * 16, telemY + 33, 4.0, 0, Math.PI * 2);
+      ctx.arc(tiresX + 5 + i * (isMobile ? 13 : 15), isMobile ? telemY + 24 : telemY + 31, isMobile ? 3.2 : 3.8, 0, Math.PI * 2);
       ctx.fill();
     }
 
     // Real-Time G-Force Crosshair Telemetry Meter
-    const gMeterX = telemX + telemW - 55;
-    const gMeterY = telemY + 25;
-    const gRadius = 16;
+    const gMeterX = telemFinalX + telemW - (isMobile ? 44 : 52);
+    const gMeterY = isMobile ? telemY + 18 : telemY + 24;
+    const gRadius = isMobile ? 11 : 15;
 
     ctx.save();
     ctx.translate(gMeterX, gMeterY);
 
     // G-meter label
-    ctx.font = '700 7.5px sans-serif';
+    ctx.font = '700 7px sans-serif';
     ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'center';
     ctx.fillText('G-METER', 0, -gRadius - 2);
@@ -954,55 +1004,47 @@ export class DriftRenderer {
     ctx.moveTo(0, -gRadius); ctx.lineTo(0, gRadius);
     ctx.stroke();
 
-    // 0.5G inner guide ring
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-    ctx.beginPath();
-    ctx.arc(0, 0, gRadius * 0.5, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // G-Force Vector Dot (shows lateral and longitudinal G)
-    const dotX = Math.max(-gRadius + 2, Math.min(gRadius - 2, (p1.lateralG || 0) * 10));
-    const dotY = Math.max(-gRadius + 2, Math.min(gRadius - 2, (p1.bodyPitch || 0) * 150));
+    // G-Force Vector Dot
+    const dotX = Math.max(-gRadius + 2, Math.min(gRadius - 2, (p1.lateralG || 0) * (isMobile ? 7 : 10)));
+    const dotY = Math.max(-gRadius + 2, Math.min(gRadius - 2, (p1.bodyPitch || 0) * (isMobile ? 110 : 150)));
     ctx.fillStyle = Math.abs(p1.lateralG || 0) > 0.8 ? '#f43f5e' : (Math.abs(p1.lateralG || 0) > 0.4 ? '#f59e0b' : '#38bdf8');
-    ctx.shadowColor = ctx.fillStyle;
-    ctx.shadowBlur = 6;
     ctx.beginPath();
-    ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
+    ctx.arc(dotX, dotY, 2.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
     // Numeric G readout
-    ctx.font = '900 10.5px monospace';
+    ctx.font = isMobile ? '900 9px monospace' : '900 10px monospace';
     ctx.fillStyle = '#f8fafc';
     ctx.textAlign = 'center';
-    ctx.fillText(`${Math.abs(p1.lateralG || 0).toFixed(1)}G`, gMeterX + 34, telemY + 29);
+    ctx.fillText(`${Math.abs(p1.lateralG || 0).toFixed(1)}G`, gMeterX + (isMobile ? 26 : 32), isMobile ? telemY + 22 : telemY + 28);
 
     // Fault Alert Banners
     if (p1Score.isZeroFault) {
       ctx.fillStyle = 'rgba(225, 29, 72, 0.9)';
       ctx.beginPath();
-      ctx.roundRect(viewW / 2 - 160, 68, 320, 32, 10);
-      ctx.fill();
-
-      ctx.font = '900 12px sans-serif';
-      ctx.fillStyle = '#ffffff';
-      ctx.textAlign = 'center';
-      ctx.fillText(`⚠️ ZERO FAULT: ${p1Score.faultReason || 'FAULT'}`, viewW / 2, 88);
-    }
-
-    // Anti-Stall 5s Countdown Warning
-    if (p1.stationaryTimer > 1.2 && !p1Score.finished) {
-      const remaining = Math.max(0, DRIFT_CONSTANTS.ANTI_STALL_SECONDS - p1.stationaryTimer).toFixed(1);
-      const stallY = isMobile ? viewH - 240 : viewH - 85;
-      ctx.fillStyle = 'rgba(234, 88, 12, 0.9)';
-      ctx.beginPath();
-      ctx.roundRect(viewW / 2 - 140, stallY, 280, 28, 8);
+      ctx.roundRect(viewW / 2 - 150, telemY + telemH + 6, 300, 30, 10);
       ctx.fill();
 
       ctx.font = '900 11px sans-serif';
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
-      ctx.fillText(`⏱️ ANTI-STALL WARNING: RESUME IN ${remaining}s OR DQ!`, viewW / 2, stallY + 18);
+      ctx.fillText(`⚠️ ZERO FAULT: ${p1Score.faultReason || 'FAULT'}`, viewW / 2, telemY + telemH + 25);
+    }
+
+    // Anti-Stall 5s Countdown Warning
+    if (p1.stationaryTimer > 1.2 && !p1Score.finished) {
+      const remaining = Math.max(0, DRIFT_CONSTANTS.ANTI_STALL_SECONDS - p1.stationaryTimer).toFixed(1);
+      const stallY = isMobile ? telemY + telemH + 6 : viewH - 85;
+      ctx.fillStyle = 'rgba(234, 88, 12, 0.9)';
+      ctx.beginPath();
+      ctx.roundRect(viewW / 2 - 140, stallY, 280, 26, 8);
+      ctx.fill();
+
+      ctx.font = '900 10.5px sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.fillText(`⏱️ ANTI-STALL WARNING: RESUME IN ${remaining}s OR DQ!`, viewW / 2, stallY + 17);
     }
 
     ctx.restore();
