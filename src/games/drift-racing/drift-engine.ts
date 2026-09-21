@@ -144,8 +144,8 @@ export class DriftEngine {
     // 4. Drift State & Oversteer Detection
     // The car effortlessly initiates a drift when:
     // a) Handbrake (Space / DRIFT button) is tapped
-    // b) Power-oversteer: turning with throttle at speed (Math.abs(inputs.steer) > 0.45 && inputs.throttle > 0.5 && currentSpeed > 0.85)
-    const isPowerOversteer = (Math.abs(inputs.steer) > 0.45 && inputs.throttle > 0.5 && currentSpeed > 0.85);
+    // b) Power-oversteer: turning with throttle at speed (Math.abs(inputs.steer) > 0.45 && inputs.throttle > 0.5 && currentSpeed > 0.65)
+    const isPowerOversteer = (Math.abs(inputs.steer) > 0.45 && inputs.throttle > 0.5 && currentSpeed > 0.65);
     const wantsDrift = inputs.handbrake || isPowerOversteer;
 
     // Current drift slip angle in degrees
@@ -153,7 +153,7 @@ export class DriftEngine {
     const isCurrentlyDrifting = currentSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG || wantsDrift;
 
     // 5. Angular Yaw Dynamics with Real Chassis Rotational Inertia (Body Weight)
-    const speedRatio = Math.min(1.0, currentSpeed / 1.1);
+    const speedRatio = Math.min(1.0, currentSpeed / 0.85);
     const forwardDirection = (vFwd >= -0.1 ? 1 : -1);
 
     if (currentSpeed > 0.1) {
@@ -177,7 +177,7 @@ export class DriftEngine {
 
     // 6. Calculate Lateral & Longitudinal G-Forces (Weight Transfer)
     // Lateral G from cornering rate & lateral slide
-    state.lateralG = (vFwd * state.angularVelocity * 20.0) + (vLat * 0.35);
+    state.lateralG = (vFwd * state.angularVelocity * 28.0) + (vLat * 0.40);
     const targetRoll = Math.max(-DRIFT_CONSTANTS.MAX_BODY_ROLL_RAD, Math.min(DRIFT_CONSTANTS.MAX_BODY_ROLL_RAD, state.lateralG * 0.045));
     state.bodyRoll += (targetRoll - state.bodyRoll) * DRIFT_CONSTANTS.SUSPENSION_ROLL_RATE;
 
