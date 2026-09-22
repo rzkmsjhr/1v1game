@@ -58,7 +58,9 @@ export const DRIFT_CONSTANTS = {
 
   // Penalties
   OVERTAKE_LEAD_AXLE_PENALTY: 200,
-  CAR_CONTACT_PENALTY: 150,
+  CAR_CONTACT_PENALTY: 50,              // Flat penalty per distinct car-to-car impact
+  CAR_CONTACT_RUB_PENALTY_PER_SEC: 75,  // Continuous penalty if cars remain pinned
+  CAR_RESTITUTION: 0.32,                // Bumper bounce restitution
   WALL_SCRAPE_PENALTY_PER_SEC: 100,
 
   // Disqualification Timer

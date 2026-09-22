@@ -461,6 +461,63 @@ export class DriftRacingGame implements GameInstance {
         this.engine.handleWallCollisions(this.enemyCar, r.enemyScore, dt);
       }
 
+      // 3. Inter-Vehicle Collision & Contact Penalty Resolution (OBB SAT)
+      const carCol = this.engine.handleCarCollision(
+        this.playerCar,
+        this.playerModel,
+        r.playerScore,
+        r.playerRole,
+        this.enemyCar,
+        this.enemyModel,
+        r.enemyScore,
+        r.enemyRole,
+        dt
+      );
+
+      if (carCol.collided) {
+        // Emit visual sparks at bumper contact point
+        this.renderer.emitSparks(carCol.contactX, carCol.contactY, carCol.normalX, carCol.normalY);
+
+        if (carCol.isNewImpact) {
+          // Play crunchy metallic bumper impact audio
+          sounds.playCarBump();
+
+          // Trigger Floating Score Text and Live HUD Banner
+          if (carCol.penalizedParty === 'player') {
+            this.renderer.addFloatingText('-50 CONTACT', carCol.contactX, carCol.contactY, '#f43f5e');
+            this.renderer.contactAlert = {
+              text: '⚠️ CONTACT PENALTY: -50 PTS (YOU)',
+              color: 'rgba(225, 29, 72, 0.92)',
+              expires: Date.now() + 1800
+            };
+          } else if (carCol.penalizedParty === 'enemy') {
+            this.renderer.addFloatingText('RIVAL FAULT -50', carCol.contactX, carCol.contactY, '#38bdf8');
+            this.renderer.contactAlert = {
+              text: '⚡ RIVAL FAULT: -50 PTS TO RIVAL',
+              color: 'rgba(2, 132, 199, 0.92)',
+              expires: Date.now() + 1800
+            };
+          } else if (carCol.penalizedParty === 'both') {
+            this.renderer.addFloatingText('MUTUAL -50', carCol.contactX, carCol.contactY, '#f59e0b');
+            this.renderer.contactAlert = {
+              text: '💥 MUTUAL CONTACT: -50 PTS EACH',
+              color: 'rgba(217, 119, 6, 0.92)',
+              expires: Date.now() + 1800
+            };
+          }
+        } else if (carCol.penalizedParty !== 'none') {
+          // Sustained contact / rubbing - refresh contact alert if expired or about to expire
+          if (!this.renderer.contactAlert || Date.now() > this.renderer.contactAlert.expires - 300) {
+            const isPl = carCol.penalizedParty === 'player';
+            this.renderer.contactAlert = {
+              text: isPl ? '⚠️ CONTINUOUS CONTACT: RUB PENALTY' : '⚡ RIVAL CONTINUOUS CONTACT: RUB PENALTY',
+              color: isPl ? 'rgba(225, 29, 72, 0.92)' : 'rgba(2, 132, 199, 0.92)',
+              expires: Date.now() + 1000
+            };
+          }
+        }
+      }
+
       // 3. Broadcast State in Online mode
       if (this.isOnline && this.session.peer) {
         this.session.peer.sendMessage({
@@ -574,13 +631,15 @@ export class DriftRacingGame implements GameInstance {
     this.container.querySelector('#modal-round-tag')!.textContent = 
       reason ? `ROUND ${this.roundState.currentRoundNumber} • ${reason.toUpperCase()}` : `ROUND ${this.roundState.currentRoundNumber} OF 2 COMPLETE`;
 
-    this.container.querySelector('#modal-player-score')!.textContent = `${pScore.totalScore} pts`;
+    const pPenalties = Math.round(pScore.collisionPenalty + pScore.overtakePenalty);
+    const pPenStr = pPenalties > 0 ? ` • Penalty: -${pPenalties}` : '';
     this.container.querySelector('#modal-player-breakdown')!.textContent = 
-      `Angle: ${Math.round(pScore.driftAngleScore)} • Zone: ${Math.round(pScore.zoneScore)} • Prox: ${Math.round(pScore.proximityScore)}`;
+      `Angle: ${Math.round(pScore.driftAngleScore)} • Zone: ${Math.round(pScore.zoneScore)} • Prox: ${Math.round(pScore.proximityScore)}${pPenStr}`;
 
-    this.container.querySelector('#modal-enemy-score')!.textContent = `${eScore.totalScore} pts`;
+    const ePenalties = Math.round(eScore.collisionPenalty + eScore.overtakePenalty);
+    const ePenStr = ePenalties > 0 ? ` • Penalty: -${ePenalties}` : '';
     this.container.querySelector('#modal-enemy-breakdown')!.textContent = 
-      `Angle: ${Math.round(eScore.driftAngleScore)} • Zone: ${Math.round(eScore.zoneScore)} • Prox: ${Math.round(eScore.proximityScore)}`;
+      `Angle: ${Math.round(eScore.driftAngleScore)} • Zone: ${Math.round(eScore.zoneScore)} • Prox: ${Math.round(eScore.proximityScore)}${ePenStr}`;
 
     const summaryEl = this.container.querySelector('#modal-round-summary')!;
     const btnNext = this.container.querySelector('#modal-next-round-btn') as HTMLButtonElement;

@@ -3,13 +3,15 @@ import type {
   TireContactPoint,
   VehicleRole,
   RunScoreBreakdown,
-  CarModelType
+  CarModelType,
+  CarCollisionResult
 } from './drift-types';
 import { DRIFT_CONSTANTS } from './drift-constants';
 import { DriftTrack } from './drift-track';
 
 export class DriftEngine {
   public track: DriftTrack;
+  private contactCooldown: number = 0;
 
   constructor(track?: DriftTrack) {
     this.track = track || new DriftTrack();
@@ -354,6 +356,264 @@ export class DriftEngine {
   }
 
   /**
+   * High-precision OBB (Oriented Bounding Box) Car-to-Car Collision Resolution
+   * Implements Separating Axis Theorem (SAT), momentum exchange with restitution,
+   * angular torque impulse, and intelligent tandem fault judging.
+   */
+  public handleCarCollision(
+    car1: VehiclePhysicsState,
+    model1: CarModelType,
+    score1: RunScoreBreakdown,
+    role1: VehicleRole,
+    car2: VehiclePhysicsState,
+    model2: CarModelType,
+    score2: RunScoreBreakdown,
+    role2: VehicleRole,
+    dt: number = 1 / 60
+  ): CarCollisionResult {
+    if (this.contactCooldown > 0) {
+      this.contactCooldown = Math.max(0, this.contactCooldown - dt);
+    }
+
+    const dims1 = model1 === 's15' ? DRIFT_CONSTANTS.S15 : DRIFT_CONSTANTS.AE86;
+    const dims2 = model2 === 's15' ? DRIFT_CONSTANTS.S15 : DRIFT_CONSTANTS.AE86;
+
+    const hx1 = dims1.WIDTH / 2;
+    const hy1 = dims1.LENGTH / 2;
+    const hx2 = dims2.WIDTH / 2;
+    const hy2 = dims2.LENGTH / 2;
+
+    // 1. Broadphase Circle Check
+    const dx = car2.x - car1.x;
+    const dy = car2.y - car1.y;
+    const distSq = dx * dx + dy * dy;
+    const maxR1 = Math.hypot(hx1, hy1);
+    const maxR2 = Math.hypot(hx2, hy2);
+    const maxDist = maxR1 + maxR2;
+
+    if (distSq > maxDist * maxDist) {
+      return {
+        collided: false,
+        contactX: 0,
+        contactY: 0,
+        normalX: 0,
+        normalY: 0,
+        impactSpeed: 0,
+        penalizedParty: 'none',
+        penaltyAmount: 0,
+        isNewImpact: false
+      };
+    }
+
+    // 2. Compute OBB Corners & Unit Vectors
+    // In game physics: 0 angle = pointing UP (-Y).
+    const f1x = Math.sin(car1.angle), f1y = -Math.cos(car1.angle);
+    const r1x = Math.cos(car1.angle), r1y = Math.sin(car1.angle);
+
+    const f2x = Math.sin(car2.angle), f2y = -Math.cos(car2.angle);
+    const r2x = Math.cos(car2.angle), r2y = Math.sin(car2.angle);
+
+    const corners1 = [
+      { x: car1.x + f1x * hy1 + r1x * hx1, y: car1.y + f1y * hy1 + r1y * hx1 },
+      { x: car1.x + f1x * hy1 - r1x * hx1, y: car1.y + f1y * hy1 - r1y * hx1 },
+      { x: car1.x - f1x * hy1 - r1x * hx1, y: car1.y - f1y * hy1 - r1y * hx1 },
+      { x: car1.x - f1x * hy1 + r1x * hx1, y: car1.y - f1y * hy1 + r1y * hx1 }
+    ];
+
+    const corners2 = [
+      { x: car2.x + f2x * hy2 + r2x * hx2, y: car2.y + f2y * hy2 + r2x * hx2 },
+      { x: car2.x + f2x * hy2 - r2x * hx2, y: car2.y + f2y * hy2 - r2x * hx2 },
+      { x: car2.x - f2x * hy2 - r2x * hx2, y: car2.y - f2y * hy2 - r2x * hx2 },
+      { x: car2.x - f2x * hy2 + r2x * hx2, y: car2.y - f2y * hy2 + r2x * hx2 }
+    ];
+
+    // 3. SAT (Separating Axis Theorem) across 4 candidate axes
+    const axes = [
+      { x: r1x, y: r1y },
+      { x: f1x, y: f1y },
+      { x: r2x, y: r2y },
+      { x: f2x, y: f2y }
+    ];
+
+    let minOverlap = Infinity;
+    let normX = 0, normY = 0;
+
+    for (let i = 0; i < 4; i++) {
+      const ax = axes[i].x;
+      const ay = axes[i].y;
+
+      let min1 = Infinity, max1 = -Infinity;
+      for (let j = 0; j < 4; j++) {
+        const p = corners1[j].x * ax + corners1[j].y * ay;
+        if (p < min1) min1 = p;
+        if (p > max1) max1 = p;
+      }
+
+      let min2 = Infinity, max2 = -Infinity;
+      for (let j = 0; j < 4; j++) {
+        const p = corners2[j].x * ax + corners2[j].y * ay;
+        if (p < min2) min2 = p;
+        if (p > max2) max2 = p;
+      }
+
+      const overlap = Math.min(max1, max2) - Math.max(min1, min2);
+      if (overlap <= 0) {
+        // Separating axis found -> no collision
+        return {
+          collided: false,
+          contactX: 0,
+          contactY: 0,
+          normalX: 0,
+          normalY: 0,
+          impactSpeed: 0,
+          penalizedParty: 'none',
+          penaltyAmount: 0,
+          isNewImpact: false
+        };
+      }
+
+      if (overlap < minOverlap) {
+        minOverlap = overlap;
+        normX = ax;
+        normY = ay;
+      }
+    }
+
+    // Ensure normal points from Car 1 to Car 2
+    if (dx * normX + dy * normY < 0) {
+      normX = -normX;
+      normY = -normY;
+    }
+
+    // 4. Positional Separation: push apart along normal
+    const sep = (minOverlap + 0.6) * 0.5;
+    car1.x -= normX * sep;
+    car1.y -= normY * sep;
+    car2.x += normX * sep;
+    car2.y += normY * sep;
+
+    // Contact point (center of overlapping boundary)
+    const contactX = (car1.x + car2.x) * 0.5;
+    const contactY = (car1.y + car2.y) * 0.5;
+
+    // 5. Physics Response: Momentum Exchange & Restitution
+    const relVx = car1.vx - car2.vx;
+    const relVy = car1.vy - car2.vy;
+    const vn = relVx * normX + relVy * normY;
+    const impactSpeed = Math.abs(vn);
+
+    // Pre-impulse velocities directed towards each other (positive = moving towards the other car)
+    const preV1Towards2 = car1.vx * normX + car1.vy * normY;
+    const preV2Towards1 = -(car2.vx * normX + car2.vy * normY);
+
+    if (vn > 0) {
+      // Cars moving towards each other -> apply bumper impulse
+      const e = DRIFT_CONSTANTS.CAR_RESTITUTION || 0.32;
+      const J = (1 + e) * vn * 0.5;
+
+      car1.vx -= J * normX;
+      car1.vy -= J * normY;
+      car2.vx += J * normX;
+      car2.vy += J * normY;
+
+      // Tangential friction (door rubbing drag)
+      const tx = -normY;
+      const ty = normX;
+      const vt = relVx * tx + relVy * ty;
+      const Jt = vt * 0.22;
+      car1.vx -= Jt * tx * 0.5;
+      car1.vy -= Jt * ty * 0.5;
+      car2.vx += Jt * tx * 0.5;
+      car2.vy += Jt * ty * 0.5;
+
+      car1.speed = Math.min(DRIFT_CONSTANTS.MAX_SPEED, Math.hypot(car1.vx, car1.vy));
+      car2.speed = Math.min(DRIFT_CONSTANTS.MAX_SPEED, Math.hypot(car2.vx, car2.vy));
+
+      // Angular Yaw Torque Impulse (car spins if clipped off-center)
+      const r1x = contactX - car1.x;
+      const r1y = contactY - car1.y;
+      const r2x = contactX - car2.x;
+      const r2y = contactY - car2.y;
+
+      const tau1 = -(r1x * normY - r1y * normX) * (J + 0.08) * 0.015;
+      const tau2 = (r2x * normY - r2y * normX) * (J + 0.08) * 0.015;
+
+      car1.angularVelocity = Math.max(-0.25, Math.min(0.25, car1.angularVelocity + tau1));
+      car2.angularVelocity = Math.max(-0.25, Math.min(0.25, car2.angularVelocity + tau2));
+    }
+
+    // 6. Tandem Judging & Penalty Assignment
+    // Also check rear-end bumper collision (Chase hitting Lead from behind)
+    const forward1 = dx * f1x + dy * f1y; // Car 2 is ahead of Car 1
+    const forward2 = -dx * f2x - dy * f2y; // Car 1 is ahead of Car 2
+
+    let penalizedParty: 'player' | 'enemy' | 'both' | 'none' = 'none';
+    let penaltyAmount = 0;
+    const isNewImpact = (this.contactCooldown <= 0);
+
+    if (isNewImpact) {
+      this.contactCooldown = 0.45; // 450ms cooldown before another full impact penalty
+      penaltyAmount = DRIFT_CONSTANTS.CAR_CONTACT_PENALTY; // Flat 50 pts deduction
+
+      // Chase hitting Lead is primary fault in drift rules
+      if (role1 === 'chase' && forward1 > 15) {
+        // Player is Chase and hit Lead from behind
+        penalizedParty = 'player';
+        score1.collisionPenalty += penaltyAmount;
+      } else if (role2 === 'chase' && forward2 > 15) {
+        // Enemy is Chase and hit Lead from behind
+        penalizedParty = 'enemy';
+        score2.collisionPenalty += penaltyAmount;
+      } else if (preV1Towards2 > preV2Towards1 + 0.15) {
+        // Player pushed enemy
+        penalizedParty = 'player';
+        score1.collisionPenalty += penaltyAmount;
+      } else if (preV2Towards1 > preV1Towards2 + 0.15) {
+        // Enemy pushed player
+        penalizedParty = 'enemy';
+        score2.collisionPenalty += penaltyAmount;
+      } else {
+        // Mutual aggressive contact
+        penalizedParty = 'both';
+        score1.collisionPenalty += penaltyAmount;
+        score2.collisionPenalty += penaltyAmount;
+      }
+    } else {
+      // Continuous rubbing penalty while in contact (75 pts/sec)
+      const rub = DRIFT_CONSTANTS.CAR_CONTACT_RUB_PENALTY_PER_SEC * dt;
+      if (role1 === 'chase' && forward1 > 10) {
+        score1.collisionPenalty += rub;
+        penalizedParty = 'player';
+      } else if (role2 === 'chase' && forward2 > 10) {
+        score2.collisionPenalty += rub;
+        penalizedParty = 'enemy';
+      } else if (preV1Towards2 > preV2Towards1 + 0.1) {
+        score1.collisionPenalty += rub;
+        penalizedParty = 'player';
+      } else if (preV2Towards1 > preV1Towards2 + 0.1) {
+        score2.collisionPenalty += rub;
+        penalizedParty = 'enemy';
+      } else {
+        score1.collisionPenalty += rub * 0.5;
+        score2.collisionPenalty += rub * 0.5;
+        penalizedParty = 'both';
+      }
+    }
+
+    return {
+      collided: true,
+      contactX,
+      contactY,
+      normalX: normX,
+      normalY: normY,
+      impactSpeed,
+      penalizedParty,
+      penaltyAmount,
+      isNewImpact
+    };
+  }
+
+  /**
    * Evaluates Tandem Drift Scoring Rules in real time
    */
   public evaluateScoring(
@@ -377,25 +637,11 @@ export class DriftEngine {
 
     this.scoreChaseRun(chaseState, chaseScore, leadState, dt);
 
-    // 3. Check Inter-Vehicle Collision
-    const distBetweenCars = Math.hypot(playerState.x - enemyState.x, playerState.y - enemyState.y);
-    if (distBetweenCars < 36) {
-      // Chase bumped into lead!
-      chaseScore.collisionPenalty += DRIFT_CONSTANTS.CAR_CONTACT_PENALTY * dt;
-      // Push cars apart
-      const overlap = 36 - distBetweenCars;
-      const angle = Math.atan2(chaseState.y - leadState.y, chaseState.x - leadState.x);
-      chaseState.x += Math.cos(angle) * overlap * 0.5;
-      chaseState.y += Math.sin(angle) * overlap * 0.5;
-      leadState.x -= Math.cos(angle) * overlap * 0.5;
-      leadState.y -= Math.sin(angle) * overlap * 0.5;
-    }
-
-    // 4. Update Time Elapsed
+    // 3. Update Time Elapsed
     playerScore.timeElapsed += dt;
     enemyScore.timeElapsed += dt;
 
-    // 5. Calculate Final Totals
+    // 4. Calculate Final Totals
     this.calculateFinalScore(playerScore);
     this.calculateFinalScore(enemyScore);
   }

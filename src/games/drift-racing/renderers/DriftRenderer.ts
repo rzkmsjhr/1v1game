@@ -18,6 +18,26 @@ interface SmokeParticle {
   decay: number;
 }
 
+interface SparkParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  alpha: number;
+  decay: number;
+  color: string;
+}
+
+interface FloatingScoreText {
+  text: string;
+  x: number;
+  y: number;
+  color: string;
+  lifetime: number;
+  maxLifetime: number;
+}
+
 export class DriftRenderer {
   private ctx: CanvasRenderingContext2D;
   private canvas: HTMLCanvasElement;
@@ -36,7 +56,12 @@ export class DriftRenderer {
 
   // Particle & Skidmark Buffers (batched in single draw calls, zero heavy offscreen canvases!)
   private smokeParticles: SmokeParticle[] = [];
+  private sparkParticles: SparkParticle[] = [];
+  private floatingTexts: FloatingScoreText[] = [];
   private skidmarks: { x: number; y: number }[] = [];
+
+  // Live HUD Contact Penalty Alert Banner
+  public contactAlert: { text: string; color: string; expires: number } | null = null;
 
   // Precompiled GPU Vector Paths (zero CPU path loops during animation frames!)
   private trackPath: Path2D = new Path2D();
@@ -255,6 +280,45 @@ export class DriftRenderer {
   public clearSkidmarks() {
     this.skidmarks = [];
     this.smokeParticles = [];
+    this.sparkParticles = [];
+    this.floatingTexts = [];
+    this.contactAlert = null;
+  }
+
+  public emitSparks(contactX: number, contactY: number, normX: number, normY: number) {
+    const isMobile = this.isMobileDevice();
+    const count = isMobile ? 8 : 14;
+    for (let i = 0; i < count; i++) {
+      const angle = Math.atan2(normY, normX) + (Math.random() - 0.5) * 2.0;
+      const speed = 1.8 + Math.random() * 3.6;
+      this.sparkParticles.push({
+        x: contactX + (Math.random() - 0.5) * 6,
+        y: contactY + (Math.random() - 0.5) * 6,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: 1.6 + Math.random() * 2.2,
+        alpha: 1.0,
+        decay: 0.05 + Math.random() * 0.04,
+        color: Math.random() > 0.35 ? '#fbbf24' : '#ef4444'
+      });
+    }
+    if (this.sparkParticles.length > 35) {
+      this.sparkParticles.splice(0, 15);
+    }
+  }
+
+  public addFloatingText(text: string, x: number, y: number, color: string = '#f43f5e') {
+    this.floatingTexts.push({
+      text,
+      x,
+      y,
+      color,
+      lifetime: 1.25,
+      maxLifetime: 1.25
+    });
+    if (this.floatingTexts.length > 6) {
+      this.floatingTexts.shift();
+    }
   }
 
   /**
@@ -342,9 +406,13 @@ export class DriftRenderer {
       isLightMode: isDay
     });
 
+    // 9. Render Collision Sparks & Floating Points
+    this.renderSparks(ctx);
+    this.renderFloatingTexts(ctx);
+
     ctx.restore();
 
-    // 9. Render On-Screen Live HUD
+    // 10. Render On-Screen Live HUD
     this.renderHUD(ctx, viewW, viewH, playerState, playerScore, enemyState, enemyScore, roundState);
   }
 
@@ -623,6 +691,65 @@ export class DriftRenderer {
     ctx.fill();
     this.smokeParticles = this.smokeParticles.filter(p => p.alpha > 0);
     ctx.restore();
+  }
+
+  /**
+   * Renders collision spark particles
+   */
+  private renderSparks(ctx: CanvasRenderingContext2D) {
+    if (this.sparkParticles.length === 0) return;
+    for (let i = this.sparkParticles.length - 1; i >= 0; i--) {
+      const p = this.sparkParticles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.93;
+      p.vy *= 0.93;
+      p.alpha -= p.decay;
+      if (p.alpha <= 0) {
+        this.sparkParticles.splice(i, 1);
+        continue;
+      }
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.alpha);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  /**
+   * Renders floating combat score/penalty notifications over the cars
+   */
+  private renderFloatingTexts(ctx: CanvasRenderingContext2D) {
+    if (this.floatingTexts.length === 0) return;
+    const dt = 1 / 60;
+    for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+      const f = this.floatingTexts[i];
+      f.lifetime -= dt;
+      if (f.lifetime <= 0) {
+        this.floatingTexts.splice(i, 1);
+        continue;
+      }
+      const progress = 1 - f.lifetime / f.maxLifetime;
+      const curY = f.y - progress * 35; // floats up by 35px
+      const alpha = Math.min(1.0, f.lifetime * 2.0);
+
+      ctx.save();
+      ctx.translate(f.x, curY);
+      // Keep text upright on screen despite rotating camera!
+      ctx.rotate(this.camAngle);
+      ctx.globalAlpha = alpha;
+      this.setFont(ctx, '900 13px sans-serif');
+      ctx.fillStyle = f.color;
+      ctx.shadowColor = 'rgba(0,0,0,0.85)';
+      ctx.shadowBlur = 6;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(f.text, 0, 0);
+      ctx.restore();
+    }
   }
 
   /**
@@ -1114,6 +1241,28 @@ export class DriftRenderer {
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.fillText(`⏱️ ANTI-STALL WARNING: RESUME IN ${remaining}s OR DQ!`, viewW / 2, stallY + 17);
+    }
+
+    // Real-Time Contact Penalty Banner
+    if (this.contactAlert && Date.now() < this.contactAlert.expires) {
+      const alertW = isMobile ? Math.min(viewW - 24, 300) : 340;
+      const alertH = 26;
+      const alertX = (viewW - alertW) / 2;
+      const alertY = telemY + telemH + (p1Score.isZeroFault ? 38 : 6);
+
+      ctx.fillStyle = this.contactAlert.color;
+      ctx.beginPath();
+      ctx.roundRect(alertX, alertY, alertW, alertH, 8);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      this.setFont(ctx, '900 11px sans-serif');
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.fillText(this.contactAlert.text, viewW / 2, alertY + 17);
     }
 
     ctx.restore();

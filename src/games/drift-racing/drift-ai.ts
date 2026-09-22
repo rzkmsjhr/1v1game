@@ -92,8 +92,8 @@ export class DriftAI {
     brake: boolean;
     handbrake: boolean;
   } {
-    // Calculate target tandem pocket directly behind Lead car
-    const targetDist = (this.difficulty === 'easy' ? 70 : (this.difficulty === 'medium' ? 52 : 38));
+    // Calculate target tandem pocket behind Lead car (maintains realistic door/bumper gap)
+    const targetDist = (this.difficulty === 'easy' ? 95 : (this.difficulty === 'medium' ? 80 : 70));
     const leadCos = Math.cos(leadState.angle);
     const leadSin = Math.sin(leadState.angle);
 
@@ -116,6 +116,12 @@ export class DriftAI {
     let desiredSpeed = Math.min(leadState.speed, 3.10);
     if (distToTarget > 24) desiredSpeed += 0.25;
     if (distToTarget < 12) desiredSpeed -= 0.30;
+
+    // Check proximity buffer to avoid continuous tail ramming
+    const distToLeadCenter = Math.hypot(aiState.x - leadState.x, aiState.y - leadState.y);
+    if (distToLeadCenter < 68 && aiState.speed > leadState.speed) {
+      desiredSpeed = Math.max(0.5, leadState.speed - 0.20);
+    }
 
     // Check front axle overtake prevention (Rule 8: cannot pass lead front axle)
     const relX = aiState.x - leadState.x;

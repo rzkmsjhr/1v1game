@@ -64,6 +64,18 @@ export interface RunScoreBreakdown {
   disqualified: boolean;
 }
 
+export interface CarCollisionResult {
+  collided: boolean;
+  contactX: number;
+  contactY: number;
+  normalX: number;
+  normalY: number;
+  impactSpeed: number;
+  penalizedParty: 'player' | 'enemy' | 'both' | 'none';
+  penaltyAmount: number;
+  isNewImpact: boolean;
+}
+
 export type MatchPhase = 
   | 'ready'
   | 'countdown'
