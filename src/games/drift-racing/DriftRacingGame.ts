@@ -811,9 +811,11 @@ export class DriftRacingGame implements GameInstance {
     if (isPlayerLead) {
       this.playerMaxWaypoint = 9;
       this.enemyMaxWaypoint = 6;
+      this.ai.reset(6, 9);
     } else {
       this.playerMaxWaypoint = 6;
       this.enemyMaxWaypoint = 9;
+      this.ai.reset(9, 6);
     }
 
     // Immediately snap camera to player vehicle
