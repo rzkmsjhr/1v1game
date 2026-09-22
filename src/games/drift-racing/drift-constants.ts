@@ -1,13 +1,13 @@
 export const DRIFT_CONSTANTS = {
   // Vehicle Dynamics (Tuned for energetic, natural drift dynamics and twistability)
-  MAX_SPEED: 2.70,           // +20% boost from 2.25: fast, exhilarating cruising speed
-  MAX_REVERSE_SPEED: 1.05,
-  ACCEL_FORWARD: 0.044,      // +20% boost from 0.036: punchy, immediate throttle pickup
-  BRAKE_RATE: 0.12,          // Crisp deceleration matching 2.70 top speed
-  HANDBRAKE_RATE: 0.045,     // Handbrake cuts speed slightly while sustaining slide
+  MAX_SPEED: 3.10,           // +15% boost from 2.70: high-velocity, exciting cruising speed
+  MAX_REVERSE_SPEED: 1.20,
+  ACCEL_FORWARD: 0.051,      // +15% boost from 0.044: rapid, responsive throttle pickup
+  BRAKE_RATE: 0.14,          // Crisp deceleration matching 3.10 top speed
+  HANDBRAKE_RATE: 0.048,     // Handbrake cuts speed slightly while sustaining slide
   ROLLING_DRAG: 0.985,       // Natural engine coasting drag
-  TURN_SPEED: 0.048,         // Smooth, natural turning rate with body weight
-  DRIFT_TURN_SPEED: 0.080,   // Crisp yaw authority to twist angle & transition at 2.70 speed
+  TURN_SPEED: 0.050,         // Smooth, natural turning rate with body weight
+  DRIFT_TURN_SPEED: 0.084,   // Crisp yaw authority to twist angle & transition at 3.10 speed
   STEER_RETURN_RATE: 0.18,   // Progressive steering rack movement
   MAX_STEER_RAD: 0.54,       // ~31 degrees max front wheel lock
 
