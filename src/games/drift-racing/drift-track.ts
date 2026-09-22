@@ -15,6 +15,8 @@ export interface WallSegment {
   p1: Point2D;
   p2: Point2D;
   isInner: boolean;
+  nxIn: number;        // Inward normal X (pointing into drivable track ribbon)
+  nyIn: number;        // Inward normal Y
   minX: number;
   maxX: number;
   minY: number;
@@ -114,46 +116,112 @@ export class DriftTrack {
 
   private generateWallsAndZones() {
     const pts = this.waypoints;
-    const n = pts.length;
-    // The center X crossover intersection is at (800, 500)
-    // Rule: Zero barriers/lines/boundaries in the middle X area!
-    const isNearCrossover = (pt: Point2D) => Math.hypot(pt.x - 800, pt.y - 500) < 145;
+    const halfW = DRIFT_CONSTANTS.TRACK_WIDTH / 2; // 70px
 
-    // Build Continuous Outer & Inner Wall segments, skipping the crossover
-    for (let i = 0; i < n; i++) {
-      const curr = pts[i];
-      const next = pts[(i + 1) % n];
+    // Line intersection helper to find exact apex vertices where track boundaries meet
+    const lineIntersect = (p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D): Point2D => {
+      const d = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+      if (Math.abs(d) < 1e-6) return { x: (p1.x + p3.x) / 2, y: (p1.y + p3.y) / 2 };
+      const t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / d;
+      return {
+        x: p1.x + t * (p2.x - p1.x),
+        y: p1.y + t * (p2.y - p1.y)
+      };
+    };
 
-      // Outer edge
-      const out1 = { x: curr.x + curr.nx * (curr.width / 2), y: curr.y + curr.ny * (curr.width / 2) };
-      const out2 = { x: next.x + next.nx * (next.width / 2), y: next.y + next.ny * (next.width / 2) };
-      if (!isNearCrossover(out1) && !isNearCrossover(out2)) {
-        this.outerWalls.push({
-          p1: out1,
-          p2: out2,
-          isInner: false,
-          minX: Math.min(out1.x, out2.x),
-          maxX: Math.max(out1.x, out2.x),
-          minY: Math.min(out1.y, out2.y),
-          maxY: Math.max(out1.y, out2.y)
-        });
-      }
+    // Calculate the 4 exact geometric apexes around the Figure-8 intersection
+    // 1. Top Waist Apex: wp 117-118 left edge (-nx) meets wp 58-59 right edge (+nx)
+    const topApex = lineIntersect(
+      { x: pts[117].x - pts[117].nx * halfW, y: pts[117].y - pts[117].ny * halfW },
+      { x: pts[118].x - pts[118].nx * halfW, y: pts[118].y - pts[118].ny * halfW },
+      { x: pts[58].x + pts[58].nx * halfW, y: pts[58].y + pts[58].ny * halfW },
+      { x: pts[59].x + pts[59].nx * halfW, y: pts[59].y + pts[59].ny * halfW }
+    );
 
-      // Inner edge
-      const in1 = { x: curr.x - curr.nx * (curr.width / 2), y: curr.y - curr.ny * (curr.width / 2) };
-      const in2 = { x: next.x - next.nx * (next.width / 2), y: next.y - next.ny * (next.width / 2) };
-      if (!isNearCrossover(in1) && !isNearCrossover(in2)) {
-        this.innerWalls.push({
-          p1: in1,
-          p2: in2,
-          isInner: true,
-          minX: Math.min(in1.x, in2.x),
-          maxX: Math.max(in1.x, in2.x),
-          minY: Math.min(in1.y, in2.y),
-          maxY: Math.max(in1.y, in2.y)
-        });
-      }
+    // 2. Bottom Waist Apex: wp 1-2 right edge (+nx) meets wp 61-62 left edge (-nx)
+    const bottomApex = lineIntersect(
+      { x: pts[1].x + pts[1].nx * halfW, y: pts[1].y + pts[1].ny * halfW },
+      { x: pts[2].x + pts[2].nx * halfW, y: pts[2].y + pts[2].ny * halfW },
+      { x: pts[61].x - pts[61].nx * halfW, y: pts[61].y - pts[61].ny * halfW },
+      { x: pts[62].x - pts[62].nx * halfW, y: pts[62].y - pts[62].ny * halfW }
+    );
+
+    // 3. Right Inner Eye Apex: wp 0-1 left edge (-nx) meets wp 59-60 left edge (-nx)
+    const rightEyeApex = lineIntersect(
+      { x: pts[0].x - pts[0].nx * halfW, y: pts[0].y - pts[0].ny * halfW },
+      { x: pts[1].x - pts[1].nx * halfW, y: pts[1].y - pts[1].ny * halfW },
+      { x: pts[59].x - pts[59].nx * halfW, y: pts[59].y - pts[59].ny * halfW },
+      { x: pts[60].x - pts[60].nx * halfW, y: pts[60].y - pts[60].ny * halfW }
+    );
+
+    // 4. Left Inner Eye Apex: wp 118-119 right edge (+nx) meets wp 60-61 right edge (+nx)
+    const leftEyeApex = lineIntersect(
+      { x: pts[118].x + pts[118].nx * halfW, y: pts[118].y + pts[118].ny * halfW },
+      { x: pts[119].x + pts[119].nx * halfW, y: pts[119].y + pts[119].ny * halfW },
+      { x: pts[60].x + pts[60].nx * halfW, y: pts[60].y + pts[60].ny * halfW },
+      { x: pts[61].x + pts[61].nx * halfW, y: pts[61].y + pts[61].ny * halfW }
+    );
+
+    // Build the 3 completely closed, continuous boundary loops with ZERO gaps
+    // A. Outer Perimeter: Hourglass boundary connecting bottom apex, right lobe, top apex, left lobe
+    const outerPoly: Point2D[] = [bottomApex];
+    for (let i = 2; i <= 58; i++) {
+      outerPoly.push({ x: pts[i].x + pts[i].nx * halfW, y: pts[i].y + pts[i].ny * halfW });
     }
+    outerPoly.push(topApex);
+    for (let i = 118; i >= 62; i--) {
+      outerPoly.push({ x: pts[i].x - pts[i].nx * halfW, y: pts[i].y - pts[i].ny * halfW });
+    }
+
+    // B. Right Inner Eye Boundary: Closed loop encircling inside of right lobe
+    const rightEyePoly: Point2D[] = [rightEyeApex];
+    for (let i = 2; i <= 58; i++) {
+      rightEyePoly.push({ x: pts[i].x - pts[i].nx * halfW, y: pts[i].y - pts[i].ny * halfW });
+    }
+
+    // C. Left Inner Eye Boundary: Closed loop encircling inside of left lobe
+    const leftEyePoly: Point2D[] = [leftEyeApex];
+    for (let i = 62; i <= 118; i++) {
+      leftEyePoly.push({ x: pts[i].x + pts[i].nx * halfW, y: pts[i].y + pts[i].ny * halfW });
+    }
+
+    // Helper to generate wall segments with deterministic inward normal vectors
+    const buildWallSegments = (poly: Point2D[], isInner: boolean): WallSegment[] => {
+      const segs: WallSegment[] = [];
+      const m = poly.length;
+      for (let i = 0; i < m; i++) {
+        const p1 = poly[i];
+        const p2 = poly[(i + 1) % m];
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const n1x = -dy / len, n1y = dx / len;
+        const n2x = dy / len, n2y = -dx / len;
+        const mx = (p1.x + p2.x) / 2;
+        const my = (p1.y + p2.y) / 2;
+        const d1 = this.getClosestTrackPoint(mx + n1x * 5, my + n1y * 5).dist;
+        const d2 = this.getClosestTrackPoint(mx + n2x * 5, my + n2y * 5).dist;
+        const inNorm = d1 < d2 ? { nx: n1x, ny: n1y } : { nx: n2x, ny: n2y };
+        segs.push({
+          p1,
+          p2,
+          isInner,
+          nxIn: inNorm.nx,
+          nyIn: inNorm.ny,
+          minX: Math.min(p1.x, p2.x),
+          maxX: Math.max(p1.x, p2.x),
+          minY: Math.min(p1.y, p2.y),
+          maxY: Math.max(p1.y, p2.y)
+        });
+      }
+      return segs;
+    };
+
+    this.outerWalls = buildWallSegments(outerPoly, false);
+    this.innerWalls = [
+      ...buildWallSegments(rightEyePoly, true),
+      ...buildWallSegments(leftEyePoly, true)
+    ];
 
     // --- High-Visibility Green Drift Clipping Zones ---
     // Zone 1: Outer Wall Sweeper of Loop 1 (Big entry drift zone)
@@ -259,6 +327,47 @@ export class DriftTrack {
       progress: this.waypoints[closestIdx].progress,
       distance: Math.sqrt(minDistSq),
       waypointIndex: closestIdx
+    };
+  }
+
+  /**
+   * High-precision distance to continuous Figure-8 centerline ribbon
+   * Returns exact projected point (cx, cy) and Euclidean distance.
+   */
+  public getClosestTrackPoint(x: number, y: number): { dist: number; cx: number; cy: number; waypointIndex: number } {
+    let minDSq = Infinity;
+    let bestCx = x;
+    let bestCy = y;
+    let bestIdx = 0;
+    const pts = this.waypoints;
+    const n = pts.length;
+
+    for (let i = 0; i < n; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % n];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const l2 = dx * dx + dy * dy;
+      if (l2 === 0) continue;
+
+      let t = ((x - a.x) * dx + (y - a.y) * dy) / l2;
+      t = Math.max(0, Math.min(1, t));
+      const px = a.x + t * dx;
+      const py = a.y + t * dy;
+      const dSq = (x - px) * (x - px) + (y - py) * (y - py);
+      if (dSq < minDSq) {
+        minDSq = dSq;
+        bestCx = px;
+        bestCy = py;
+        bestIdx = i;
+      }
+    }
+
+    return {
+      dist: Math.sqrt(minDSq),
+      cx: bestCx,
+      cy: bestCy,
+      waypointIndex: bestIdx
     };
   }
 

@@ -122,15 +122,11 @@ export class DriftRenderer {
 
     // 2. Curbs Paths (batched red and white segments compiled once)
     const walls = this.track.allWalls;
-    for (let i = 0; i < walls.length; i += 2) {
+    for (let i = 0; i < walls.length; i++) {
       const seg = walls[i];
-      if (i % 4 === 0) {
-        this.redCurbsPath.moveTo(seg.p1.x, seg.p1.y);
-        this.redCurbsPath.lineTo(seg.p2.x, seg.p2.y);
-      } else {
-        this.whiteCurbsPath.moveTo(seg.p1.x, seg.p1.y);
-        this.whiteCurbsPath.lineTo(seg.p2.x, seg.p2.y);
-      }
+      const targetPath = (Math.floor(i / 2) % 2 === 0) ? this.redCurbsPath : this.whiteCurbsPath;
+      targetPath.moveTo(seg.p1.x, seg.p1.y);
+      targetPath.lineTo(seg.p2.x, seg.p2.y);
     }
 
     // 3. Clipping Zone Paths & Precompiled Curved Centerline Text

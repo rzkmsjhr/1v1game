@@ -261,79 +261,118 @@ export class DriftEngine {
   }
 
   /**
-   * Handles barrier / wall collisions and penalties
+   * Continuous multi-circle wall collision resolution with inward normal deflections
+   * and fail-safe centerline boundary containment.
    */
   public handleWallCollisions(
     state: VehiclePhysicsState,
     score: RunScoreBreakdown,
+    model: CarModelType = 'ae86',
     dt: number = 1 / 60
   ): { collided: boolean; wallStop: boolean } {
     let collided = false;
     let wallStop = false;
 
     const walls = this.track.allWalls;
-    const carRadius = 16;
-    const carRadiusSq = carRadius * carRadius;
     const prevSpeed = Math.hypot(state.vx, state.vy);
 
-    for (let i = 0; i < walls.length; i++) {
-      const wall = walls[i];
+    // Multi-circle car geometry covering front bumper, center, and rear bumper
+    const d = (model === 's15' ? 19.5 : 17.5);
+    const fwdX = Math.sin(state.angle);
+    const fwdY = -Math.cos(state.angle);
+    const circRadius = 16;
+    const circRadiusSq = circRadius * circRadius;
 
-      // Fast AABB filter: skip walls that are far away from the car
-      if (
-        state.x < wall.minX - carRadius ||
-        state.x > wall.maxX + carRadius ||
-        state.y < wall.minY - carRadius ||
-        state.y > wall.maxY + carRadius
-      ) {
-        continue;
+    const circles = [
+      { x: state.x + fwdX * d, y: state.y + fwdY * d, isFront: true, isRear: false },
+      { x: state.x, y: state.y, isFront: false, isRear: false },
+      { x: state.x - fwdX * d, y: state.y - fwdY * d, isFront: false, isRear: true }
+    ];
+
+    for (let c = 0; c < circles.length; c++) {
+      const circ = circles[c];
+
+      for (let i = 0; i < walls.length; i++) {
+        const wall = walls[i];
+
+        // Fast AABB filter: skip walls that are far away from the car
+        if (
+          circ.x < wall.minX - circRadius ||
+          circ.x > wall.maxX + circRadius ||
+          circ.y < wall.minY - circRadius ||
+          circ.y > wall.maxY + circRadius
+        ) {
+          continue;
+        }
+
+        const closest = this.closestPointOnSegment({ x: circ.x, y: circ.y }, wall.p1, wall.p2);
+        const dx = circ.x - closest.x;
+        const dy = circ.y - closest.y;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq < circRadiusSq) {
+          const dist = Math.sqrt(distSq);
+          collided = true;
+          score.collisionPenalty += DRIFT_CONSTANTS.WALL_SCRAPE_PENALTY_PER_SEC * dt;
+
+          // Always push along the guaranteed INWARD normal into the track!
+          const pushDist = circRadius - dist;
+          state.x += wall.nxIn * (pushDist + 0.6);
+          state.y += wall.nyIn * (pushDist + 0.6);
+
+          // Deflect velocity: preserve momentum sliding along the barrier
+          const dot = state.vx * wall.nxIn + state.vy * wall.nyIn;
+          if (dot < 0) {
+            state.vx -= dot * wall.nxIn * 1.35;
+            state.vy -= dot * wall.nyIn * 1.35;
+            state.vx *= 0.82;
+            state.vy *= 0.82;
+            state.speed = Math.min(state.speed, Math.hypot(state.vx, state.vy));
+          }
+
+          // Dynamic yaw torque on bumper clip: turns car away from wall
+          if (circ.isFront) {
+            const torque = (wall.nxIn * fwdY - wall.nyIn * fwdX) * 0.08;
+            state.angularVelocity = Math.max(-0.25, Math.min(0.25, state.angularVelocity + torque));
+          } else if (circ.isRear) {
+            const torque = -(wall.nxIn * fwdY - wall.nyIn * fwdX) * 0.06;
+            state.angularVelocity = Math.max(-0.25, Math.min(0.25, state.angularVelocity + torque));
+          }
+
+          // Hard wall crash check: apply collision penalty when car hits barrier hard
+          const currentSpeed = Math.hypot(state.vx, state.vy);
+          if (prevSpeed > 2.2 && currentSpeed < 0.8) {
+            wallStop = true;
+            score.collisionPenalty += 40;
+          }
+          break; // Move to next circle once this circle's collision is resolved
+        }
       }
+    }
 
-      const closest = this.closestPointOnSegment({ x: state.x, y: state.y }, wall.p1, wall.p2);
-      const toCarX = state.x - closest.x;
-      const toCarY = state.y - closest.y;
-      const distSq = toCarX * toCarX + toCarY * toCarY;
+    // --- Hard Containment Clamp (Failsafe Guard) ---
+    // Mathematically guarantees no vehicle can ever cross the track boundary under any physics force
+    const trackPt = this.track.getClosestTrackPoint(state.x, state.y);
+    const maxAllowedDist = (DRIFT_CONSTANTS.TRACK_WIDTH / 2) - 13; // 57px from centerline
 
-      if (distSq < carRadiusSq) {
-        const dist = Math.sqrt(distSq);
-        collided = true;
-        score.collisionPenalty += DRIFT_CONSTANTS.WALL_SCRAPE_PENALTY_PER_SEC * dt;
+    if (trackPt.dist > maxAllowedDist) {
+      collided = true;
+      const dOut = trackPt.dist || 1;
+      const outNx = (state.x - trackPt.cx) / dOut;
+      const outNy = (state.y - trackPt.cy) / dOut;
 
-        // Push car directly AWAY from the segment towards open track!
-        const pushDist = carRadius - dist;
-        let pushX = 0;
-        let pushY = 0;
-        if (dist > 0.001) {
-          pushX = toCarX / dist;
-          pushY = toCarY / dist;
-        } else {
-          const segDx = wall.p2.x - wall.p1.x;
-          const segDy = wall.p2.y - wall.p1.y;
-          const segLen = Math.hypot(segDx, segDy) || 1;
-          pushX = -segDy / segLen;
-          pushY = segDx / segLen;
-        }
+      state.x = trackPt.cx + outNx * maxAllowedDist;
+      state.y = trackPt.cy + outNy * maxAllowedDist;
 
-        state.x += pushX * (pushDist + 0.5);
-        state.y += pushY * (pushDist + 0.5);
-
-        // Deflect velocity: preserve momentum sliding along the barrier
-        const dot = state.vx * pushX + state.vy * pushY;
-        if (dot < 0) {
-          state.vx -= dot * pushX * 1.25;
-          state.vy -= dot * pushY * 1.25;
-          state.vx *= 0.82;
-          state.vy *= 0.82;
-          state.speed = Math.min(state.speed, Math.hypot(state.vx, state.vy));
-        }
-
-        // Hard wall crash check: apply collision penalty when car hits barrier hard
-        const currentSpeed = Math.hypot(state.vx, state.vy);
-        if (prevSpeed > 2.2 && currentSpeed < 0.8) {
-          wallStop = true;
-          score.collisionPenalty += 40;
-        }
-        break;
+      // Deflect any velocity attempting to pull vehicle outside
+      const vNorm = state.vx * outNx + state.vy * outNy;
+      if (vNorm > 0) {
+        state.vx -= vNorm * outNx * 1.35;
+        state.vy -= vNorm * outNy * 1.35;
+        state.vx *= 0.82;
+        state.vy *= 0.82;
+        state.speed = Math.hypot(state.vx, state.vy);
+        score.collisionPenalty += 40 * dt;
       }
     }
 

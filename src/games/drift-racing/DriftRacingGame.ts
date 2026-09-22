@@ -472,14 +472,14 @@ export class DriftRacingGame implements GameInstance {
     if (r.phase === 'racing') {
       // 1. Step Player Physics
       this.engine.stepPhysics(this.playerCar, this.inputs, this.playerModel, dt);
-      const pWall = this.engine.handleWallCollisions(this.playerCar, r.playerScore, dt);
+      const pWall = this.engine.handleWallCollisions(this.playerCar, r.playerScore, this.playerModel, dt);
       if (pWall.collided) sounds.playWallCrash();
 
       // 2. Step Enemy Physics (AI or Remote Client)
       if (!this.isOnline) {
         const aiInputs = this.ai.computeInputs(this.enemyCar, r.enemyRole, this.playerCar, r.playerRole);
         this.engine.stepPhysics(this.enemyCar, aiInputs, this.enemyModel, dt);
-        this.engine.handleWallCollisions(this.enemyCar, r.enemyScore, dt);
+        this.engine.handleWallCollisions(this.enemyCar, r.enemyScore, this.enemyModel, dt);
       }
 
       // 3. Inter-Vehicle Collision & Contact Penalty Resolution (OBB SAT)
@@ -496,6 +496,10 @@ export class DriftRacingGame implements GameInstance {
       );
 
       if (carCol.collided) {
+        // Immediately enforce wall containment post-impact so bumper bounce never expels car outside
+        this.engine.handleWallCollisions(this.playerCar, r.playerScore, this.playerModel, dt);
+        this.engine.handleWallCollisions(this.enemyCar, r.enemyScore, this.enemyModel, dt);
+
         // Emit visual sparks at bumper contact point
         this.renderer.emitSparks(carCol.contactX, carCol.contactY, carCol.normalX, carCol.normalY);
 
