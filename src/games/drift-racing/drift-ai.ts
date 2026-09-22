@@ -32,7 +32,7 @@ export class DriftAI {
   }
 
   /**
-   * AI as Lead Car: Follows racing line and drifts through green clipping zones
+   * AI as Lead Car: Follows pro racing line, clips green zones with all 4 tires, and sustains high-speed drift
    */
   private computeLeadInputs(state: VehiclePhysicsState): {
     throttle: number;
@@ -43,45 +43,97 @@ export class DriftAI {
     const { waypointIndex } = this.track.getClosestProgress(state.x, state.y);
     const n = this.track.waypoints.length;
 
-    // Lookahead waypoint
-    const lookaheadSteps = (this.difficulty === 'easy' ? 4 : (this.difficulty === 'medium' ? 6 : 8));
+    // Lookahead and Target Speeds by Difficulty
+    let lookaheadSteps = 6;
+    let targetSpeed = 2.70;
+    let targetSlipAngle = 46;
+    let steerGain = 2.2;
+
+    if (this.difficulty === 'easy') {
+      lookaheadSteps = 5;
+      targetSpeed = 2.25;
+      targetSlipAngle = 32;
+      steerGain = 1.8;
+    } else if (this.difficulty === 'medium') {
+      lookaheadSteps = 6;
+      targetSpeed = 2.70;
+      targetSlipAngle = 46;
+      steerGain = 2.2;
+    } else if (this.difficulty === 'hard') {
+      lookaheadSteps = 7;
+      targetSpeed = 2.98;
+      targetSlipAngle = 55;
+      steerGain = 2.5;
+    } else if (this.difficulty === 'extreme') {
+      lookaheadSteps = 7;
+      targetSpeed = 3.10;
+      targetSlipAngle = 62;
+      steerGain = 2.6;
+    }
+
+    // Racing line offset: actively guides the car deep into green clipping zones!
     const targetWp = this.track.waypoints[(waypointIndex + lookaheadSteps) % n];
+    let lateralOffset = 0;
+    const wpIdx = (waypointIndex + lookaheadSteps) % n;
+
+    // Zone 1: Outer Sweeper 1 (wp 12-24, outer right)
+    if (wpIdx >= 12 && wpIdx <= 24) lateralOffset = targetWp.width * 0.32;
+    // Zone 2: Inside Clip 1 (wp 34-45, inner left apex)
+    else if (wpIdx >= 34 && wpIdx <= 45) lateralOffset = -targetWp.width * 0.30;
+    // Zone 3: Switch Zone (wp 50-68, outer right)
+    else if (wpIdx >= 50 && wpIdx <= 68) lateralOffset = targetWp.width * 0.28;
+    // Zone 4: Outer Sweeper 2 (wp 72-84, outer right)
+    else if (wpIdx >= 72 && wpIdx <= 84) lateralOffset = targetWp.width * 0.32;
+    // Zone 5: Inside Clip 2 (wp 94-105, inner left apex)
+    else if (wpIdx >= 94 && wpIdx <= 105) lateralOffset = -targetWp.width * 0.30;
+    // Zone 6: Final Exit Clip (wp 110-118, outer right)
+    else if (wpIdx >= 110 && wpIdx <= 118) lateralOffset = targetWp.width * 0.30;
+
+    const aimX = targetWp.x + targetWp.nx * lateralOffset;
+    const aimY = targetWp.y + targetWp.ny * lateralOffset;
 
     // Angle to target
-    const targetAngle = Math.atan2(targetWp.x - state.x, -(targetWp.y - state.y));
+    const targetAngle = Math.atan2(aimX - state.x, -(aimY - state.y));
     let angleDiff = targetAngle - state.angle;
     while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
     while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
-    const steer = Math.max(-1, Math.min(1, angleDiff * 1.8));
+    const isCurving = Math.abs(angleDiff) > 0.22;
+    const inClippingZone = lateralOffset !== 0;
 
-    // Check if near or inside a green clipping zone
-    let inClippingZone = false;
-    for (const z of this.track.clippingZones) {
-      if (DriftTrack.isPointInPolygon({ x: state.x, y: state.y }, z.polygon)) {
-        inClippingZone = true;
-        break;
+    // Pro Counter-Steering Drift Control
+    let steer = 0;
+    if (state.driftSlipAngle > 15) {
+      // Car is in an active slide: balance angle dynamically using counter-steer
+      const turnDir = Math.sign(angleDiff) || 1;
+      if (state.driftSlipAngle < targetSlipAngle) {
+        // Build more slip angle -> steer into turn
+        steer = turnDir * 0.85;
+      } else {
+        // Catch and sustain the slide with counter-steer
+        const excess = (state.driftSlipAngle - targetSlipAngle) / 25;
+        steer = -turnDir * Math.min(1.0, 0.4 + excess * 0.6);
       }
+    } else {
+      // Grip steering line towards clipping target
+      steer = Math.max(-1, Math.min(1, angleDiff * steerGain));
     }
 
-    // Drift initiation: if turning sharply or inside clipping zone, use handbrake
-    const needDrift = (Math.abs(angleDiff) > 0.38 || inClippingZone);
-    const handbrake = needDrift && (state.speed > 0.68) && (state.driftSlipAngle < 22);
+    // Handbrake initiation flick into corner
+    const handbrake = (isCurving || inClippingZone) && state.speed > 1.2 && state.driftSlipAngle < 20;
 
-    // Throttle modulation
-    let maxSpeed = 2.35;
-    if (this.difficulty === 'easy') maxSpeed = 1.80;
-    if (this.difficulty === 'hard') maxSpeed = 2.75;
-    if (this.difficulty === 'extreme') maxSpeed = 3.10;
-
-    const throttle = (state.speed < maxSpeed) ? 1.0 : 0.35;
-    const brake = (state.speed > maxSpeed + 0.30);
+    // Throttle commitment: keep on the power inside clipping zones for thick smoke & top score
+    let throttle = 1.0;
+    if (!inClippingZone && state.speed > targetSpeed) {
+      throttle = (state.speed > targetSpeed + 0.20) ? 0.2 : 0.5;
+    }
+    const brake = !inClippingZone && (state.speed > targetSpeed + 0.35);
 
     return { throttle, steer, brake, handbrake };
   }
 
   /**
-   * AI as Chase Car: Pursues human player, holds tight proximity, respects transitions
+   * AI as Chase Car: Pursues lead along course line, sits in door-to-door pocket, mirrors drift, avoids ramming
    */
   private computeChaseInputs(
     aiState: VehiclePhysicsState,
@@ -92,49 +144,123 @@ export class DriftAI {
     brake: boolean;
     handbrake: boolean;
   } {
-    // Calculate target tandem pocket behind Lead car (maintains realistic door/bumper gap)
-    const targetDist = (this.difficulty === 'easy' ? 95 : (this.difficulty === 'medium' ? 80 : 70));
-    const leadCos = Math.cos(leadState.angle);
-    const leadSin = Math.sin(leadState.angle);
+    const { waypointIndex: leadWp } = this.track.getClosestProgress(leadState.x, leadState.y);
+    const n = this.track.waypoints.length;
 
-    // Pocket is behind the lead car
-    const targetX = leadState.x - leadSin * targetDist;
-    const targetY = leadState.y + leadCos * targetDist;
+    // Tandem Gap Tuning by Difficulty
+    let targetLagSteps = 3;
+    let maxChaseSpeed = 2.75;
+    let proximitySweetSpot = 65;
 
-    // Distance to target pocket
-    const distToTarget = Math.hypot(targetX - aiState.x, targetY - aiState.y);
+    if (this.difficulty === 'easy') {
+      targetLagSteps = 4;
+      maxChaseSpeed = 2.35;
+      proximitySweetSpot = 85;
+    } else if (this.difficulty === 'medium') {
+      targetLagSteps = 3;
+      maxChaseSpeed = 2.75;
+      proximitySweetSpot = 65;
+    } else if (this.difficulty === 'hard') {
+      targetLagSteps = 2;
+      maxChaseSpeed = 3.05;
+      proximitySweetSpot = 52;
+    } else if (this.difficulty === 'extreme') {
+      targetLagSteps = 2;
+      maxChaseSpeed = 3.10;
+      proximitySweetSpot = 50;
+    }
 
-    // Steer towards target pocket
+    // Track-aligned tandem pocket: lag behind lead car along track curve
+    const pocketWpIdx = (leadWp - targetLagSteps + n) % n;
+    const pocketWp = this.track.waypoints[pocketWpIdx];
+
+    // Position pocket slightly to the inside door if lead is drifting
+    let innerOffset = 0;
+    if (leadState.driftSlipAngle > 15) {
+      const leadHeadingX = Math.sin(leadState.angle);
+      const leadHeadingY = -Math.cos(leadState.angle);
+      const leadMoveX = leadState.vx || 1;
+      const leadMoveY = leadState.vy || 1;
+      const cross = leadHeadingX * leadMoveY - leadHeadingY * leadMoveX;
+      innerOffset = (cross > 0 ? -pocketWp.width * 0.18 : pocketWp.width * 0.18);
+    }
+
+    const targetX = pocketWp.x + pocketWp.nx * innerOffset;
+    const targetY = pocketWp.y + pocketWp.ny * innerOffset;
+
+    // Distance and vector to Lead Car
+    const dx = leadState.x - aiState.x;
+    const dy = leadState.y - aiState.y;
+    const distToLead = Math.hypot(dx, dy);
+
+    // Closing velocity along line connecting the two cars
+    const normX = distToLead > 0.001 ? dx / distToLead : 0;
+    const normY = distToLead > 0.001 ? dy / distToLead : 0;
+    const closingSpeed = (aiState.vx - leadState.vx) * normX + (aiState.vy - leadState.vy) * normY;
+
+    // Target angle for steering
     const targetAngle = Math.atan2(targetX - aiState.x, -(targetY - aiState.y));
     let angleDiff = targetAngle - aiState.angle;
     while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
     while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
-    const steer = Math.max(-1, Math.min(1, angleDiff * 1.8));
-
-    // Match Lead car's speed + close gap
-    let desiredSpeed = Math.min(leadState.speed, 3.10);
-    if (distToTarget > 24) desiredSpeed += 0.25;
-    if (distToTarget < 12) desiredSpeed -= 0.30;
-
-    // Check proximity buffer to avoid continuous tail ramming
-    const distToLeadCenter = Math.hypot(aiState.x - leadState.x, aiState.y - leadState.y);
-    if (distToLeadCenter < 68 && aiState.speed > leadState.speed) {
-      desiredSpeed = Math.max(0.5, leadState.speed - 0.20);
+    // Steering: mirror lead drift or steer towards tandem pocket
+    let steer = 0;
+    if (leadState.driftSlipAngle > 18 && aiState.speed > 1.0) {
+      const turnDir = Math.sign(angleDiff) || 1;
+      const targetAngle = Math.min(65, leadState.driftSlipAngle + 5);
+      if (aiState.driftSlipAngle < targetAngle - 8) {
+        steer = turnDir * 0.9;
+      } else {
+        steer = -turnDir * 0.45; // countersteer
+      }
+    } else {
+      steer = Math.max(-1, Math.min(1, angleDiff * 2.2));
     }
 
-    // Check front axle overtake prevention (Rule 8: cannot pass lead front axle)
-    const relX = aiState.x - leadState.x;
-    const relY = aiState.y - leadState.y;
-    const forwardProj = relX * leadSin - relY * leadCos;
-    if (forwardProj > 8) {
-      // Back off to prevent overtake penalty!
-      desiredSpeed = Math.max(0.4, leadState.speed - 0.4);
-    }
+    // Handbrake: flick if lead is drifting and AI needs to initiate
+    const handbrake = (leadState.driftSlipAngle > 20 && aiState.driftSlipAngle < 15 && aiState.speed > 1.2);
 
-    const throttle = (aiState.speed < desiredSpeed) ? 1.0 : 0.25;
-    const brake = (aiState.speed > desiredSpeed + 0.30);
-    const handbrake = (Math.abs(angleDiff) > 0.35 && aiState.speed > 0.75 && aiState.driftSlipAngle < 18);
+    // Anti-Overtake & Position Lock:
+    // Project Chase relative position onto track direction at Lead car
+    const wp = this.track.waypoints[leadWp];
+    const trackDirX = Math.sin(wp.angle);
+    const trackDirY = -Math.cos(wp.angle);
+    const distAlongTrack = dx * -trackDirX + dy * -trackDirY; // positive if Chase is ahead of Lead along track
+
+    const isCreepingAhead = distAlongTrack > -18; // Chase is creeping alongside or ahead of Lead
+    const isTightOnTail = (distToLead < 66);
+
+    // Throttle & Braking with Pro Tandem Proximity Control
+    let throttle = 1.0;
+    let brake = false;
+
+    // Condition 1: If creeping ahead of lead on track (distAlongTrack > -10) -> brake to stay behind!
+    if (isCreepingAhead) {
+      throttle = 0.0;
+      if (aiState.speed > leadState.speed - 0.15) brake = true;
+    }
+    // Condition 2: Anti-Ramming bumper cushion (< 66px and closing in) -> brake to prevent contact penalty!
+    else if (isTightOnTail && (aiState.speed >= leadState.speed - 0.05 || closingSpeed > 0.04)) {
+      throttle = 0.0;
+      if (aiState.speed > leadState.speed) brake = true;
+    }
+    // Condition 3: Locked in the tandem sweet spot (44px - 65px) -> match lead speed smoothly
+    else if (distToLead <= proximitySweetSpot + 12 && distToLead >= proximitySweetSpot - 8) {
+      if (aiState.speed > leadState.speed + 0.05) {
+        throttle = 0.2;
+      } else if (aiState.speed < leadState.speed - 0.05) {
+        throttle = 1.0;
+      } else {
+        throttle = 0.6;
+      }
+    }
+    // Condition 4: Lagging behind -> hammer throttle to close gap to lead
+    else if (distToLead > proximitySweetSpot + 12) {
+      throttle = (aiState.speed < maxChaseSpeed) ? 1.0 : 0.5;
+    } else {
+      throttle = (aiState.speed > leadState.speed) ? 0.1 : 0.5;
+    }
 
     return { throttle, steer, brake, handbrake };
   }

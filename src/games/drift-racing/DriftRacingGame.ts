@@ -31,6 +31,7 @@ export class DriftRacingGame implements GameInstance {
   private animationFrameId: number | null = null;
   private lastTimestamp: number = 0;
   private isDestroyed: boolean = false;
+  private resizeObserver: ResizeObserver | null = null;
 
   // Vehicle States
   public playerCar: VehiclePhysicsState;
@@ -103,6 +104,7 @@ export class DriftRacingGame implements GameInstance {
 
     // DOM Setup
     this.setupDOM();
+    this.setupResizeObserver();
 
     // Input Listeners
     this.boundKeyDown = this.handleKeyDown.bind(this);
@@ -133,17 +135,17 @@ export class DriftRacingGame implements GameInstance {
 
   private setupDOM() {
     this.container.innerHTML = `
-      <div class="relative w-full h-full flex flex-col bg-[#0b0f19] text-white overflow-hidden select-none font-sans">
+      <div id="drift-outer-wrapper" class="relative w-full h-full min-h-[100dvh] max-h-[100dvh] flex flex-col bg-[#0b0f19] text-white overflow-hidden select-none font-sans">
         
         <!-- Canvas Container -->
-        <div id="drift-canvas-container" class="relative flex-1 w-full h-full overflow-hidden">
+        <div id="drift-canvas-container" class="relative flex-1 w-full h-full overflow-hidden" style="touch-action: none;">
           <!-- Canvas injected dynamically -->
         </div>
 
-        <!-- Top Header Action Bar -->
-        <div class="absolute top-3 inset-x-3 flex items-center justify-between pointer-events-none z-10">
+        <!-- Top Header Action Bar (respects mobile notch safe area) -->
+        <div class="absolute inset-x-3 flex items-center justify-between pointer-events-none z-10" style="top: max(env(safe-area-inset-top, 8px), 10px);">
           <div class="flex items-center gap-2 pointer-events-auto">
-            <button id="drift-exit-btn" class="px-3 py-1.5 rounded-xl bg-black/60 hover:bg-black/80 border border-white/10 text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5">
+            <button id="drift-exit-btn" class="px-3 py-1.5 rounded-xl bg-black/60 hover:bg-black/80 border border-white/10 text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5 active:scale-95">
               <span>←</span> <span>Exit</span>
             </button>
             <div class="px-3 py-1 rounded-xl bg-black/60 border border-white/10 text-[11px] font-mono font-bold text-amber-300">
@@ -153,7 +155,7 @@ export class DriftRacingGame implements GameInstance {
 
           <!-- Controls HUD -->
           <div class="flex items-center gap-2 pointer-events-auto">
-            <button id="drift-sound-btn" class="w-8 h-8 rounded-xl bg-black/60 hover:bg-black/80 border border-white/10 text-xs font-bold transition-all shadow-md cursor-pointer flex items-center justify-center">
+            <button id="drift-sound-btn" class="w-8 h-8 rounded-xl bg-black/60 hover:bg-black/80 border border-white/10 text-xs font-bold transition-all shadow-md cursor-pointer flex items-center justify-center active:scale-95">
               ${sounds.enabled ? '🔊' : '🔇'}
             </button>
           </div>
@@ -166,31 +168,37 @@ export class DriftRacingGame implements GameInstance {
           </div>
         </div>
 
-        <!-- Round End Result Modal (Hidden by default) -->
-        <div id="drift-round-modal" class="hidden absolute inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-30">
-          <div class="max-w-md w-full bg-slate-900 border border-slate-700 rounded-3xl p-6 shadow-2xl flex flex-col gap-4 text-center">
-            <div id="modal-round-tag" class="text-xs font-black uppercase tracking-widest text-amber-400">ROUND 1 COMPLETED</div>
-            <h3 id="modal-round-title" class="text-2xl font-black text-white">Tandem Battle Results</h3>
+        <!-- Round End Result Modal (Hidden by default, responsive for all mobile screens) -->
+        <div id="drift-round-modal" class="hidden absolute inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 z-30 overflow-y-auto">
+          <div class="max-w-md w-full my-auto bg-slate-900 border border-slate-700/80 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xl flex flex-col gap-3 sm:gap-4 text-center">
+            <div id="modal-round-tag" class="text-[10px] sm:text-xs font-black uppercase tracking-widest text-amber-400">ROUND 1 COMPLETED</div>
+            <h3 id="modal-round-title" class="text-xl sm:text-2xl font-black text-white">Tandem Battle Results</h3>
             
-            <div class="grid grid-cols-2 gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-800 text-left">
+            <div class="grid grid-cols-2 gap-2 sm:gap-3 bg-slate-950 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-800 text-left">
               <div>
-                <div class="text-[10px] font-black uppercase text-cyan-400">YOU (${this.roundState.playerRole.toUpperCase()})</div>
-                <div id="modal-player-score" class="text-2xl font-black font-mono text-cyan-300">0 pts</div>
-                <div id="modal-player-breakdown" class="text-[10px] text-slate-400 mt-1">Angle: 0 • Zone: 0</div>
+                <div class="text-[9px] sm:text-[10px] font-black uppercase text-cyan-400 truncate">YOU (${this.roundState.playerRole.toUpperCase()})</div>
+                <div class="flex items-baseline gap-1 mt-0.5">
+                  <span id="modal-player-score" class="text-xl sm:text-2xl font-black font-mono text-cyan-300">0</span>
+                  <span class="text-[10px] sm:text-xs font-bold text-cyan-400/70">pts</span>
+                </div>
+                <div id="modal-player-breakdown" class="text-[9px] sm:text-[10px] text-slate-400 mt-1 leading-tight">Angle: 0 • Zone: 0</div>
               </div>
-              <div class="border-l border-slate-800 pl-3">
-                <div class="text-[10px] font-black uppercase text-rose-400">RIVAL (${this.roundState.enemyRole.toUpperCase()})</div>
-                <div id="modal-enemy-score" class="text-2xl font-black font-mono text-rose-300">0 pts</div>
-                <div id="modal-enemy-breakdown" class="text-[10px] text-slate-400 mt-1">Angle: 0 • Zone: 0</div>
+              <div class="border-l border-slate-800 pl-2.5 sm:pl-3">
+                <div class="text-[9px] sm:text-[10px] font-black uppercase text-rose-400 truncate">RIVAL (${this.roundState.enemyRole.toUpperCase()})</div>
+                <div class="flex items-baseline gap-1 mt-0.5">
+                  <span id="modal-enemy-score" class="text-xl sm:text-2xl font-black font-mono text-rose-300">0</span>
+                  <span class="text-[10px] sm:text-xs font-bold text-rose-400/70">pts</span>
+                </div>
+                <div id="modal-enemy-breakdown" class="text-[9px] sm:text-[10px] text-slate-400 mt-1 leading-tight">Angle: 0 • Zone: 0</div>
               </div>
             </div>
 
-            <div id="modal-round-summary" class="text-xs text-slate-300">
+            <div id="modal-round-summary" class="text-xs text-slate-300 leading-relaxed px-1">
               Role switch next round! Get ready to take the other role.
             </div>
 
-            <button id="modal-next-round-btn" class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-sm uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/25 cursor-pointer">
-              Next Round →
+            <button id="modal-next-round-btn" class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wide transition-all shadow-lg shadow-emerald-500/25 cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap">
+              <span id="modal-btn-text">Start Round 2 (Role Switch)</span> <span class="text-base leading-none">→</span>
             </button>
           </div>
         </div>
@@ -319,6 +327,16 @@ export class DriftRacingGame implements GameInstance {
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         e.preventDefault();
       }
+    }
+  }
+
+  private setupResizeObserver() {
+    const canvasContainer = this.container.querySelector('#drift-canvas-container');
+    if (canvasContainer && typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.handleResize();
+      });
+      this.resizeObserver.observe(canvasContainer);
     }
   }
 
@@ -658,32 +676,32 @@ export class DriftRacingGame implements GameInstance {
 
     const pPenalties = Math.round(pScore.collisionPenalty + pScore.overtakePenalty);
     const pPenStr = pPenalties > 0 ? ` • Penalty: -${pPenalties}` : '';
-    this.container.querySelector('#modal-player-score')!.textContent = `${pScore.totalScore} pts`;
+    this.container.querySelector('#modal-player-score')!.textContent = `${pScore.totalScore}`;
     this.container.querySelector('#modal-player-breakdown')!.textContent = 
       `Angle: ${Math.round(pScore.driftAngleScore)} • Zone: ${Math.round(pScore.zoneScore)} • Prox: ${Math.round(pScore.proximityScore)}${pPenStr}`;
 
     const ePenalties = Math.round(eScore.collisionPenalty + eScore.overtakePenalty);
     const ePenStr = ePenalties > 0 ? ` • Penalty: -${ePenalties}` : '';
-    this.container.querySelector('#modal-enemy-score')!.textContent = `${eScore.totalScore} pts`;
+    this.container.querySelector('#modal-enemy-score')!.textContent = `${eScore.totalScore}`;
     this.container.querySelector('#modal-enemy-breakdown')!.textContent = 
       `Angle: ${Math.round(eScore.driftAngleScore)} • Zone: ${Math.round(eScore.zoneScore)} • Prox: ${Math.round(eScore.proximityScore)}${ePenStr}`;
 
     const summaryEl = this.container.querySelector('#modal-round-summary')!;
-    const btnNext = this.container.querySelector('#modal-next-round-btn') as HTMLButtonElement;
+    const btnText = this.container.querySelector('#modal-btn-text');
 
     if (this.roundState.currentRoundNumber === 1) {
       summaryEl.textContent = 'Role switch next! You will swap Lead and Chase roles for Round 2.';
-      btnNext.textContent = 'Start Round 2 (Role Switch) →';
+      if (btnText) btnText.textContent = 'Start Round 2 (Role Switch)';
     } else {
       // Evaluates Match Result or triggers OMT
-      this.evaluateMatchResult(summaryEl, btnNext);
+      this.evaluateMatchResult(summaryEl, btnText);
     }
   }
 
   /**
    * Evaluates if there is a winner, or triggers OMT (One More Time) / Solo Sprint
    */
-  private evaluateMatchResult(summaryEl: Element, btnNext: HTMLButtonElement) {
+  private evaluateMatchResult(summaryEl: Element, btnText: Element | null) {
     let playerTotal = 0;
     let enemyTotal = 0;
     for (const h of this.matchHistory) {
@@ -695,24 +713,24 @@ export class DriftRacingGame implements GameInstance {
       // RULE 2: Exact tie -> OMT (One More Time) repeats 2 rounds!
       if (this.roundState.currentRoundNumber <= 2) {
         summaryEl.textContent = '🔥 SCORES ARE TIED! ONE MORE TIME (OMT) DECLARED! 2 MORE ROUNDS!';
-        btnNext.textContent = 'Start OMT Round 1 →';
+        if (btnText) btnText.textContent = 'Start OMT Round 1';
         this.roundState.roundType = 'r3_omt1';
       } else {
         // Tied again after OMT -> Sudden Death Solo Sprint!
         summaryEl.textContent = '⚡ STILL TIED AFTER OMT! SUDDEN DEATH SOLO SPRINT RUNS!';
-        btnNext.textContent = 'Start Solo Drift Sprint →';
+        if (btnText) btnText.textContent = 'Start Solo Drift Sprint';
         this.roundState.roundType = 'solo_p1';
       }
     } else if (playerTotal > enemyTotal) {
       // Player Wins!
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       summaryEl.textContent = `🏆 VICTORY! You won the Tandem Battle (${playerTotal} vs ${enemyTotal} pts)!`;
-      btnNext.textContent = 'Play Again (Rematch)';
+      if (btnText) btnText.textContent = 'Play Again (Rematch)';
       this.roundState.phase = 'match_end';
     } else {
       // Enemy Wins
       summaryEl.textContent = `DEFEAT! Rival took the Tandem Battle (${enemyTotal} vs ${playerTotal} pts).`;
-      btnNext.textContent = 'Play Again (Rematch)';
+      if (btnText) btnText.textContent = 'Play Again (Rematch)';
       this.roundState.phase = 'match_end';
     }
   }
@@ -841,6 +859,11 @@ export class DriftRacingGame implements GameInstance {
     window.removeEventListener('keydown', this.boundKeyDown);
     window.removeEventListener('keyup', this.boundKeyUp);
     window.removeEventListener('resize', this.boundResize);
+
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
 
     this.container.innerHTML = '';
   }

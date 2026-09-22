@@ -695,17 +695,23 @@ export class DriftEngine {
   ) {
     if (chaseScore.isZeroFault || chaseScore.finished) return;
 
-    // Rule 8: Chase cannot pass Lead front axle!
-    // Project vector from Lead to Chase onto Lead forward vector
-    const leadHeadingX = Math.sin(leadState.angle);
-    const leadHeadingY = -Math.cos(leadState.angle);
+    // Rule 8: Chase cannot pass Lead front axle / course position!
+    // In tandem drifting, an overtake occurs when Chase passes Lead along the course line while in proximity (< 100px)
     const relX = chaseState.x - leadState.x;
     const relY = chaseState.y - leadState.y;
-    const forwardProjection = relX * leadHeadingX + relY * leadHeadingY;
+    const distToLead = Math.hypot(relX, relY);
 
-    if (forwardProjection > 25) {
-      // Chase passed Lead's front bumper!
-      chaseScore.overtakePenalty += DRIFT_CONSTANTS.OVERTAKE_LEAD_AXLE_PENALTY * dt;
+    if (distToLead < 100) {
+      const { waypointIndex: leadWp } = this.track.getClosestProgress(leadState.x, leadState.y);
+      const wp = this.track.waypoints[leadWp];
+      const trackDirX = Math.sin(wp.angle);
+      const trackDirY = -Math.cos(wp.angle);
+      const distAlongTrack = relX * trackDirX + relY * trackDirY;
+
+      // Only an overtake if Chase is physically ahead of Lead along track direction (> 20px)
+      if (distAlongTrack > 20) {
+        chaseScore.overtakePenalty += DRIFT_CONSTANTS.OVERTAKE_LEAD_AXLE_PENALTY * dt;
+      }
     }
 
     // Proximity Scoring (Door-to-Door tandem)
