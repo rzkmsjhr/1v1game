@@ -69,10 +69,10 @@ export class DriftAI {
     const handbrake = needDrift && (state.speed > 0.68) && (state.driftSlipAngle < 22);
 
     // Throttle modulation
-    let maxSpeed = 1.70;
-    if (this.difficulty === 'easy') maxSpeed = 1.30;
-    if (this.difficulty === 'hard') maxSpeed = 2.00;
-    if (this.difficulty === 'extreme') maxSpeed = 2.25;
+    let maxSpeed = 2.05;
+    if (this.difficulty === 'easy') maxSpeed = 1.55;
+    if (this.difficulty === 'hard') maxSpeed = 2.40;
+    if (this.difficulty === 'extreme') maxSpeed = 2.70;
 
     const throttle = (state.speed < maxSpeed) ? 1.0 : 0.35;
     const brake = (state.speed > maxSpeed + 0.30);
@@ -113,7 +113,7 @@ export class DriftAI {
     const steer = Math.max(-1, Math.min(1, angleDiff * 1.8));
 
     // Match Lead car's speed + close gap
-    let desiredSpeed = Math.min(leadState.speed, 2.25);
+    let desiredSpeed = Math.min(leadState.speed, 2.70);
     if (distToTarget > 24) desiredSpeed += 0.25;
     if (distToTarget < 12) desiredSpeed -= 0.30;
 
