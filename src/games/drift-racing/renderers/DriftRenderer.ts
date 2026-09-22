@@ -42,7 +42,7 @@ export class DriftRenderer {
   private trackPath: Path2D = new Path2D();
   private redCurbsPath: Path2D = new Path2D();
   private whiteCurbsPath: Path2D = new Path2D();
-  private zonePaths: { poly: Path2D; edge: Path2D; midPt: { x: number; y: number }; name: string }[] = [];
+  private zonePaths: { poly: Path2D; edge: Path2D; chars: { char: string; x: number; y: number; angle: number }[]; name: string }[] = [];
   private checkeredWhitePath: Path2D = new Path2D();
   private checkeredDarkPath: Path2D = new Path2D();
   private checkeredBorderPath: Path2D = new Path2D();
@@ -108,7 +108,7 @@ export class DriftRenderer {
       }
     }
 
-    // 3. Clipping Zone Paths
+    // 3. Clipping Zone Paths & Precompiled Curved Centerline Text
     for (let i = 0; i < this.track.clippingZones.length; i++) {
       const zone = this.track.clippingZones[i];
       const poly = new Path2D();
@@ -126,14 +126,61 @@ export class DriftRenderer {
         else edge.lineTo(pt.x, pt.y);
       }
 
-      const midPt = zone.outerEdge.length > 0
-        ? zone.outerEdge[Math.floor(zone.outerEdge.length / 2)]
-        : { x: 0, y: 0 };
+      // Precalculate curved text characters placed along the exact ribbon centerline
+      const chars: { char: string; x: number; y: number; angle: number }[] = [];
+      const curve = zone.centerCurve;
+      if (curve && curve.length >= 2) {
+        const dists: number[] = [0];
+        for (let j = 0; j < curve.length - 1; j++) {
+          const segLen = Math.hypot(curve[j + 1].x - curve[j].x, curve[j + 1].y - curve[j].y);
+          dists.push(dists[j] + segLen);
+        }
+        const totalCurveLen = dists[dists.length - 1];
+
+        const text = zone.name.toUpperCase();
+        const letterSpacing = 2.5;
+        const charMetrics: { char: string; width: number }[] = [];
+        let textWidth = 0;
+
+        this.setFont(this.ctx, '900 10.5px sans-serif');
+        for (let k = 0; k < text.length; k++) {
+          const ch = text[k];
+          const w = ch === ' ' ? 5.5 : Math.max(this.ctx.measureText(ch).width, 5.0);
+          charMetrics.push({ char: ch, width: w });
+          textWidth += w + (k < text.length - 1 ? letterSpacing : 0);
+        }
+
+        const startOffset = Math.max(0, (totalCurveLen - textWidth) / 2);
+        let curDist = startOffset;
+
+        for (let k = 0; k < charMetrics.length; k++) {
+          const { char: ch, width: w } = charMetrics[k];
+          const s = curDist + w / 2;
+          curDist += w + letterSpacing;
+
+          if (ch === ' ') continue;
+
+          let segIdx = 0;
+          while (segIdx < curve.length - 2 && dists[segIdx + 1] < s) {
+            segIdx++;
+          }
+          const segLen = dists[segIdx + 1] - dists[segIdx];
+          const t = segLen > 0 ? (s - dists[segIdx]) / segLen : 0;
+          const p0 = curve[segIdx];
+          const p1 = curve[segIdx + 1];
+
+          const cx = p0.x + (p1.x - p0.x) * t;
+          const cy = p0.y + (p1.y - p0.y) * t;
+          const angle = Math.atan2(p1.y - p0.y, p1.x - p0.x);
+
+          chars.push({ char: ch, x: cx, y: cy, angle });
+        }
+      }
 
       this.zonePaths.push({
         poly,
         edge,
-        midPt,
+        chars,
         name: zone.name.toUpperCase()
       });
     }
@@ -362,10 +409,20 @@ export class DriftRenderer {
       ctx.lineWidth = 3.5;
       ctx.stroke(z.edge);
 
-      ctx.font = '900 11px sans-serif';
-      ctx.fillStyle = '#065f46';
+      // Precompiled curved text: centered inside the green ribbon, following track arc
+      this.setFont(ctx, '900 10.5px sans-serif');
+      ctx.fillStyle = isDay ? '#064e3b' : '#ecfdf5';
       ctx.textAlign = 'center';
-      ctx.fillText(z.name, z.midPt.x, z.midPt.y);
+      ctx.textBaseline = 'middle';
+
+      for (let c = 0; c < z.chars.length; c++) {
+        const ch = z.chars[c];
+        ctx.save();
+        ctx.translate(ch.x, ch.y);
+        ctx.rotate(ch.angle);
+        ctx.fillText(ch.char, 0, 0);
+        ctx.restore();
+      }
       ctx.restore();
     }
 

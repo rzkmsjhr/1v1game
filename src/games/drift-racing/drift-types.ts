@@ -41,6 +41,7 @@ export interface ClippingZone {
   name: string;
   polygon: Point2D[];
   outerEdge: Point2D[];
+  centerCurve: Point2D[];
   zoneWeight: number; // Score multiplier for this section
   minX: number;
   maxX: number;

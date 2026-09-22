@@ -185,6 +185,7 @@ export class DriftTrack {
   ) {
     const polygon: Point2D[] = [];
     const outerEdge: Point2D[] = [];
+    const centerCurve: Point2D[] = [];
     const pts = this.waypoints;
 
     // Follow track edge
@@ -198,6 +199,14 @@ export class DriftTrack {
       const edgeY = wp.y + wp.ny * (wp.width / 2) * dir;
       outerEdge.push({ x: edgeX, y: edgeY });
       polygon.push({ x: edgeX, y: edgeY });
+
+      // Ribbon midline (equidistant from outer edge and track asphalt edge)
+      const midDist = (wp.width / 2 - depth / 2) * dir;
+      centerCurve.push({
+        x: wp.x + wp.nx * midDist,
+        y: wp.y + wp.ny * midDist
+      });
+
       if (edgeX < minX) minX = edgeX;
       if (edgeX > maxX) maxX = edgeX;
       if (edgeY < minY) minY = edgeY;
@@ -221,6 +230,7 @@ export class DriftTrack {
       name,
       polygon,
       outerEdge,
+      centerCurve,
       zoneWeight: 1.0,
       minX,
       maxX,
