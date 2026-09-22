@@ -56,9 +56,12 @@ export class DriftRacingGame implements GameInstance {
   // Audio Screech Throttle
   private lastScreechTime: number = 0;
 
-  // Lap Completion Gate Tracking
-  private playerPassedMidpoint: boolean = false;
-  private enemyPassedMidpoint: boolean = false;
+  // Lap Completion Gate Tracking (sequential waypoint checkpoint system)
+  // Tracks the highest sequential waypoint index each car has legitimately reached.
+  // This prevents false midpoint triggers at the figure-8 crossover (800,500) where
+  // Loop 1 (wp0-2) and Loop 2 (wp58-62) share the same physical location.
+  private playerMaxWaypoint: number = 0;
+  private enemyMaxWaypoint: number = 0;
 
   // Fixed Timestep Physics Simulation (Guarantees steady 60Hz physics ticks regardless of device frame rate!)
   private physicsAccumulator: number = 0;
@@ -572,18 +575,40 @@ export class DriftRacingGame implements GameInstance {
 
   private checkFinishLine(car: VehiclePhysicsState, score: RunScoreBreakdown, isPlayer: boolean) {
     if (score.finished) return;
-    const { progress, waypointIndex } = this.track.getClosestProgress(car.x, car.y);
+    const { waypointIndex } = this.track.getClosestProgress(car.x, car.y);
+    const totalWP = this.track.waypoints.length; // 120
 
-    // Midpoint gate: vehicles must reach Loop 2 (progress 0.45 to 0.85)
-    if (progress > 0.45 && progress < 0.85) {
-      if (isPlayer) this.playerPassedMidpoint = true;
-      else this.enemyPassedMidpoint = true;
+    // Sequential waypoint advancement: only advance if the new waypoint is
+    // within a reasonable forward range from the current position (prevents cross-loop
+    // jumps at the figure-8 crossover where wp0 and wp60 share the same location)
+    const curMax = isPlayer ? this.playerMaxWaypoint : this.enemyMaxWaypoint;
+    const curRawWP = curMax % totalWP;
+
+    // Calculate forward distance in waypoint indices (wrapping around)
+    const fwdDist = (waypointIndex - curRawWP + totalWP) % totalWP;
+
+    // Only advance if within 1-15 waypoints forward (prevents jumping from wp2 → wp60)
+    if (fwdDist > 0 && fwdDist <= 15) {
+      // Cumulative counter: add the forward distance to the running total
+      // e.g., starting at 9, advancing 6 waypoints to wp15 → cumulative = 15
+      // e.g., at wp119, advancing 1 waypoint to wp0 → cumulative = 120
+      const newMax = curMax + fwdDist;
+      if (isPlayer) this.playerMaxWaypoint = newMax;
+      else this.enemyMaxWaypoint = newMax;
     }
 
-    const passedMid = isPlayer ? this.playerPassedMidpoint : this.enemyPassedMidpoint;
+    const maxWP = isPlayer ? this.playerMaxWaypoint : this.enemyMaxWaypoint;
 
-    // After completing the figure-8 loops and returning to checkered finish line at wp 10:
-    if (passedMid && waypointIndex >= 9 && waypointIndex <= 15 && car.speed > 0.4) {
+    // Midpoint gate: car must have cumulatively advanced past waypoint 54
+    // (well into Loop 2, past the crossover at wp0/wp60 ambiguity zone)
+    const passedMid = maxWP >= 54;
+
+    // Finish gate: car must have cumulatively advanced past waypoint 105 (near end of loop)
+    // AND the current closest waypoint must be in the finish line zone (wp 0-15)
+    const completedLoop = maxWP >= 105;
+    const inFinishZone = waypointIndex >= 0 && waypointIndex <= 15;
+
+    if (passedMid && completedLoop && inFinishZone && car.speed > 0.4) {
       score.finished = true;
       sounds.playDriftBonus();
     }
@@ -757,9 +782,15 @@ export class DriftRacingGame implements GameInstance {
     this.playerCar.stationaryTimer = 0;
     this.enemyCar.stationaryTimer = 0;
 
-    // Reset lap midpoint gates
-    this.playerPassedMidpoint = false;
-    this.enemyPassedMidpoint = false;
+    // Reset sequential waypoint checkpoint trackers
+    // Lead car starts at grid slot 1 (wp9), Chase at grid slot 2 (wp6)
+    if (isPlayerLead) {
+      this.playerMaxWaypoint = 9;
+      this.enemyMaxWaypoint = 6;
+    } else {
+      this.playerMaxWaypoint = 6;
+      this.enemyMaxWaypoint = 9;
+    }
 
     // Immediately snap camera to player vehicle
     this.renderer.snapCamera(this.playerCar);
