@@ -136,8 +136,8 @@ export class DriftEngine {
     // 3. Drift State & Oversteer Detection
     // The car effortlessly initiates a drift when:
     // a) Handbrake (Space / DRIFT button) is tapped
-    // b) Power-oversteer: turning with throttle at speed (Math.abs(inputs.steer) > 0.45 && inputs.throttle > 0.5 && currentSpeed > 0.50)
-    const isPowerOversteer = (Math.abs(inputs.steer) > 0.45 && inputs.throttle > 0.5 && currentSpeed > 0.50);
+    // b) Power-oversteer: turning with throttle at speed (Math.abs(inputs.steer) > 0.40 && inputs.throttle > 0.45 && currentSpeed > 0.50)
+    const isPowerOversteer = (Math.abs(inputs.steer) > 0.40 && inputs.throttle > 0.45 && currentSpeed > 0.50);
     const wantsDrift = inputs.handbrake || isPowerOversteer;
     const currentSlipAngle = Math.atan2(Math.abs(vLat), Math.max(0.15, Math.abs(vFwd))) * (180 / Math.PI);
     const isCurrentlyDrifting = currentSlipAngle > DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG || wantsDrift;
@@ -145,8 +145,8 @@ export class DriftEngine {
     // 4. Forward & Lateral Acceleration (Throttle Sustains the Drift Slide!)
     if (inputs.throttle > 0) {
       if (isCurrentlyDrifting) {
-        // While drifting, spinning rear wheels drive forward AND sustain lateral drift glide!
-        vFwd += inputs.throttle * DRIFT_CONSTANTS.ACCEL_FORWARD * 0.70;
+        // While drifting, spinning rear wheels drive forward with punch and sustain lateral slide
+        vFwd += inputs.throttle * DRIFT_CONSTANTS.ACCEL_FORWARD * 0.75;
         vLat += Math.sign(vLat || 1) * inputs.throttle * DRIFT_CONSTANTS.ACCEL_FORWARD * DRIFT_CONSTANTS.DRIFT_SUSTAIN_THRUST;
       } else {
         vFwd += inputs.throttle * DRIFT_CONSTANTS.ACCEL_FORWARD;
@@ -175,15 +175,17 @@ export class DriftEngine {
       let targetYaw = state.steerAngle * DRIFT_CONSTANTS.TURN_SPEED * speedRatio * forwardDirection;
 
       if (isCurrentlyDrifting) {
-        // In drift: tail kicks out with momentum, counter-steering balances slide
+        // In drift: responsive steering authority to twist, aim nose, or transition
         targetYaw = state.steerAngle * DRIFT_CONSTANTS.DRIFT_TURN_SPEED * speedRatio * forwardDirection;
-        if (inputs.handbrake) targetYaw *= 1.35;
-        // Holding throttle in a drift produces rear wheelspin oversteer torque that counter-steering balances!
+        if (inputs.handbrake) targetYaw *= 1.50; // Handbrake whip!
+
+        // Holding throttle in a drift produces rear wheelspin oversteer torque in direction of slide
+        // In a left slide (vLat > 0), rear steps out right -> negative yaw cuts nose inward
         if (inputs.throttle > 0.1 && Math.abs(currentSlipAngle) > 6) {
-          targetYaw += Math.sign(vLat || 1) * inputs.throttle * DRIFT_CONSTANTS.DRIFT_OVERSTEER_TORQUE;
+          targetYaw -= Math.sign(vLat || 1) * inputs.throttle * DRIFT_CONSTANTS.DRIFT_OVERSTEER_TORQUE;
         }
-        // Rotational momentum when sliding
-        state.angularVelocity += (targetYaw - state.angularVelocity) * 0.20;
+        // Responsive rotational momentum: twists crisply when steering is input
+        state.angularVelocity += (targetYaw - state.angularVelocity) * 0.32;
       } else {
         // Normal grip: heavy chassis inertia resists instant turning, builds progressive cornering bite!
         state.angularVelocity += (targetYaw - state.angularVelocity) * DRIFT_CONSTANTS.CHASSIS_INERTIA;

@@ -1,29 +1,29 @@
 export const DRIFT_CONSTANTS = {
-  // Vehicle Dynamics (Tuned for deliberate, controllable drift speed and pacing)
-  MAX_SPEED: 1.95,           // Sweet-spot calm, fully controllable top cruising speed
+  // Vehicle Dynamics (Tuned for energetic, natural drift dynamics and twistability)
+  MAX_SPEED: 2.25,           // Energetic, sweet-spot cruising speed (boosted from 1.95)
   MAX_REVERSE_SPEED: 0.9,
-  ACCEL_FORWARD: 0.029,      // Smooth, gentle acceleration for near-perfect car control
+  ACCEL_FORWARD: 0.036,      // Responsive throttle pickup (boosted from 0.029)
   BRAKE_RATE: 0.10,          // Controlled deceleration
   HANDBRAKE_RATE: 0.042,     // Handbrake cuts speed slightly while sustaining slide
   ROLLING_DRAG: 0.985,       // Natural engine coasting drag
-  TURN_SPEED: 0.044,         // Smooth, natural turning rate with body weight
-  DRIFT_TURN_SPEED: 0.065,   // Controlled yaw rotation during drift
-  STEER_RETURN_RATE: 0.16,   // Progressive steering rack movement (replaces instant twitch)
+  TURN_SPEED: 0.046,         // Smooth, natural turning rate with body weight
+  DRIFT_TURN_SPEED: 0.076,   // Crisp yaw authority to twist angle & transition
+  STEER_RETURN_RATE: 0.18,   // Progressive steering rack movement
   MAX_STEER_RAD: 0.54,       // ~31 degrees max front wheel lock
 
   // Chassis Suspension & Weight Transfer (Body Weight & G-Movement)
-  CHASSIS_INERTIA: 0.16,     // How fast chassis yaw catches up to steering (weight latency)
+  CHASSIS_INERTIA: 0.17,     // How fast chassis yaw catches up to steering (weight latency)
   SUSPENSION_ROLL_RATE: 0.18,// Suspension damping for body roll under lateral G
   SUSPENSION_PITCH_RATE: 0.20,// Suspension damping for nose dive & squat
   MAX_BODY_ROLL_RAD: 0.065,  // Max visual body roll angle (~3.7 degrees)
   MAX_BODY_PITCH_RAD: 0.055, // Max visual dive/squat
 
-  // Lateral Grip & Drift Sustain (Spinning Rear Wheels Sustain the Slide)
+  // Lateral Grip & Drift Sustain (Natural Tire Physics)
   LATERAL_GRIP_NORMAL: 0.78, // High grip road adherence (clean recovery when lifting throttle)
-  LATERAL_GRIP_DRIFT: 0.992, // Ultra-low friction while rear wheels are spinning under gas
-  LATERAL_GRIP_HANDBRAKE: 0.985, // Friction when yanking handbrake
-  DRIFT_SUSTAIN_THRUST: 0.70, // Throttle powers lateral drift glide instead of killing the slide
-  DRIFT_OVERSTEER_TORQUE: 0.015, // Rear wheelspin yaw torque that counter-steering balances
+  LATERAL_GRIP_DRIFT: 0.978, // Natural tire slide friction (requires throttle to sustain, not Teflon ice)
+  LATERAL_GRIP_HANDBRAKE: 0.982, // Friction when yanking handbrake
+  DRIFT_SUSTAIN_THRUST: 0.45, // Throttle powers drift glide without locking car on rails
+  DRIFT_OVERSTEER_TORQUE: 0.008, // RWD oversteer torque that rewards counter-steering
 
   // Vehicle Dimensions (px)
   AE86: {
@@ -42,7 +42,7 @@ export const DRIFT_CONSTANTS = {
   },
 
   // Scoring Rules & Thresholds
-  DRIFT_INIT_ANGLE_DEG: 12, // Lower threshold so getting sideways rewards points immediately
+  DRIFT_INIT_ANGLE_DEG: 13, // Natural drift initiation angle threshold
   MAX_DRIFT_ANGLE_DEG: 95, // Spinout threshold: > 95° = TWIST FAULT (0 pts round)
   
   // Throttle Commitment
