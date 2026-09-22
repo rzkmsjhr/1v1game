@@ -658,11 +658,13 @@ export class DriftRacingGame implements GameInstance {
 
     const pPenalties = Math.round(pScore.collisionPenalty + pScore.overtakePenalty);
     const pPenStr = pPenalties > 0 ? ` • Penalty: -${pPenalties}` : '';
+    this.container.querySelector('#modal-player-score')!.textContent = `${pScore.totalScore} pts`;
     this.container.querySelector('#modal-player-breakdown')!.textContent = 
       `Angle: ${Math.round(pScore.driftAngleScore)} • Zone: ${Math.round(pScore.zoneScore)} • Prox: ${Math.round(pScore.proximityScore)}${pPenStr}`;
 
     const ePenalties = Math.round(eScore.collisionPenalty + eScore.overtakePenalty);
     const ePenStr = ePenalties > 0 ? ` • Penalty: -${ePenalties}` : '';
+    this.container.querySelector('#modal-enemy-score')!.textContent = `${eScore.totalScore} pts`;
     this.container.querySelector('#modal-enemy-breakdown')!.textContent = 
       `Angle: ${Math.round(eScore.driftAngleScore)} • Zone: ${Math.round(eScore.zoneScore)} • Prox: ${Math.round(eScore.proximityScore)}${ePenStr}`;
 

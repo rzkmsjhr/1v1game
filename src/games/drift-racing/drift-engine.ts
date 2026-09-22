@@ -327,12 +327,11 @@ export class DriftEngine {
           state.speed = Math.min(state.speed, Math.hypot(state.vx, state.vy));
         }
 
-        // Hard wall stop DQ check: ONLY if car slammed into barrier from high speed!
+        // Hard wall crash check: apply collision penalty when car hits barrier hard
         const currentSpeed = Math.hypot(state.vx, state.vy);
-        if (prevSpeed > 2.8 && currentSpeed < 0.3) {
+        if (prevSpeed > 2.2 && currentSpeed < 0.8) {
           wallStop = true;
-          score.isZeroFault = true;
-          score.faultReason = 'HARD CRASH (WALL STOP)';
+          score.collisionPenalty += 40;
         }
         break;
       }
@@ -653,17 +652,11 @@ export class DriftEngine {
   private scoreLeadRun(state: VehiclePhysicsState, score: RunScoreBreakdown, dt: number) {
     if (score.isZeroFault || score.finished) return;
 
-    // Rule 6: Over-rotation / Twist fault (> 95° spinout = 0 pts)
-    if (state.driftSlipAngle > DRIFT_CONSTANTS.MAX_DRIFT_ANGLE_DEG) {
-      score.isZeroFault = true;
-      score.faultReason = 'SPINOUT / OVER-ROTATION (TWIST)';
-      return;
-    }
-
-    // Active Drift Scoring
+    // Active Drift Scoring (rewards high-angle slides, twist transitions & 360 stunts)
     if (state.driftSlipAngle >= DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG && state.speed > 0.8) {
-      // Angle points (higher degrees approaching 90° awards more points)
-      const angleRatio = Math.min(1.0, state.driftSlipAngle / 85);
+      // Angle points: rewards high angle approaching 90° (capped so 360 stunts don't break scoring)
+      const effectiveAngle = Math.min(90, state.driftSlipAngle);
+      const angleRatio = Math.min(1.0, effectiveAngle / 85);
       const angleRate = Math.pow(angleRatio, 1.6) * 45;
       score.driftAngleScore += angleRate * dt;
 
@@ -701,13 +694,6 @@ export class DriftEngine {
     dt: number
   ) {
     if (chaseScore.isZeroFault || chaseScore.finished) return;
-
-    // Rule 6: Over-rotation / Twist fault (> 95° spinout = 0 pts)
-    if (chaseState.driftSlipAngle > DRIFT_CONSTANTS.MAX_DRIFT_ANGLE_DEG) {
-      chaseScore.isZeroFault = true;
-      chaseScore.faultReason = 'SPINOUT / OVER-ROTATION (TWIST)';
-      return;
-    }
 
     // Rule 8: Chase cannot pass Lead front axle!
     // Project vector from Lead to Chase onto Lead forward vector
