@@ -6,6 +6,7 @@ import type {
   CarModelType,
   MatchHistoryEntry
 } from './drift-types';
+import type { NetworkHealth } from '../../network/webrtc-peer';
 import { DriftTrack } from './drift-track';
 import { DriftEngine } from './drift-engine';
 import { DriftRenderer } from './renderers/DriftRenderer';
@@ -32,6 +33,29 @@ export class DriftRacingGame implements GameInstance {
   private lastTimestamp: number = 0;
   private isDestroyed: boolean = false;
   private resizeObserver: ResizeObserver | null = null;
+
+  // Network Health HUD & Throttling
+  private lastSyncBroadcastTime: number = 0;
+  private netPingEl: HTMLElement | null = null;
+  private netDotEl: HTMLElement | null = null;
+  private netTextEl: HTMLElement | null = null;
+  private peerAwayBannerEl: HTMLElement | null = null;
+
+  // Remote Vehicle Interpolation & Dead Reckoning
+  private remoteTargetX: number = 0;
+  private remoteTargetY: number = 0;
+  private remoteTargetAngle: number = 0;
+  private remoteTargetSpeed: number = 0;
+  private remoteTargetSteer: number = 0;
+  private remoteTargetSlipAngle: number = 0;
+  private remoteTargetThrottle: number = 0;
+  private remoteTargetHandbrake: boolean = false;
+  private lastRemoteUpdateTime: number = 0;
+
+  // Two-Way Rematch & Round Synchronization
+  private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
+  private roundReadyState: 'idle' | 'waiting_for_peer' = 'idle';
+  private peerReadyForNextRound: boolean = false;
 
   // Vehicle States
   public playerCar: VehiclePhysicsState;
@@ -151,6 +175,10 @@ export class DriftRacingGame implements GameInstance {
             <div class="px-3 py-1 rounded-xl bg-black/60 border border-white/10 text-[11px] font-mono font-bold text-amber-300">
               ${this.isOnline ? '🌐 1v1 ONLINE' : `🤖 VS AI (${(this.session.aiDifficulty || 'MED').toUpperCase()})`}
             </div>
+            <span id="drift-net-ping" class="${this.isOnline ? 'inline-flex' : 'hidden'} items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5">
+              <span id="drift-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span id="drift-net-text">30ms</span>
+            </span>
           </div>
 
           <!-- Controls HUD -->
@@ -159,6 +187,11 @@ export class DriftRacingGame implements GameInstance {
               ${sounds.enabled ? '🔊' : '🔇'}
             </button>
           </div>
+        </div>
+
+        <!-- Inactive Tab / Opponent Away Banner -->
+        <div id="drift-peer-away-banner" class="hidden absolute top-14 left-1/2 -translate-x-1/2 z-20 text-center py-1 px-3 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-[11px] tracking-wide backdrop-blur-md animate-pulse shadow-lg pointer-events-none">
+          ⚠️ Opponent is tabbed out / minimized
         </div>
 
         <!-- Countdown Banner Overlay -->
@@ -363,36 +396,131 @@ export class DriftRacingGame implements GameInstance {
     const peer = this.session.peer;
     const origOnMessage = peer.events?.onMessage;
     const origOnStatusChange = peer.events?.onStatusChange;
+    const origOnHealthChange = peer.events?.onHealthChange;
 
     peer.events = {
       ...peer.events,
       onMessage: (msg: any) => {
         origOnMessage?.(msg);
-        if (msg.type === 'DRIFT_SYNC') {
-          if (this.roundState.phase !== 'racing') return;
-          this.enemyCar.x = msg.x;
-          this.enemyCar.y = msg.y;
-          this.enemyCar.angle = msg.angle;
-          this.enemyCar.steerAngle = msg.steer;
-          this.enemyCar.speed = msg.speed;
-          this.enemyCar.driftSlipAngle = msg.slipAngle;
-          this.enemyCar.throttle = msg.throttle;
-          this.enemyCar.handbrake = msg.handbrake;
-        } else if (msg.type === 'DRIFT_ROUND_END') {
-          this.endRound('Round Completed');
-        } else if (msg.type === 'DRIFT_REMATCH') {
-          this.restartFullMatch();
-        }
+        this.handleNetworkMessage(msg);
       },
       onStatusChange: (status: string, message?: string) => {
         origOnStatusChange?.(status as any, message);
         if (status === 'disconnected') {
           if (this.roundState.phase !== 'match_end') {
-            this.endRound('Opponent disconnected');
+            this.handleForfeitVictory('Opponent disconnected. You win by forfeit!');
           }
         }
+      },
+      onHealthChange: (health: NetworkHealth) => {
+        origOnHealthChange?.(health);
+        this.updateNetworkHealthHUD(health);
       }
     };
+
+    peer.flushEarlyMessages?.();
+    if (peer.isConnected) {
+      this.updateNetworkHealthHUD({
+        rtt: peer.currentRtt,
+        status: peer.networkQuality,
+        isPeerVisible: peer.isPeerVisible
+      });
+    }
+  }
+
+  private updateNetworkHealthHUD(health: NetworkHealth) {
+    const pingEl = this.netPingEl || (this.netPingEl = this.container.querySelector('#drift-net-ping'));
+    const dotEl = this.netDotEl || (this.netDotEl = this.container.querySelector('#drift-net-dot'));
+    const textEl = this.netTextEl || (this.netTextEl = this.container.querySelector('#drift-net-text'));
+    const awayBanner = this.peerAwayBannerEl || (this.peerAwayBannerEl = this.container.querySelector('#drift-peer-away-banner'));
+
+    if (pingEl && dotEl && textEl) {
+      if (health.status === 'stalled') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+        textEl.textContent = 'Lag ⚠️';
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+      } else if (health.status === 'poor') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+        textEl.textContent = `${health.rtt}ms`;
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+      } else if (health.status === 'moderate') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+        textEl.textContent = `${health.rtt}ms`;
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5';
+      } else {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+        textEl.textContent = `${health.rtt || 30}ms`;
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5';
+      }
+    }
+
+    if (awayBanner) {
+      if (!health.isPeerVisible) {
+        awayBanner.classList.remove('hidden');
+      } else {
+        awayBanner.classList.add('hidden');
+      }
+    }
+  }
+
+  private handleNetworkMessage(msg: any) {
+    switch (msg.type) {
+      case 'PLAYER_LEAVE':
+        if (this.roundState.phase !== 'match_end') {
+          this.handleForfeitVictory('Opponent forfeited the match.');
+        }
+        break;
+
+      case 'DRIFT_SYNC': {
+        this.remoteTargetX = msg.x;
+        this.remoteTargetY = msg.y;
+        this.remoteTargetAngle = msg.angle;
+        this.remoteTargetSpeed = msg.speed ?? 0;
+        this.remoteTargetSteer = msg.steer ?? 0;
+        this.remoteTargetSlipAngle = msg.slipAngle ?? 0;
+        this.remoteTargetThrottle = msg.throttle ?? 0;
+        this.remoteTargetHandbrake = !!msg.handbrake;
+        this.lastRemoteUpdateTime = performance.now();
+
+        // Snap immediately if large displacement (e.g. countdown, start, or desync > 150px)
+        const dist = Math.hypot(this.enemyCar.x - msg.x, this.enemyCar.y - msg.y);
+        if (dist > 150 || this.roundState.phase === 'countdown') {
+          this.enemyCar.x = msg.x;
+          this.enemyCar.y = msg.y;
+          this.enemyCar.angle = msg.angle;
+          this.enemyCar.speed = this.remoteTargetSpeed;
+        }
+
+        if (typeof msg.score === 'number') {
+          this.roundState.enemyScore.totalScore = msg.score;
+        }
+        if (msg.finished && !this.roundState.enemyScore.finished) {
+          this.roundState.enemyScore.finished = true;
+        }
+        break;
+      }
+
+      case 'DRIFT_ROUND_END':
+        this.endRound('Round Completed');
+        break;
+
+      case 'DRIFT_ROUND_READY':
+        this.peerReadyForNextRound = true;
+        if (this.roundReadyState === 'waiting_for_peer') {
+          this.handleProceedNextRound();
+        }
+        break;
+
+      case 'DRIFT_REMATCH_OFFER':
+      case 'REMATCH_REQUEST':
+        this.showRematchOffer();
+        break;
+
+      case 'DRIFT_REMATCH_ACCEPT':
+      case 'REMATCH_ACCEPT':
+        this.startNewMatch(msg.seed);
+        break;
+    }
   }
 
   private tickCounter: number = 0;
@@ -421,6 +549,73 @@ export class DriftRacingGame implements GameInstance {
     // Prevent lag spiral only if accumulator exceeded 100ms (e.g. inactive background tab)
     if (this.physicsAccumulator > 0.1) {
       this.physicsAccumulator = 0;
+    }
+
+    // Smooth Remote Vehicle Interpolation & Dead Reckoning (Online PvP)
+    if (this.isOnline && this.roundState.phase === 'racing') {
+      const lerpFactor = 0.45;
+      const dist = Math.hypot(this.remoteTargetX - this.enemyCar.x, this.remoteTargetY - this.enemyCar.y);
+
+      if (dist > 150) {
+        // Large warp or desync -> snap immediately
+        this.enemyCar.x = this.remoteTargetX;
+        this.enemyCar.y = this.remoteTargetY;
+      } else if (dist > 0.5) {
+        this.enemyCar.x += (this.remoteTargetX - this.enemyCar.x) * lerpFactor;
+        this.enemyCar.y += (this.remoteTargetY - this.enemyCar.y) * lerpFactor;
+      }
+
+      // Dead reckoning: extrapolate forward if packet is between 30ms and 400ms old
+      const timeSinceUpdate = (timestamp - this.lastRemoteUpdateTime) / 1000;
+      if (timeSinceUpdate > 0.033 && timeSinceUpdate < 0.4 && this.remoteTargetSpeed > 1) {
+        const deadReckonDist = this.remoteTargetSpeed * Math.min(elapsed, 0.05);
+        this.enemyCar.x += Math.cos(this.enemyCar.angle) * deadReckonDist;
+        this.enemyCar.y += Math.sin(this.enemyCar.angle) * deadReckonDist;
+      }
+
+      // Smooth Angle Lerping with wrap-around (-PI to PI)
+      let diffAngle = this.remoteTargetAngle - this.enemyCar.angle;
+      while (diffAngle > Math.PI) diffAngle -= Math.PI * 2;
+      while (diffAngle < -Math.PI) diffAngle += Math.PI * 2;
+      this.enemyCar.angle += diffAngle * lerpFactor;
+
+      // Smooth auxiliary controls
+      this.enemyCar.speed += (this.remoteTargetSpeed - this.enemyCar.speed) * lerpFactor;
+      this.enemyCar.steerAngle += (this.remoteTargetSteer - this.enemyCar.steerAngle) * lerpFactor;
+      this.enemyCar.driftSlipAngle += (this.remoteTargetSlipAngle - this.enemyCar.driftSlipAngle) * lerpFactor;
+      this.enemyCar.throttle = this.remoteTargetThrottle;
+      this.enemyCar.handbrake = this.remoteTargetHandbrake;
+
+      // Watchdog timer: If remote player has not sent an update for > 2.5s, gently coast to a stop
+      if (timeSinceUpdate > 2.5) {
+        this.enemyCar.speed *= 0.95;
+      }
+    }
+
+    // Adaptive Throttled Network Broadcast: ~30Hz during racing (every 33ms), 2.5Hz during countdown/idle
+    if (this.isOnline && this.session.peer?.isConnected) {
+      const syncInterval = (this.roundState.phase === 'racing') ? 33 : 400;
+      if (timestamp - this.lastSyncBroadcastTime >= syncInterval) {
+        this.lastSyncBroadcastTime = timestamp;
+        this.session.peer.sendMessage({
+          type: 'DRIFT_SYNC',
+          x: this.playerCar.x,
+          y: this.playerCar.y,
+          angle: this.playerCar.angle,
+          speed: this.playerCar.speed,
+          slipAngle: this.playerCar.driftSlipAngle,
+          throttle: this.playerCar.throttle,
+          steer: this.playerCar.steerAngle,
+          handbrake: this.playerCar.handbrake,
+          score: this.roundState.playerScore.totalScore,
+          roundScore: this.roundState.playerScore.totalScore,
+          faults: [],
+          finished: this.roundState.playerScore.finished,
+          phase: this.roundState.phase,
+          roundNum: this.roundState.currentRoundNumber,
+          timestamp
+        });
+      }
     }
 
     // Sub-tick render interpolation factor (0.0 to 1.0) for silky 60/90/120Hz display refresh
@@ -553,23 +748,6 @@ export class DriftRacingGame implements GameInstance {
         }
       }
 
-      // 3. Broadcast State in Online mode
-      if (this.isOnline && this.session.peer) {
-        this.session.peer.sendMessage({
-          type: 'DRIFT_SYNC',
-          x: this.playerCar.x,
-          y: this.playerCar.y,
-          angle: this.playerCar.angle,
-          speed: this.playerCar.speed,
-          slipAngle: this.playerCar.driftSlipAngle,
-          score: this.roundState.playerScore.totalScore,
-          throttle: this.playerCar.throttle,
-          steer: this.playerCar.steerAngle,
-          handbrake: this.playerCar.handbrake,
-          roundScore: this.roundState.playerScore.totalScore,
-          faults: []
-        });
-      }
 
       // 4. Audio synthesis: Screech on drift
       if (this.playerCar.driftSlipAngle >= DRIFT_CONSTANTS.DRIFT_INIT_ANGLE_DEG && performance.now() - this.lastScreechTime > 120) {
@@ -739,32 +917,84 @@ export class DriftRacingGame implements GameInstance {
       // Player Wins!
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       summaryEl.textContent = `🏆 VICTORY! You won the Tandem Battle (${playerTotal} vs ${enemyTotal} pts)!`;
-      if (btnText) btnText.textContent = 'Play Again (Rematch)';
       this.roundState.phase = 'match_end';
+      if (this.rematchState === 'offer_received') {
+        this.showRematchOffer();
+      } else if (btnText) {
+        btnText.textContent = 'Play Again (Rematch)';
+      }
     } else {
       // Enemy Wins
       summaryEl.textContent = `DEFEAT! Rival took the Tandem Battle (${enemyTotal} vs ${playerTotal} pts).`;
-      if (btnText) btnText.textContent = 'Play Again (Rematch)';
       this.roundState.phase = 'match_end';
+      if (this.rematchState === 'offer_received') {
+        this.showRematchOffer();
+      } else if (btnText) {
+        btnText.textContent = 'Play Again (Rematch)';
+      }
     }
   }
 
   private handleProceedNextRound() {
+    // If match ended, handle Two-Way Rematch Protocol
     if (this.roundState.phase === 'match_end') {
-      this.restartFullMatch();
+      if (this.session.mode === 'ai') {
+        this.startNewMatch();
+        return;
+      }
+
+      if (this.rematchState === 'offer_received') {
+        const seed = Date.now();
+        this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT', seed });
+        this.startNewMatch(seed);
+      } else if (this.rematchState === 'idle') {
+        this.rematchState = 'requested';
+        const nextBtn = this.container.querySelector('#modal-next-round-btn');
+        const btnText = this.container.querySelector('#modal-btn-text');
+        if (btnText) btnText.textContent = 'Waiting for Opponent...';
+        if (nextBtn) nextBtn.classList.add('opacity-70', 'cursor-not-allowed');
+        this.session.peer?.sendMessage({ type: 'REMATCH_REQUEST' });
+      }
       return;
     }
+
+    // In Online PvP, synchronize ready state before entering Round 2
+    if (this.isOnline && this.session.peer?.isConnected) {
+      if (!this.peerReadyForNextRound && this.roundReadyState === 'idle') {
+        this.roundReadyState = 'waiting_for_peer';
+        const nextBtn = this.container.querySelector('#modal-next-round-btn');
+        const btnText = this.container.querySelector('#modal-btn-text');
+        if (btnText) btnText.textContent = 'Waiting for Opponent...';
+        if (nextBtn) nextBtn.classList.add('opacity-70', 'cursor-not-allowed');
+        this.session.peer.sendMessage({
+          type: 'DRIFT_ROUND_READY',
+          roundNum: this.roundState.currentRoundNumber + 1
+        });
+        return;
+      }
+      // If peer already signaled ready, notify them that we're launching now!
+      this.session.peer.sendMessage({
+        type: 'DRIFT_ROUND_READY',
+        roundNum: this.roundState.currentRoundNumber + 1
+      });
+    }
+
+    this.roundReadyState = 'idle';
+    this.peerReadyForNextRound = false;
 
     const modal = this.container.querySelector('#drift-round-modal') as HTMLElement;
     if (modal) modal.classList.add('hidden');
 
-    // Advance Round & Swap Roles
+    const nextBtn = this.container.querySelector('#modal-next-round-btn');
+    if (nextBtn) nextBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+
+    // Advance Round & Swap Roles cleanly for both Host and Guest!
     this.roundState.currentRoundNumber++;
 
     if (this.roundState.currentRoundNumber === 2) {
-      // Normal Round 2: swap roles!
-      this.roundState.playerRole = 'chase';
-      this.roundState.enemyRole = 'lead';
+      const prevRole = this.roundState.playerRole;
+      this.roundState.playerRole = (prevRole === 'lead') ? 'chase' : 'lead';
+      this.roundState.enemyRole = (this.roundState.playerRole === 'lead') ? 'chase' : 'lead';
     } else if (this.roundState.roundType === 'r3_omt1') {
       this.roundState.playerRole = 'lead';
       this.roundState.enemyRole = 'chase';
@@ -812,6 +1042,17 @@ export class DriftRacingGame implements GameInstance {
       this.playerCar = this.engine.createVehicleState(chaseSlot.x, chaseSlot.y, chaseSlot.angle, this.playerModel);
     }
 
+    // Initialize remote target to starting vehicle position
+    this.remoteTargetX = this.enemyCar.x;
+    this.remoteTargetY = this.enemyCar.y;
+    this.remoteTargetAngle = this.enemyCar.angle;
+    this.remoteTargetSpeed = 0;
+    this.remoteTargetSteer = 0;
+    this.remoteTargetSlipAngle = 0;
+    this.remoteTargetThrottle = 0;
+    this.remoteTargetHandbrake = false;
+    this.lastRemoteUpdateTime = performance.now();
+
     // Reset stationary timeout timers
     this.playerCar.stationaryTimer = 0;
     this.enemyCar.stationaryTimer = 0;
@@ -832,13 +1073,40 @@ export class DriftRacingGame implements GameInstance {
     this.renderer.snapCamera(this.playerCar);
   }
 
-  private restartFullMatch() {
+  private showRematchOffer() {
+    this.rematchState = 'offer_received';
+    const nextBtn = this.container.querySelector('#modal-next-round-btn');
+    const btnText = this.container.querySelector('#modal-btn-text');
+    if (btnText) btnText.textContent = 'Accept Rematch!';
+    if (nextBtn) {
+      nextBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+      nextBtn.className = 'w-full sm:w-2/3 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wide transition-all shadow-lg shadow-emerald-500/30 cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap animate-pulse';
+    }
+  }
+
+  private startNewMatch(_seed?: number) {
+    this.rematchState = 'idle';
+    this.roundReadyState = 'idle';
+    this.peerReadyForNextRound = false;
+
+    const modal = this.container.querySelector('#drift-round-modal') as HTMLElement;
+    if (modal) modal.classList.add('hidden');
+
+    const nextBtn = this.container.querySelector('#modal-next-round-btn');
+    const btnText = this.container.querySelector('#modal-btn-text');
+    if (nextBtn) {
+      nextBtn.classList.remove('opacity-70', 'cursor-not-allowed', 'animate-pulse');
+      nextBtn.className = 'w-full sm:w-2/3 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wide transition-all shadow-lg shadow-emerald-500/25 cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap';
+    }
+    if (btnText) btnText.textContent = 'Start Round 2 (Role Switch)';
+
+    const isGuest = this.isOnline && !this.isHost;
     this.matchHistory = [];
     this.roundState = {
       currentRoundNumber: 1,
       roundType: 'r1_normal',
-      playerRole: 'lead',
-      enemyRole: 'chase',
+      playerRole: isGuest ? 'chase' : 'lead',
+      enemyRole: isGuest ? 'lead' : 'chase',
       playerScore: this.engine.createInitialScore(),
       enemyScore: this.engine.createInitialScore(),
       countdownValue: 3,
@@ -846,18 +1114,44 @@ export class DriftRacingGame implements GameInstance {
       phaseTimer: 3.5
     };
 
-    const modal = this.container.querySelector('#drift-round-modal') as HTMLElement;
-    if (modal) modal.classList.add('hidden');
+    // Reset countdown display
+    const overlay = this.container.querySelector('#drift-countdown-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+    const cdText = this.container.querySelector('#drift-countdown-text');
+    if (cdText) {
+      cdText.textContent = '3';
+      cdText.className = 'text-6xl sm:text-8xl font-black font-mono tracking-tighter text-amber-400 drop-shadow-[0_0_25px_rgba(245,158,11,0.8)]';
+    }
 
     this.renderer.clearSkidmarks();
     this.resetGridPositions();
     sounds.playRoundGong();
+  }
 
-    if (this.isOnline && this.session.peer) {
-      this.session.peer.sendMessage({
-        type: 'DRIFT_REMATCH',
-        seed: Date.now()
-      });
+  private handleForfeitVictory(reason: string) {
+    this.roundState.phase = 'match_end';
+    sounds.playFanfare();
+    confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+
+    const modal = this.container.querySelector('#drift-round-modal') as HTMLElement;
+    if (modal) modal.classList.remove('hidden');
+
+    const titleEl = this.container.querySelector('#modal-round-title');
+    if (titleEl) titleEl.textContent = '🏆 VICTORY!';
+
+    const tagEl = this.container.querySelector('#modal-round-tag');
+    if (tagEl) tagEl.textContent = 'MATCH WON BY FORFEIT';
+
+    const summaryEl = this.container.querySelector('#modal-round-summary');
+    if (summaryEl) summaryEl.textContent = reason;
+
+    const btnText = this.container.querySelector('#modal-btn-text');
+    if (btnText) btnText.textContent = 'Play Again';
+
+    const nextBtn = this.container.querySelector('#modal-next-round-btn');
+    if (nextBtn) {
+      nextBtn.classList.remove('opacity-70', 'cursor-not-allowed', 'animate-pulse');
+      nextBtn.className = 'w-full sm:w-2/3 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wide transition-all shadow-lg shadow-emerald-500/25 cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap';
     }
   }
 
@@ -870,6 +1164,12 @@ export class DriftRacingGame implements GameInstance {
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
+    }
+
+    if (this.isOnline && this.session.peer?.isConnected) {
+      try {
+        this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+      } catch {}
     }
 
     window.removeEventListener('keydown', this.boundKeyDown);

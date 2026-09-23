@@ -77,7 +77,25 @@ export type NetworkMessage =
   | { type: 'WATER_REMATCH'; seed: number }
   | { type: 'WATER_POUR_TUBE'; color: string; srcIndex: number; dstIndex: number }
   | { type: 'WATER_POUR_BOWL'; color: string; count: number; newBowlCount: number; isCompleted: boolean; score: number }
-  | { type: 'DRIFT_SYNC'; x: number; y: number; angle: number; speed: number; slipAngle: number; score: number; throttle: number; steer: number; handbrake: boolean; roundScore: number; faults: string[] }
+  | {
+      type: 'DRIFT_SYNC';
+      x: number;
+      y: number;
+      angle: number;
+      speed: number;
+      slipAngle: number;
+      score: number;
+      throttle: number;
+      steer: number;
+      handbrake: boolean;
+      roundScore: number;
+      faults: string[];
+      finished?: boolean;
+      phase?: string;
+      roundNum?: number;
+      timestamp?: number;
+    }
+  | { type: 'DRIFT_ROUND_READY'; roundNum: number }
   | { type: 'DRIFT_ROUND_END'; roundNum: number; score: number; timeElapsed: number; dq: boolean }
   | { type: 'DRIFT_REMATCH'; seed: number }
   | { type: 'CUSTOM'; payload: any };

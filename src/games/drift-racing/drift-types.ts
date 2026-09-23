@@ -116,11 +116,16 @@ export interface MatchHistoryEntry {
 
 export interface DriftPeerMessage {
   type: 
+    | 'DRIFT_SYNC'
     | 'DRIFT_SYNC_STATE'
     | 'DRIFT_ROUND_READY'
     | 'DRIFT_ROUND_START'
     | 'DRIFT_ROUND_END'
     | 'DRIFT_REMATCH_OFFER'
-    | 'DRIFT_REMATCH_ACCEPT';
+    | 'DRIFT_REMATCH_ACCEPT'
+    | 'REMATCH_REQUEST'
+    | 'REMATCH_ACCEPT'
+    | 'PLAYER_LEAVE';
   payload?: any;
+  [key: string]: any;
 }
