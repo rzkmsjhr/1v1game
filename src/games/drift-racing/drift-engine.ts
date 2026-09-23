@@ -317,26 +317,28 @@ export class DriftEngine {
 
           // Always push along the guaranteed INWARD normal into the track!
           const pushDist = circRadius - dist;
-          state.x += wall.nxIn * (pushDist + 0.6);
-          state.y += wall.nyIn * (pushDist + 0.6);
+          state.x += wall.nxIn * (pushDist + 1.2);
+          state.y += wall.nyIn * (pushDist + 1.2);
 
-          // Deflect velocity: preserve momentum sliding along the barrier
+          // Deflect velocity: reflect normal component and preserve tangential slide momentum
           const dot = state.vx * wall.nxIn + state.vy * wall.nyIn;
           if (dot < 0) {
             state.vx -= dot * wall.nxIn * 1.35;
             state.vy -= dot * wall.nyIn * 1.35;
-            state.vx *= 0.82;
-            state.vy *= 0.82;
-            state.speed = Math.min(state.speed, Math.hypot(state.vx, state.vy));
+            state.vx *= 0.94;
+            state.vy *= 0.94;
+            state.speed = Math.hypot(state.vx, state.vy);
           }
 
-          // Dynamic yaw torque on bumper clip: turns car away from wall
+          // Dynamic yaw torque on bumper clip: turns car away from wall into open track
+          // In screen coordinates (y-down), rotation from fwd to inward normal is: (fwdX * nyIn - fwdY * nxIn)
+          const inwardRotTorque = (fwdX * wall.nyIn - fwdY * wall.nxIn);
           if (circ.isFront) {
-            const torque = (wall.nxIn * fwdY - wall.nyIn * fwdX) * 0.08;
-            state.angularVelocity = Math.max(-0.25, Math.min(0.25, state.angularVelocity + torque));
+            const torque = inwardRotTorque * 0.12;
+            state.angularVelocity = Math.max(-0.28, Math.min(0.28, state.angularVelocity + torque));
           } else if (circ.isRear) {
-            const torque = -(wall.nxIn * fwdY - wall.nyIn * fwdX) * 0.06;
-            state.angularVelocity = Math.max(-0.25, Math.min(0.25, state.angularVelocity + torque));
+            const torque = -inwardRotTorque * 0.08;
+            state.angularVelocity = Math.max(-0.28, Math.min(0.28, state.angularVelocity + torque));
           }
 
           // Hard wall crash check: apply collision penalty when car hits barrier hard
@@ -361,16 +363,16 @@ export class DriftEngine {
       const outNx = (state.x - trackPt.cx) / dOut;
       const outNy = (state.y - trackPt.cy) / dOut;
 
-      state.x = trackPt.cx + outNx * maxAllowedDist;
-      state.y = trackPt.cy + outNy * maxAllowedDist;
+      state.x = trackPt.cx + outNx * (maxAllowedDist - 1.5);
+      state.y = trackPt.cy + outNy * (maxAllowedDist - 1.5);
 
       // Deflect any velocity attempting to pull vehicle outside
       const vNorm = state.vx * outNx + state.vy * outNy;
       if (vNorm > 0) {
         state.vx -= vNorm * outNx * 1.35;
         state.vy -= vNorm * outNy * 1.35;
-        state.vx *= 0.82;
-        state.vy *= 0.82;
+        state.vx *= 0.92;
+        state.vy *= 0.92;
         state.speed = Math.hypot(state.vx, state.vy);
         score.collisionPenalty += 40 * dt;
       }
