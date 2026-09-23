@@ -39,30 +39,37 @@ export class DriftTrack {
     this.generateWallsAndZones();
     this.allWalls = [...this.outerWalls, ...this.innerWalls];
 
-    // Checkered Start / Finish Line on Straightaway (wp 10)
-    const wp10 = this.waypoints[10];
+    // Checkered Start / Finish Line in Middle X Transition Area (wp 1)
+    const wp1 = this.waypoints[1];
     this.startLine = {
-      p1: { x: wp10.x - wp10.nx * (wp10.width / 2), y: wp10.y - wp10.ny * (wp10.width / 2) },
-      p2: { x: wp10.x + wp10.nx * (wp10.width / 2), y: wp10.y + wp10.ny * (wp10.width / 2) },
-      angle: wp10.angle
+      p1: { x: wp1.x - wp1.nx * (wp1.width / 2), y: wp1.y - wp1.ny * (wp1.width / 2) },
+      p2: { x: wp1.x + wp1.nx * (wp1.width / 2), y: wp1.y + wp1.ny * (wp1.width / 2) },
+      angle: wp1.angle
     };
     this.finishLine = this.startLine; // Start is also the Finish line!
 
-    // Starting Grids with ~91px spacing between Lead and Chase
-    // Grid 1: Lead car in slot [ 1 ] just behind checkered start line
-    const wp9 = this.waypoints[9];
+    // Starting Grids in Middle X Area:
+    // Side-by-side configuration:
+    // - Lead car on the RIGHT (+nx)
+    // - Chase car on the LEFT (-nx), staggered longitudinally between Lead's front door and rear tire
+    const wp0 = this.waypoints[0];
+    const latDist = 24; // 24px lateral offset from centerline
+    const longStagger = 20; // 20px setback for Chase (nose aligned between front door and rear axle)
+    const fwdX = Math.sin(wp0.angle);
+    const fwdY = -Math.cos(wp0.angle);
+
+    // Grid 1: Lead car in slot [ 1 ] on the right side of the lane
     this.gridSlot1 = {
-      x: wp9.x,
-      y: wp9.y,
-      angle: wp9.angle
+      x: wp0.x + wp0.nx * latDist,
+      y: wp0.y + wp0.ny * latDist,
+      angle: wp0.angle
     };
 
-    // Grid 2: Chase car in slot [ 2 ] ~91px behind Lead car on straightaway
-    const wp6 = this.waypoints[6];
+    // Grid 2: Chase car in slot [ 2 ] on the left side of the lane, staggered back
     this.gridSlot2 = {
-      x: wp6.x,
-      y: wp6.y,
-      angle: wp6.angle
+      x: wp0.x - wp0.nx * latDist - fwdX * longStagger,
+      y: wp0.y - wp0.ny * latDist - fwdY * longStagger,
+      angle: wp0.angle
     };
   }
 
@@ -223,24 +230,23 @@ export class DriftTrack {
       ...buildWallSegments(leftEyePoly, true)
     ];
 
-    // --- High-Visibility Green Drift Clipping Zones ---
-    // Zone 1: Outer Wall Sweeper of Loop 1 (Big entry drift zone)
-    this.createZoneFromWaypoints('zone-1-entry', 'Outer Sweeper 1', 12, 28, 'outer', 42);
+    // --- High-Visibility Green Drift Clipping Zones (Formula Drift / D1GP Competition Standard) ---
+    // Zone 1: OZ 1 - Entry Wall Sweeper of Loop 1 (wp 14-28, outer perimeter ride)
+    this.createZoneFromWaypoints('zone-1-oz', 'OZ 1 - ENTRY SWEEPER', 14, 28, 'outer', 40);
 
-    // Zone 2: Inside Apex Clipping Point of Loop 1
-    this.createZoneFromWaypoints('zone-2-apex', 'Inside Clip 1', 34, 45, 'inner', 38);
+    // Zone 2: IC 1 - Inside Apex Clip of Loop 1 (wp 36-44, tight right curb clip)
+    this.createZoneFromWaypoints('zone-2-ic', 'IC 1 - APEX', 36, 44, 'inner', 34);
 
-    // Zone 3: Transition Switch zone approaching the crossover
-    this.createZoneFromWaypoints('zone-3-switch', 'Switch Zone', 52, 64, 'outer', 40);
+    // Note: Crossover intersection (wp 48-66) remains completely open for high-speed transition flick!
 
-    // Zone 4: Outer Wall Sweeper of Loop 2 (High-speed sweeper)
-    this.createZoneFromWaypoints('zone-4-sweeper', 'Outer Sweeper 2', 72, 88, 'outer', 44);
+    // Zone 3: OZ 2 - High-Speed Outer Wall Sweeper of Loop 2 (wp 70-86, outer perimeter ride)
+    this.createZoneFromWaypoints('zone-3-oz', 'OZ 2 - OUTER SWEEPER', 70, 86, 'outer', 42);
 
-    // Zone 5: Inside Apex Clipping Point of Loop 2
-    this.createZoneFromWaypoints('zone-5-apex', 'Inside Clip 2', 94, 105, 'inner', 38);
+    // Zone 4: IC 2 - Inside Apex Clip of Loop 2 (wp 94-104, tight left curb clip)
+    this.createZoneFromWaypoints('zone-4-ic', 'IC 2 - APEX', 94, 104, 'inner', 34);
 
-    // Zone 6: Final Exit Clipping Zone before the Finish Line
-    this.createZoneFromWaypoints('zone-6-exit', 'Final Exit Clip', 110, 118, 'outer', 42);
+    // Zone 5: OZ 3 - Final Power-Out Sweeper across Finish Line (wp 110-118, outer exit)
+    this.createZoneFromWaypoints('zone-5-oz', 'OZ 3 - FINISH EXIT', 110, 118, 'outer', 38);
   }
 
   private createZoneFromWaypoints(
@@ -256,8 +262,11 @@ export class DriftTrack {
     const centerCurve: Point2D[] = [];
     const pts = this.waypoints;
 
-    // Follow track edge
-    const dir = (side === 'outer' ? 1 : -1);
+    // Follow track edge with loop chirality correction:
+    // In Loop 1 (wp 0..59, counter-clockwise): outer = +1 (+nx), inner = -1 (-nx)
+    // In Loop 2 (wp 60..119, clockwise): outer = -1 (-nx), inner = +1 (+nx)
+    const isLoop1 = (startIdx + endIdx) / 2 < 60;
+    const dir = side === 'outer' ? (isLoop1 ? 1 : -1) : (isLoop1 ? -1 : 1);
 
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
 

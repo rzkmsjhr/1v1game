@@ -71,6 +71,7 @@ export class DriftRenderer {
   private checkeredWhitePath: Path2D = new Path2D();
   private checkeredDarkPath: Path2D = new Path2D();
   private checkeredBorderPath: Path2D = new Path2D();
+  private directionArrows: { waypointIndex: number; x: number; y: number; angle: number; path: Path2D }[] = [];
 
   // Font state cache (avoids 600 CSS font string parses/second on mobile)
   private currentFont: string = '';
@@ -246,6 +247,32 @@ export class DriftRenderer {
     this.checkeredBorderPath.lineTo(p2.x - fwdX * rowH, p2.y - fwdY * rowH);
     this.checkeredBorderPath.moveTo(p1.x + fwdX * rowH, p1.y + fwdY * rowH);
     this.checkeredBorderPath.lineTo(p2.x + fwdX * rowH, p2.y + fwdY * rowH);
+
+    // 5. Precompiled Direction Arrows on Asphalt (auto-disappear when passed)
+    this.directionArrows = [];
+    const arrowWpIndices = [
+      2, 6, 10, 14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 54, 58, 62, 66, 70, 74, 78, 82, 86, 90, 94, 98, 102, 106, 110, 114, 118
+    ];
+    for (const idx of arrowWpIndices) {
+      const wp = this.track.waypoints[idx];
+      const path = new Path2D();
+      // Sleek racing chevron pointing forward along track travel direction
+      path.moveTo(0, -14);
+      path.lineTo(11, 6);
+      path.lineTo(6, 6);
+      path.lineTo(0, -1);
+      path.lineTo(-6, 6);
+      path.lineTo(-11, 6);
+      path.closePath();
+
+      this.directionArrows.push({
+        waypointIndex: idx,
+        x: wp.x,
+        y: wp.y,
+        angle: wp.angle,
+        path
+      });
+    }
   }
 
   public isMobileDevice(): boolean {
@@ -331,7 +358,8 @@ export class DriftRenderer {
     isDay: boolean = true,
     playerRoofNum: number = 86,
     enemyRoofNum: number = 15,
-    alpha: number = 1.0
+    alpha: number = 1.0,
+    playerMaxWaypoint: number = 0
   ) {
     const ctx = this.ctx;
     const viewW = this.cssWidth;
@@ -369,7 +397,10 @@ export class DriftRenderer {
     // 3. Render Track Surface & Green Clipping Zones directly
     this.renderTrack(ctx, isDay);
 
-    // 4. Render Checkered Start / Finish Line & Starting Grids directly
+    // 4. Render Dynamic Direction Arrows (auto-disappear when passed)
+    this.renderDirectionArrows(ctx, playerMaxWaypoint, isDay);
+
+    // 5. Render Checkered Start / Finish Line & Starting Grids directly
     this.renderCheckeredStartFinish(ctx);
 
     // 5. Render Tire Skidmarks (batched in 1 single fill call!)
@@ -497,6 +528,57 @@ export class DriftRenderer {
     ctx.stroke(this.redCurbsPath);
     ctx.strokeStyle = '#ffffff';
     ctx.stroke(this.whiteCurbsPath);
+    ctx.restore();
+  }
+
+  /**
+   * Renders dynamic direction arrows along the track centerline.
+   * Arrows ahead of the car are visible and guide the driver through the layout.
+   * When an arrow is correctly passed (arrow.waypointIndex <= playerMaxWaypoint), it is auto gone!
+   */
+  private renderDirectionArrows(
+    ctx: CanvasRenderingContext2D,
+    playerMaxWaypoint: number,
+    isDay: boolean
+  ) {
+    ctx.save();
+    for (let i = 0; i < this.directionArrows.length; i++) {
+      const arrow = this.directionArrows[i];
+      // If player has already passed this waypoint, arrow is auto-gone!
+      if (arrow.waypointIndex <= playerMaxWaypoint) {
+        continue;
+      }
+      // Only render arrows within the forward navigation horizon (next ~32 waypoints)
+      const fwdDist = arrow.waypointIndex - playerMaxWaypoint;
+      if (fwdDist > 32) {
+        continue;
+      }
+
+      // Smooth proximity alpha: closest upcoming arrows are bright and clear
+      const alpha = Math.max(0.20, 1.0 - (fwdDist / 34) * 0.75);
+
+      ctx.save();
+      ctx.translate(arrow.x, arrow.y);
+      ctx.rotate(arrow.angle);
+
+      if (isDay) {
+        ctx.fillStyle = `rgba(2, 132, 199, ${alpha * 0.85})`;
+        ctx.fill(arrow.path);
+        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.95})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke(arrow.path);
+      } else {
+        ctx.shadowColor = '#38bdf8';
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = `rgba(56, 189, 248, ${alpha * 0.95})`;
+        ctx.fill(arrow.path);
+        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke(arrow.path);
+      }
+
+      ctx.restore();
+    }
     ctx.restore();
   }
 

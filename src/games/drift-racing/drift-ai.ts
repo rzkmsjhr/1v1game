@@ -149,10 +149,11 @@ export class DriftAI {
     // In right loop (wp 0-60): counter-clockwise -> +nx is outer, -nx is inner
     // In left loop (wp 60-120): clockwise -> +nx is inner, -nx is outer
     let latOffset = 0;
-    if (targetIdx >= 12 && targetIdx <= 26) latOffset = targetWp.width * 0.26; // Zone 1: Outer sweeper 1 (+nx)
-    else if (targetIdx >= 34 && targetIdx <= 46) latOffset = -targetWp.width * 0.26; // Zone 2: Inside apex 1 (-nx)
-    else if (targetIdx >= 72 && targetIdx <= 86) latOffset = -targetWp.width * 0.26; // Zone 4: Outer sweeper 2 (-nx)
-    else if (targetIdx >= 94 && targetIdx <= 106) latOffset = targetWp.width * 0.26; // Zone 5: Inside apex 2 (+nx)
+    if (targetIdx >= 14 && targetIdx <= 28) latOffset = targetWp.width * 0.26; // OZ 1: Outer sweeper (+nx)
+    else if (targetIdx >= 36 && targetIdx <= 44) latOffset = -targetWp.width * 0.26; // IC 1: Inside apex (-nx)
+    else if (targetIdx >= 70 && targetIdx <= 86) latOffset = -targetWp.width * 0.26; // OZ 2: Outer sweeper (-nx)
+    else if (targetIdx >= 94 && targetIdx <= 104) latOffset = targetWp.width * 0.26; // IC 2: Inside apex (+nx)
+    else if (targetIdx >= 110 && targetIdx <= 118) latOffset = -targetWp.width * 0.26; // OZ 3: Finish exit (-nx)
 
     const aimX = targetWp.x + targetWp.nx * latOffset;
     const aimY = targetWp.y + targetWp.ny * latOffset;
@@ -264,10 +265,11 @@ export class DriftAI {
 
     // Chase follows the pro tandem racing line safely inside the barriers
     let latOffset = 0;
-    if (targetIdx >= 12 && targetIdx <= 26) latOffset = targetWp.width * 0.20; // Zone 1: Outer sweeper 1 (+nx)
-    else if (targetIdx >= 34 && targetIdx <= 46) latOffset = -targetWp.width * 0.20; // Zone 2: Inside apex 1 (-nx)
-    else if (targetIdx >= 72 && targetIdx <= 86) latOffset = -targetWp.width * 0.20; // Zone 4: Outer sweeper 2 (-nx)
-    else if (targetIdx >= 94 && targetIdx <= 106) latOffset = targetWp.width * 0.20; // Zone 5: Inside apex 2 (+nx)
+    if (targetIdx >= 14 && targetIdx <= 28) latOffset = targetWp.width * 0.20; // OZ 1: Outer sweeper (+nx)
+    else if (targetIdx >= 36 && targetIdx <= 44) latOffset = -targetWp.width * 0.20; // IC 1: Inside apex (-nx)
+    else if (targetIdx >= 70 && targetIdx <= 86) latOffset = -targetWp.width * 0.20; // OZ 2: Outer sweeper (-nx)
+    else if (targetIdx >= 94 && targetIdx <= 104) latOffset = targetWp.width * 0.20; // IC 2: Inside apex (+nx)
+    else if (targetIdx >= 110 && targetIdx <= 118) latOffset = -targetWp.width * 0.20; // OZ 3: Finish exit (-nx)
 
     const aimX = targetWp.x + targetWp.nx * latOffset;
     const aimY = targetWp.y + targetWp.ny * latOffset;

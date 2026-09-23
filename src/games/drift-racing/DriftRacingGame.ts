@@ -430,7 +430,8 @@ export class DriftRacingGame implements GameInstance {
       isDay,
       this.playerRoofNum,
       this.enemyRoofNum,
-      alpha
+      alpha,
+      this.playerMaxWaypoint
     );
 
     this.animationFrameId = requestAnimationFrame(this.gameLoop.bind(this));
@@ -626,9 +627,9 @@ export class DriftRacingGame implements GameInstance {
     const passedMid = maxWP >= 54;
 
     // Finish gate: car must have cumulatively advanced past waypoint 105 (near end of loop)
-    // AND the current closest waypoint must be in the finish line zone (wp 0-15)
+    // AND the current closest waypoint must be in the finish line zone (wp 118-120 or wp 0-8 across middle X)
     const completedLoop = maxWP >= 105;
-    const inFinishZone = waypointIndex >= 0 && waypointIndex <= 15;
+    const inFinishZone = (waypointIndex >= 118 || waypointIndex <= 8);
 
     if (passedMid && completedLoop && inFinishZone && car.speed > 0.4) {
       score.finished = true;
@@ -807,15 +808,15 @@ export class DriftRacingGame implements GameInstance {
     this.enemyCar.stationaryTimer = 0;
 
     // Reset sequential waypoint checkpoint trackers
-    // Lead car starts at grid slot 1 (wp9), Chase at grid slot 2 (wp6)
+    // Lead car starts at grid slot 1 (wp 0), Chase at grid slot 2 (wp 0 side-by-side)
     if (isPlayerLead) {
-      this.playerMaxWaypoint = 9;
-      this.enemyMaxWaypoint = 6;
-      this.ai.reset(6, 9);
+      this.playerMaxWaypoint = 0;
+      this.enemyMaxWaypoint = 0;
+      this.ai.reset(0, 0);
     } else {
-      this.playerMaxWaypoint = 6;
-      this.enemyMaxWaypoint = 9;
-      this.ai.reset(9, 6);
+      this.playerMaxWaypoint = 0;
+      this.enemyMaxWaypoint = 0;
+      this.ai.reset(0, 0);
     }
 
     // Immediately snap camera to player vehicle
