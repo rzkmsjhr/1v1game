@@ -5,23 +5,60 @@ import { DriftTrack } from './drift-track';
 export class DriftAI {
   private track: DriftTrack;
   private difficulty: AIDifficulty;
-  private aiWp: number = 6;
-  private leadWp: number = 9;
-  private chaseWp: number = 6;
+  private aiWp: number = 0;
+  private leadWp: number = 0;
+  private chaseWp: number = 0;
+  private racingLineOffsets: Float32Array = new Float32Array(120);
 
   constructor(track: DriftTrack, difficulty: AIDifficulty = 'medium') {
     this.track = track;
     this.difficulty = difficulty;
+    this.initRacingLine();
   }
 
   public setDifficulty(diff: AIDifficulty) {
     this.difficulty = diff;
   }
 
-  public reset(aiStartingWp: number = 6, leadStartingWp: number = 9) {
+  public reset(aiStartingWp: number = 0, leadStartingWp: number = 0) {
     this.aiWp = aiStartingWp;
     this.chaseWp = aiStartingWp;
     this.leadWp = leadStartingWp;
+  }
+
+  /**
+   * Precomputes continuous S-curve racing line offsets across all 120 waypoints.
+   * Eliminates sudden steering spikes between clipping points.
+   */
+  private initRacingLine() {
+    const keyframes = [
+      { wp: 0, val: 0.14 },     // Right side of launch straight (+nx)
+      { wp: 10, val: 0.14 },    // End of run-up straight
+      { wp: 14, val: 0.26 },    // OZ 1 Entry (+nx = outer wall ride)
+      { wp: 26, val: 0.26 },    // OZ 1 Exit (+nx = outer wall ride)
+      { wp: 36, val: -0.24 },   // IC 1 Entry (-nx = inner eye curb)
+      { wp: 44, val: -0.24 },   // IC 1 Exit (-nx = inner eye curb)
+      { wp: 52, val: 0.0 },     // Approaching crossover (straight flick)
+      { wp: 64, val: 0.0 },     // Exiting crossover into Loop 2
+      { wp: 72, val: -0.26 },   // OZ 2 Entry (-nx = outer wall ride of Loop 2)
+      { wp: 84, val: -0.26 },   // OZ 2 Exit (-nx = outer wall ride of Loop 2)
+      { wp: 94, val: 0.24 },    // IC 2 Entry (+nx = inner eye curb of Loop 2)
+      { wp: 104, val: 0.24 },   // IC 2 Exit (+nx = inner eye curb of Loop 2)
+      { wp: 110, val: -0.26 },  // OZ 3 Entry (-nx = outer exit sweeper)
+      { wp: 118, val: -0.26 },  // OZ 3 Exit (-nx = outer exit sweeper)
+      { wp: 120, val: 0.14 }    // Finish line return to right side of straight
+    ];
+
+    for (let k = 0; k < keyframes.length - 1; k++) {
+      const k1 = keyframes[k];
+      const k2 = keyframes[k + 1];
+      const span = k2.wp - k1.wp;
+      for (let i = k1.wp; i < k2.wp; i++) {
+        const t = (i - k1.wp) / span;
+        const easeT = (1 - Math.cos(t * Math.PI)) / 2;
+        this.racingLineOffsets[i % 120] = k1.val + (k2.val - k1.val) * easeT;
+      }
+    }
   }
 
   private normalizeAngle(a: number): number {
@@ -33,16 +70,20 @@ export class DriftAI {
   /**
    * Tracks waypoint progress locally along lap direction to prevent Figure-8 crossover jumping
    */
-  private updateWaypoint(cur: number, x: number, y: number): number {
+  private updateWaypoint(cur: number, x: number, y: number, heading: number): number {
     const pts = this.track.waypoints;
     const n = pts.length;
     let bestDistSq = Infinity;
     let bestIdx = cur;
 
-    // Search in forward window [cur - 2, cur + 8]
-    for (let offset = -2; offset <= 8; offset++) {
+    // Search in forward window [cur - 1, cur + 7]
+    for (let offset = -1; offset <= 7; offset++) {
       const idx = (cur + offset + n) % n;
       const wp = pts[idx];
+      let angleDiff = Math.abs(wp.angle - heading);
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      if (Math.abs(angleDiff) > Math.PI * 0.45) continue; // Filter out opposite branch at crossover!
+
       const dSq = (wp.x - x) ** 2 + (wp.y - y) ** 2;
       if (dSq < bestDistSq) {
         bestDistSq = dSq;
@@ -50,9 +91,9 @@ export class DriftAI {
       }
     }
 
-    // Failsafe: if vehicle respawned or got displaced far from window, fall back to global closest
+    // Failsafe: if vehicle respawned or got displaced far from window, fall back to global closest with heading filter
     if (bestDistSq > 22500) {
-      return this.track.getClosestProgress(x, y).waypointIndex;
+      return this.track.getClosestProgress(x, y, heading).waypointIndex;
     }
 
     return bestIdx;
@@ -75,31 +116,40 @@ export class DriftAI {
   }
 
   /**
-   * Applies active wall avoidance and recovery steering when vehicle nears circuit barriers
+   * Applies active wall avoidance and recovery steering using current waypoint lateral displacement
    */
   private applyWallAvoidance(
     state: VehiclePhysicsState,
     steer: number,
-    throttle: number
+    throttle: number,
+    currentWpIdx: number
   ): { steer: number; throttle: number } {
-    const trackPt = this.track.getClosestTrackPoint(state.x, state.y);
-    if (trackPt.dist > 38) {
-      const wallCloseness = Math.min(1.0, (trackPt.dist - 38) / 16); // 0.0 at 38px to 1.0 at 54px
-      const inNx = (trackPt.cx - state.x) / (trackPt.dist || 1);
-      const inNy = (trackPt.cy - state.y) / (trackPt.dist || 1);
-      const inAngle = Math.atan2(inNx, -inNy);
-      const inSteerDiff = this.normalizeAngle(inAngle - state.angle);
+    const wp = this.track.waypoints[currentWpIdx];
+    // Lateral displacement from centerline of the CURRENT track waypoint:
+    // positive = right side (+nx), negative = left side (-nx)
+    const lat = (state.x - wp.x) * wp.nx + (state.y - wp.y) * wp.ny;
+    const absLat = Math.abs(lat);
 
-      // Check if velocity has outward component towards the wall
-      const vOut = state.vx * (-inNx) + state.vy * (-inNy);
+    // Only intervene when vehicle gets dangerously close to the barrier (< 18px from barrier, i.e. absLat > 52px)
+    if (absLat > 52) {
+      const wallCloseness = Math.min(1.0, (absLat - 52) / 14); // 0.0 at 52px to 1.0 at 66px
+      const inDir = lat > 0 ? -1 : 1; // +1 if on left (steer right), -1 if on right (steer left)
 
-      if (vOut > -0.25 || trackPt.dist > 45) {
-        const blend = wallCloseness * 0.65;
-        const targetInwardSteer = Math.max(-1.0, Math.min(1.0, inSteerDiff * 2.5));
+      // Outward velocity towards the wall
+      const outwardVel = (state.vx * wp.nx + state.vy * wp.ny) * Math.sign(lat);
+
+      if (outwardVel > -0.2 || absLat > 58) {
+        // Bias steering smoothly inward along the track direction
+        const inwardBias = inDir * 0.45;
+        const targetInwardAngle = this.normalizeAngle(wp.angle + inwardBias);
+        const steerDiff = this.normalizeAngle(targetInwardAngle - state.angle);
+        const targetInwardSteer = Math.max(-1.0, Math.min(1.0, steerDiff * 2.2));
+
+        const blend = wallCloseness * 0.70;
         steer = (1 - blend) * steer + blend * targetInwardSteer;
 
-        if (trackPt.dist > 46) {
-          throttle = Math.min(throttle, 0.70);
+        if (absLat > 60) {
+          throttle = Math.min(throttle, 0.75);
         }
       }
     }
@@ -117,7 +167,7 @@ export class DriftAI {
   } {
     const pts = this.track.waypoints;
     const n = pts.length;
-    this.aiWp = this.updateWaypoint(this.aiWp, state.x, state.y);
+    this.aiWp = this.updateWaypoint(this.aiWp, state.x, state.y, state.angle);
 
     // Lookahead and Target Speeds by Difficulty
     let lookahead = 7;
@@ -145,15 +195,8 @@ export class DriftAI {
     const targetIdx = (this.aiWp + lookahead) % n;
     const targetWp = pts[targetIdx];
 
-    // Smooth lateral racing line offsets into green clipping zones:
-    // In right loop (wp 0-60): counter-clockwise -> +nx is outer, -nx is inner
-    // In left loop (wp 60-120): clockwise -> +nx is inner, -nx is outer
-    let latOffset = 0;
-    if (targetIdx >= 14 && targetIdx <= 28) latOffset = targetWp.width * 0.26; // OZ 1: Outer sweeper (+nx)
-    else if (targetIdx >= 36 && targetIdx <= 44) latOffset = -targetWp.width * 0.26; // IC 1: Inside apex (-nx)
-    else if (targetIdx >= 70 && targetIdx <= 86) latOffset = -targetWp.width * 0.26; // OZ 2: Outer sweeper (-nx)
-    else if (targetIdx >= 94 && targetIdx <= 104) latOffset = targetWp.width * 0.26; // IC 2: Inside apex (+nx)
-    else if (targetIdx >= 110 && targetIdx <= 118) latOffset = -targetWp.width * 0.26; // OZ 3: Finish exit (-nx)
+    // Smooth continuous S-curve racing line offsets into green clipping zones
+    const latOffset = targetWp.width * this.racingLineOffsets[targetIdx];
 
     const aimX = targetWp.x + targetWp.nx * latOffset;
     const aimY = targetWp.y + targetWp.ny * latOffset;
@@ -209,7 +252,7 @@ export class DriftAI {
     }
 
     // Active wall avoidance & recovery
-    const safeInputs = this.applyWallAvoidance(state, steer, throttle);
+    const safeInputs = this.applyWallAvoidance(state, steer, throttle, this.aiWp);
     steer = safeInputs.steer;
     throttle = safeInputs.throttle;
 
@@ -230,8 +273,8 @@ export class DriftAI {
   } {
     const pts = this.track.waypoints;
     const n = pts.length;
-    this.chaseWp = this.updateWaypoint(this.chaseWp, aiState.x, aiState.y);
-    this.leadWp = this.updateWaypoint(this.leadWp, leadState.x, leadState.y);
+    this.chaseWp = this.updateWaypoint(this.chaseWp, aiState.x, aiState.y, aiState.angle);
+    this.leadWp = this.updateWaypoint(this.leadWp, leadState.x, leadState.y, leadState.angle);
 
     let lookahead = 7;
     let maxChaseSpeed = 3.00;
@@ -263,13 +306,14 @@ export class DriftAI {
     const dy = leadState.y - aiState.y;
     const distToLead = Math.hypot(dx, dy);
 
-    // Chase follows the pro tandem racing line safely inside the barriers
-    let latOffset = 0;
-    if (targetIdx >= 14 && targetIdx <= 28) latOffset = targetWp.width * 0.20; // OZ 1: Outer sweeper (+nx)
-    else if (targetIdx >= 36 && targetIdx <= 44) latOffset = -targetWp.width * 0.20; // IC 1: Inside apex (-nx)
-    else if (targetIdx >= 70 && targetIdx <= 86) latOffset = -targetWp.width * 0.20; // OZ 2: Outer sweeper (-nx)
-    else if (targetIdx >= 94 && targetIdx <= 104) latOffset = targetWp.width * 0.20; // IC 2: Inside apex (+nx)
-    else if (targetIdx >= 110 && targetIdx <= 118) latOffset = -targetWp.width * 0.20; // OZ 3: Finish exit (-nx)
+    // Chase follows the pro tandem racing line:
+    // On the straight run-up (wp 0-10), Chase holds left lane (-0.14 width) so it never collides side-by-side with Lead!
+    // In corners and sweepers, it tucks closely into the drift pocket (0.85x lateral offset).
+    let chaseOffsetFrac = this.racingLineOffsets[targetIdx] * 0.85;
+    if (targetIdx <= 10) {
+      chaseOffsetFrac = -0.14; // Maintain left side of straight on launch!
+    }
+    const latOffset = targetWp.width * chaseOffsetFrac;
 
     const aimX = targetWp.x + targetWp.nx * latOffset;
     const aimY = targetWp.y + targetWp.ny * latOffset;
@@ -348,7 +392,7 @@ export class DriftAI {
     }
 
     // Active wall avoidance & recovery
-    const safeInputs = this.applyWallAvoidance(aiState, steer, throttle);
+    const safeInputs = this.applyWallAvoidance(aiState, steer, throttle, this.chaseWp);
     steer = safeInputs.steer;
     throttle = safeInputs.throttle;
 

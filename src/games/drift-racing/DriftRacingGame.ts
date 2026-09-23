@@ -197,9 +197,14 @@ export class DriftRacingGame implements GameInstance {
               Role switch next round! Get ready to take the other role.
             </div>
 
-            <button id="modal-next-round-btn" class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wide transition-all shadow-lg shadow-emerald-500/25 cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap">
-              <span id="modal-btn-text">Start Round 2 (Role Switch)</span> <span class="text-base leading-none">→</span>
-            </button>
+            <div class="flex flex-col sm:flex-row gap-2 w-full mt-1">
+              <button id="modal-exit-btn" class="w-full sm:w-1/3 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-300 hover:text-white font-bold text-xs sm:text-sm uppercase tracking-wide transition-all border border-slate-700 cursor-pointer flex items-center justify-center gap-1.5 shadow-md">
+                <span>✕ Exit to Menu</span>
+              </button>
+              <button id="modal-next-round-btn" class="w-full sm:w-2/3 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wide transition-all shadow-lg shadow-emerald-500/25 cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap">
+                <span id="modal-btn-text">Start Round 2 (Role Switch)</span> <span class="text-base leading-none">→</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -230,6 +235,10 @@ export class DriftRacingGame implements GameInstance {
 
     // Event Bindings for Buttons
     this.container.querySelector('#drift-exit-btn')!.addEventListener('click', () => {
+      this.session.onExit();
+    });
+
+    this.container.querySelector('#modal-exit-btn')?.addEventListener('click', () => {
       this.session.onExit();
     });
 
@@ -598,7 +607,7 @@ export class DriftRacingGame implements GameInstance {
 
   private checkFinishLine(car: VehiclePhysicsState, score: RunScoreBreakdown, isPlayer: boolean) {
     if (score.finished) return;
-    const { waypointIndex } = this.track.getClosestProgress(car.x, car.y);
+    const { waypointIndex } = this.track.getClosestProgress(car.x, car.y, car.angle);
     const totalWP = this.track.waypoints.length; // 120
 
     // Sequential waypoint advancement: only advance if the new waypoint is
@@ -808,15 +817,15 @@ export class DriftRacingGame implements GameInstance {
     this.enemyCar.stationaryTimer = 0;
 
     // Reset sequential waypoint checkpoint trackers
-    // Lead car starts at grid slot 1 (wp 0), Chase at grid slot 2 (wp 0 side-by-side)
+    // Lead car starts at grid slot 1 (wp 1), Chase at grid slot 2 (wp 0 staggered side-by-side)
     if (isPlayerLead) {
-      this.playerMaxWaypoint = 0;
+      this.playerMaxWaypoint = 1;
       this.enemyMaxWaypoint = 0;
-      this.ai.reset(0, 0);
+      this.ai.reset(0, 1);
     } else {
       this.playerMaxWaypoint = 0;
-      this.enemyMaxWaypoint = 0;
-      this.ai.reset(0, 0);
+      this.enemyMaxWaypoint = 1;
+      this.ai.reset(1, 0);
     }
 
     // Immediately snap camera to player vehicle

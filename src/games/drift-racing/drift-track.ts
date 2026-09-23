@@ -39,37 +39,37 @@ export class DriftTrack {
     this.generateWallsAndZones();
     this.allWalls = [...this.outerWalls, ...this.innerWalls];
 
-    // Checkered Start / Finish Line in Middle X Transition Area (wp 1)
-    const wp1 = this.waypoints[1];
+    // Checkered Start / Finish Line in Middle X Transition Area (wp 2)
+    const wp2 = this.waypoints[2];
     this.startLine = {
-      p1: { x: wp1.x - wp1.nx * (wp1.width / 2), y: wp1.y - wp1.ny * (wp1.width / 2) },
-      p2: { x: wp1.x + wp1.nx * (wp1.width / 2), y: wp1.y + wp1.ny * (wp1.width / 2) },
-      angle: wp1.angle
+      p1: { x: wp2.x - wp2.nx * (wp2.width / 2), y: wp2.y - wp2.ny * (wp2.width / 2) },
+      p2: { x: wp2.x + wp2.nx * (wp2.width / 2), y: wp2.y + wp2.ny * (wp2.width / 2) },
+      angle: wp2.angle
     };
     this.finishLine = this.startLine; // Start is also the Finish line!
 
     // Starting Grids in Middle X Area:
-    // Side-by-side configuration:
+    // Side-by-side configuration referenced from wp 1:
     // - Lead car on the RIGHT (+nx)
     // - Chase car on the LEFT (-nx), staggered longitudinally between Lead's front door and rear tire
-    const wp0 = this.waypoints[0];
+    const wp1 = this.waypoints[1];
     const latDist = 24; // 24px lateral offset from centerline
     const longStagger = 20; // 20px setback for Chase (nose aligned between front door and rear axle)
-    const fwdX = Math.sin(wp0.angle);
-    const fwdY = -Math.cos(wp0.angle);
+    const fwdX = Math.sin(wp1.angle);
+    const fwdY = -Math.cos(wp1.angle);
 
     // Grid 1: Lead car in slot [ 1 ] on the right side of the lane
     this.gridSlot1 = {
-      x: wp0.x + wp0.nx * latDist,
-      y: wp0.y + wp0.ny * latDist,
-      angle: wp0.angle
+      x: wp1.x + wp1.nx * latDist,
+      y: wp1.y + wp1.ny * latDist,
+      angle: wp1.angle
     };
 
     // Grid 2: Chase car in slot [ 2 ] on the left side of the lane, staggered back
     this.gridSlot2 = {
-      x: wp0.x - wp0.nx * latDist - fwdX * longStagger,
-      y: wp0.y - wp0.ny * latDist - fwdY * longStagger,
-      angle: wp0.angle
+      x: wp1.x - wp1.nx * latDist - fwdX * longStagger,
+      y: wp1.y - wp1.ny * latDist - fwdY * longStagger,
+      angle: wp1.angle
     };
   }
 
@@ -318,13 +318,19 @@ export class DriftTrack {
 
   /**
    * Finds the closest waypoint progress to a given position (x, y)
+   * Accepts optional heading to resolve crossover branch ambiguity at the figure-8 intersection.
    */
-  public getClosestProgress(x: number, y: number): { progress: number; distance: number; waypointIndex: number } {
+  public getClosestProgress(x: number, y: number, heading?: number): { progress: number; distance: number; waypointIndex: number } {
     let minDistSq = Infinity;
     let closestIdx = 0;
 
     for (let i = 0; i < this.waypoints.length; i++) {
       const wp = this.waypoints[i];
+      if (heading !== undefined) {
+        let diff = Math.abs(wp.angle - heading);
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        if (Math.abs(diff) > Math.PI * 0.45) continue;
+      }
       const dSq = (wp.x - x) ** 2 + (wp.y - y) ** 2;
       if (dSq < minDistSq) {
         minDistSq = dSq;
