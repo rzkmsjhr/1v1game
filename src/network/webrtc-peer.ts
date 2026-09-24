@@ -41,8 +41,9 @@ export type NetworkMessage =
   | { type: 'FIT_PIECE_PLACED'; pieceId: string; trayR: number; trayC: number }
   | { type: 'FIT_PIECE_REMOVED'; pieceId: string }
   | { type: 'FIT_ROUND_CLAIM'; roundNumber: number; timestamp: number }
+  | { type: 'FIT_REQUEST_SEED' }
   | { type: 'FIT_REMATCH_REQUEST' }
-  | { type: 'FIT_REMATCH_ACCEPT' }
+  | { type: 'FIT_REMATCH_ACCEPT'; seed?: number }
   | { type: 'DASH_READY'; seed: number }
   | { type: 'DASH_ACTION'; action: 'MOVE_LEFT' | 'MOVE_RIGHT' | 'JUMP' | 'SLIDE'; lane: any; distance: number; timestamp: number }
   | { type: 'DASH_SYNC'; distance: number; speed: number; lane: any; currentX: number; jumpY: number; isJumping: boolean; isSliding: boolean; hearts: number; invulnerable: boolean; stumbling: boolean; isTurbo: boolean; hasShield: boolean; heldItem: any; timestamp?: number }

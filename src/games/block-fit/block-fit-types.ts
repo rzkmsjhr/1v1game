@@ -97,19 +97,23 @@ export interface MatchScore {
   matchWinner: 'player' | 'opponent' | null;
 }
 
-// WebRTC peer protocol message payloads
 export interface PeerBlockFitMsg {
   type:
     | 'FIT_ROUND_START'
+    | 'FIT_REQUEST_SEED'
     | 'FIT_PIECE_PLACED'
     | 'FIT_PIECE_REMOVED'
     | 'FIT_ROUND_CLAIM'
     | 'FIT_REMATCH_REQUEST'
-    | 'FIT_REMATCH_ACCEPT';
+    | 'FIT_REMATCH_ACCEPT'
+    | 'REMATCH_REQUEST'
+    | 'REMATCH_ACCEPT'
+    | 'PLAYER_LEAVE';
   seed?: number;
   roundNumber?: number;
   pieceId?: string;
   trayR?: number;
   trayC?: number;
   timestamp?: number;
+  [key: string]: any;
 }

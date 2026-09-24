@@ -1,7 +1,7 @@
 // Main Game Controller for Block Fit Duel (1v1 Tangram Polyomino Puzzle Race)
 import confetti from 'canvas-confetti';
 import type { GameInstance, GameSession, AppTheme } from '../types';
-import type { NetworkMessage } from '../../network/webrtc-peer';
+import type { NetworkHealth, NetworkMessage } from '../../network/webrtc-peer';
 import { sounds } from '../../engine/sound';
 import type { PolyominoPiece } from './block-fit-types';
 import { BlockFitEngine } from './block-fit-engine';
@@ -14,6 +14,13 @@ export class BlockFitGame implements GameInstance {
   private engine: BlockFitEngine;
   private ai: BlockFitAI | null = null;
   private currentTheme: AppTheme;
+
+  // Network Health & Rematch State
+  private netPingEl: HTMLElement | null = null;
+  private netDotEl: HTMLElement | null = null;
+  private netTextEl: HTMLElement | null = null;
+  private peerAwayBannerEl: HTMLElement | null = null;
+  private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
 
   // DOM Elements
   private canvasTray!: HTMLCanvasElement;
@@ -195,10 +202,16 @@ export class BlockFitGame implements GameInstance {
         
         <!-- Header HUD -->
         <header class="w-full max-w-2xl flex items-center justify-between px-2 py-1.5 rounded-2xl ${isDark ? 'bg-slate-900/85 border-slate-800' : 'bg-white/90 border-slate-200'} border shadow-md backdrop-blur-md shrink-0 mb-2">
-          <!-- Exit Button -->
-          <button id="btn-fit-exit" class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'} flex items-center space-x-1 cursor-pointer">
-            <span>← Exit</span>
-          </button>
+          <!-- Exit Button & Net Ping -->
+          <div class="flex items-center space-x-2">
+            <button id="btn-fit-exit" class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'} flex items-center space-x-1 cursor-pointer">
+              <span>← Exit</span>
+            </button>
+            <span id="fit-net-ping" class="${this.session.mode === 'online' ? 'inline-flex' : 'hidden'} items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm">
+              <span id="fit-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span id="fit-net-text">30ms</span>
+            </span>
+          </div>
 
           <!-- Match Status / Round Title -->
           <div class="flex flex-col items-center text-center">
@@ -232,6 +245,11 @@ export class BlockFitGame implements GameInstance {
             </div>
           </div>
         </header>
+
+        <!-- Inactive Tab / Opponent Away Banner -->
+        <div id="fit-peer-away-banner" class="hidden w-full max-w-2xl text-center py-1 px-3 mb-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-[11px] tracking-wide backdrop-blur-md animate-pulse shadow-lg pointer-events-none">
+          ⚠️ Opponent is tabbed out / minimized
+        </div>
 
         <!-- Main Duel Playground -->
         <main class="relative flex-1 w-full max-w-2xl flex flex-col md:flex-row items-center justify-center gap-3 my-auto min-h-0">
@@ -386,63 +404,159 @@ export class BlockFitGame implements GameInstance {
 
     const peer = this.session.peer;
     const origOnMessage = peer.events?.onMessage;
+    const origOnStatusChange = peer.events?.onStatusChange;
+    const origOnHealthChange = peer.events?.onHealthChange;
 
     peer.events = {
       ...peer.events,
       onMessage: (raw: NetworkMessage) => {
         origOnMessage?.(raw);
-        const msg = raw as NetworkMessage;
-        if (!msg || !msg.type) return;
-
-        switch (msg.type) {
-          case 'FIT_ROUND_START':
-            if (msg.seed !== undefined && msg.roundNumber !== undefined) {
-              this.engine.resetMatch(msg.seed);
-              this.engine.initRound(msg.roundNumber);
-              this.startRoundFlow();
-            }
-            break;
-
-          case 'FIT_PIECE_PLACED':
-            if (msg.pieceId && msg.trayR !== undefined && msg.trayC !== undefined) {
-              const piece = this.engine.currentPuzzle.pieces.find(p => p.id === msg.pieceId);
-              if (piece) {
-                this.engine.placePiece(this.engine.opponentBoard, piece, msg.trayR, msg.trayC);
-                sounds.playPuckClack(0.25);
-                this.updateOpponentView();
-                this.checkRoundEnd();
-              }
-            }
-            break;
-
-          case 'FIT_PIECE_REMOVED':
-            if (msg.pieceId) {
-              this.engine.removePiece(this.engine.opponentBoard, msg.pieceId);
-              this.updateOpponentView();
-            }
-            break;
-
-          case 'FIT_ROUND_CLAIM':
-            if (msg.roundNumber === this.engine.matchScore.currentRound) {
-              this.handleRoundWon('opponent');
-            }
-            break;
-
-          case 'FIT_REMATCH_REQUEST':
-            this.engine.resetMatch();
-            this.startRoundFlow();
-            break;
+        this.handleNetworkMessage(raw as any);
+      },
+      onStatusChange: (status: string, message?: string) => {
+        origOnStatusChange?.(status as any, message);
+        if (status === 'connected') {
+          if (peer.role === 'host') {
+            this.sendNetworkMsg({
+              type: 'FIT_ROUND_START',
+              seed: this.engine['matchSeed'],
+              roundNumber: this.engine.matchScore.currentRound
+            });
+          } else if (peer.role === 'guest') {
+            this.sendNetworkMsg({
+              type: 'FIT_REQUEST_SEED'
+            });
+          }
+        } else if (status === 'disconnected') {
+          if (this.engine.status !== 'match_over') {
+            this.handleForfeitVictory('Opponent disconnected. You win by forfeit!');
+          }
         }
+      },
+      onHealthChange: (health: NetworkHealth) => {
+        origOnHealthChange?.(health);
+        this.updateNetworkHealthHUD(health);
       }
     };
 
-    // If host in online match, broadcast initial round seed
-    if (peer.role === 'host') {
-      this.sendNetworkMsg({
-        type: 'FIT_ROUND_START',
-        seed: this.engine['matchSeed'],
-        roundNumber: 1
+    peer.flushEarlyMessages?.();
+    if (peer.isConnected) {
+      this.updateNetworkHealthHUD({
+        rtt: peer.currentRtt,
+        status: peer.networkQuality,
+        isPeerVisible: peer.isPeerVisible
       });
+      if (peer.role === 'host') {
+        this.sendNetworkMsg({
+          type: 'FIT_ROUND_START',
+          seed: this.engine['matchSeed'],
+          roundNumber: 1
+        });
+      } else if (peer.role === 'guest') {
+        this.sendNetworkMsg({
+          type: 'FIT_REQUEST_SEED'
+        });
+      }
+    }
+  }
+
+  private updateNetworkHealthHUD(health: NetworkHealth) {
+    const pingEl = this.netPingEl || (this.netPingEl = document.getElementById('fit-net-ping'));
+    const dotEl = this.netDotEl || (this.netDotEl = document.getElementById('fit-net-dot'));
+    const textEl = this.netTextEl || (this.netTextEl = document.getElementById('fit-net-text'));
+    const awayBanner = this.peerAwayBannerEl || (this.peerAwayBannerEl = document.getElementById('fit-peer-away-banner'));
+
+    if (pingEl && dotEl && textEl) {
+      if (health.status === 'stalled') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+        textEl.textContent = 'Lag ⚠️';
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5 shadow-sm';
+      } else if (health.status === 'poor') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+        textEl.textContent = `${health.rtt}ms`;
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5 shadow-sm';
+      } else if (health.status === 'moderate') {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+        textEl.textContent = `${health.rtt}ms`;
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5 shadow-sm';
+      } else {
+        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+        textEl.textContent = `${health.rtt || 28}ms`;
+        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm';
+      }
+    }
+
+    if (awayBanner) {
+      if (!health.isPeerVisible) {
+        awayBanner.classList.remove('hidden');
+      } else {
+        awayBanner.classList.add('hidden');
+      }
+    }
+  }
+
+  private handleNetworkMessage(msg: any) {
+    if (!msg || !msg.type) return;
+
+    switch (msg.type) {
+      case 'PLAYER_LEAVE':
+        if (this.engine.status !== 'match_over') {
+          this.handleForfeitVictory('Opponent forfeited the match.');
+        }
+        break;
+
+      case 'FIT_REQUEST_SEED':
+        if (this.session.peer?.role === 'host') {
+          this.sendNetworkMsg({
+            type: 'FIT_ROUND_START',
+            seed: this.engine['matchSeed'],
+            roundNumber: this.engine.matchScore.currentRound
+          });
+        }
+        break;
+
+      case 'FIT_ROUND_START':
+        if (msg.seed !== undefined && msg.roundNumber !== undefined) {
+          this.engine.resetMatch(msg.seed);
+          this.engine.initRound(msg.roundNumber);
+          this.startRoundFlow();
+        }
+        break;
+
+      case 'FIT_PIECE_PLACED':
+        if (msg.pieceId && msg.trayR !== undefined && msg.trayC !== undefined) {
+          const piece = this.engine.currentPuzzle.pieces.find(p => p.id === msg.pieceId);
+          if (piece) {
+            this.engine.placePiece(this.engine.opponentBoard, piece, msg.trayR, msg.trayC);
+            sounds.playPuckClack(0.25);
+            this.updateOpponentView();
+            this.checkRoundEnd();
+          }
+        }
+        break;
+
+      case 'FIT_PIECE_REMOVED':
+        if (msg.pieceId) {
+          this.engine.removePiece(this.engine.opponentBoard, msg.pieceId);
+          this.updateOpponentView();
+        }
+        break;
+
+      case 'FIT_ROUND_CLAIM':
+        if (msg.roundNumber === this.engine.matchScore.currentRound) {
+          this.handleRoundWon('opponent');
+        }
+        break;
+
+      case 'FIT_REMATCH_REQUEST':
+      case 'REMATCH_REQUEST':
+        this.showRematchOffer();
+        break;
+
+      case 'FIT_REMATCH_ACCEPT':
+      case 'REMATCH_ACCEPT':
+        this.startNewMatch(msg.seed);
+        break;
     }
   }
 
@@ -587,6 +701,7 @@ export class BlockFitGame implements GameInstance {
     const trophy = document.getElementById('fit-modal-trophy');
     const title = document.getElementById('fit-modal-title');
     const desc = document.getElementById('fit-modal-desc');
+    const btn = document.getElementById('btn-fit-rematch');
 
     if (trophy) trophy.textContent = isPlayerWin ? '🏆' : '💀';
     if (title) {
@@ -597,6 +712,14 @@ export class BlockFitGame implements GameInstance {
       desc.textContent = isPlayerWin
         ? `Incredible speed! You won the Best of 5 match (${this.engine.matchScore.playerWins} - ${this.engine.matchScore.opponentWins})!`
         : `Enemy cleared 3 rounds first (${this.engine.matchScore.opponentWins} - ${this.engine.matchScore.playerWins}). Better luck next time!`;
+    }
+
+    if (this.rematchState === 'offer_received') {
+      this.showRematchOffer();
+    } else if (btn) {
+      btn.textContent = 'Play Again';
+      btn.classList.remove('opacity-70', 'cursor-not-allowed', 'animate-pulse');
+      btn.className = 'w-full py-3 px-6 rounded-xl font-black tracking-wider uppercase text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-indigo-500 shadow-lg shadow-purple-600/30 active:scale-95 transition-all cursor-pointer';
     }
 
     this.matchOverModalEl.classList.remove('hidden');
@@ -611,10 +734,88 @@ export class BlockFitGame implements GameInstance {
   }
 
   private handleRematch() {
+    const btn = document.getElementById('btn-fit-rematch');
+
+    if (this.session.mode === 'ai') {
+      this.startNewMatch();
+      return;
+    }
+
+    if (this.rematchState === 'offer_received') {
+      const seed = Date.now();
+      this.sendNetworkMsg({ type: 'FIT_REMATCH_ACCEPT', seed });
+      this.startNewMatch(seed);
+    } else if (this.rematchState === 'idle') {
+      this.rematchState = 'requested';
+      if (btn) {
+        btn.textContent = 'Waiting for Opponent...';
+        btn.classList.add('opacity-70', 'cursor-not-allowed');
+      }
+      this.sendNetworkMsg({ type: 'FIT_REMATCH_REQUEST' });
+    }
+  }
+
+  private showRematchOffer() {
+    this.rematchState = 'offer_received';
+    const btn = document.getElementById('btn-fit-rematch');
+    if (btn) {
+      btn.textContent = 'Accept Rematch!';
+      btn.classList.remove('opacity-70', 'cursor-not-allowed');
+      btn.className = 'w-full py-3 px-6 rounded-xl font-black tracking-wider uppercase text-white bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all cursor-pointer animate-pulse';
+    }
+  }
+
+  private startNewMatch(seed?: number) {
+    this.rematchState = 'idle';
     this.matchOverModalEl.classList.add('hidden');
-    this.engine.resetMatch();
-    this.sendNetworkMsg({ type: 'FIT_REMATCH_REQUEST' });
+
+    const btn = document.getElementById('btn-fit-rematch');
+    if (btn) {
+      btn.textContent = 'Play Again';
+      btn.classList.remove('opacity-70', 'cursor-not-allowed', 'animate-pulse');
+      btn.className = 'w-full py-3 px-6 rounded-xl font-black tracking-wider uppercase text-white bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-indigo-500 shadow-lg shadow-purple-600/30 active:scale-95 transition-all cursor-pointer';
+    }
+
+    this.engine.resetMatch(seed);
     this.startRoundFlow();
+  }
+
+  private handleForfeitVictory(reason: string) {
+    if (this.countdownTimer !== null) {
+      window.clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+    if (this.nextRoundTimer !== null) {
+      window.clearTimeout(this.nextRoundTimer);
+      this.nextRoundTimer = null;
+    }
+    this.ai?.stop();
+    this.countdownOverlayEl.classList.add('hidden');
+    this.roundWinnerOverlayEl.classList.add('hidden');
+
+    this.engine.status = 'match_over';
+    this.engine.matchScore.matchWinner = 'player';
+
+    sounds.playRoundComplete();
+    confetti({ particleCount: 120, spread: 100, origin: { y: 0.5 } });
+
+    const trophy = document.getElementById('fit-modal-trophy');
+    const title = document.getElementById('fit-modal-title');
+    const desc = document.getElementById('fit-modal-desc');
+    const btn = document.getElementById('btn-fit-rematch');
+
+    if (trophy) trophy.textContent = '🏆';
+    if (title) {
+      title.textContent = 'VICTORY BY FORFEIT!';
+      title.className = 'text-2xl sm:text-3xl font-black mb-1 tracking-tight text-amber-400';
+    }
+    if (desc) desc.textContent = reason;
+    if (btn) {
+      btn.textContent = 'Play Again';
+      btn.classList.remove('opacity-70', 'cursor-not-allowed', 'animate-pulse');
+    }
+
+    this.matchOverModalEl.classList.remove('hidden');
   }
 
   // -------------------------------------------------------------
@@ -1034,6 +1235,13 @@ export class BlockFitGame implements GameInstance {
     this.resizeObserver?.disconnect();
     window.removeEventListener('pointermove', this.boundOnPointerMove);
     window.removeEventListener('pointerup', this.boundOnPointerUp);
+
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      try {
+        this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+      } catch {}
+    }
+
     this.dragCanvas.classList.add('hidden');
     this.container.innerHTML = '';
   }
