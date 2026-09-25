@@ -38,7 +38,8 @@ export type NetworkMessage =
   | { type: 'SLING_PUCK_LAUNCH'; puckId: number; x: number; y: number; vx: number; vy: number; power: number }
   | { type: 'SLING_PUCK_SYNC'; pucks: Array<{ id: number; x: number; y: number; vx: number; vy: number; color?: 'black' | 'red' }>; myPuckCount: number; oppPuckCount: number }
   | { type: 'SLING_SYNC_PUCKS'; myPuckCount: number; oppPuckCount: number }
-  | { type: 'SLING_VICTORY'; winner: 'player' | 'opponent' }
+  | { type: 'SLING_VICTORY'; winner: 'player' | 'opponent'; timestamp?: number }
+  | { type: 'SLING_VICTORY_CONFIRM'; winner: 'host' | 'guest' }
   | { type: 'GAME_OVER'; didWin: boolean }
   | { type: 'PLAYER_LEAVE' }
   | { type: 'REMATCH_REQUEST' }
@@ -50,6 +51,7 @@ export type NetworkMessage =
   | { type: 'FIT_PIECE_PLACED'; pieceId: string; trayR: number; trayC: number }
   | { type: 'FIT_PIECE_REMOVED'; pieceId: string }
   | { type: 'FIT_ROUND_CLAIM'; roundNumber: number; timestamp: number }
+  | { type: 'FIT_ROUND_RESOLVE'; roundNumber: number; winner: 'host' | 'guest' }
   | { type: 'FIT_REQUEST_SEED' }
   | { type: 'FIT_REMATCH_REQUEST' }
   | { type: 'FIT_REMATCH_ACCEPT'; seed?: number }
@@ -88,7 +90,8 @@ export type NetworkMessage =
     }
   | { type: 'WATER_INIT'; seed: number }
   | { type: 'WATER_REQUEST_SEED' }
-  | { type: 'WATER_PROGRESS'; score: number; completedColors: string[]; isWon: boolean }
+  | { type: 'WATER_PROGRESS'; score: number; completedColors: string[]; isWon: boolean; timestamp?: number }
+  | { type: 'WATER_MATCH_RESOLVE'; winner: 'host' | 'guest' }
   | { type: 'WATER_REMATCH'; seed: number }
   | { type: 'WATER_REMATCH_REQUEST' }
   | { type: 'WATER_REMATCH_ACCEPT'; seed?: number }

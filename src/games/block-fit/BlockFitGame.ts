@@ -21,6 +21,8 @@ export class BlockFitGame implements GameInstance {
   private netTextEl: HTMLElement | null = null;
   private peerAwayBannerEl: HTMLElement | null = null;
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
+  private winnerLocked: boolean = false;
+  private localRoundClaimTime: number = 0;
 
   // DOM Elements
   private canvasTray!: HTMLCanvasElement;
@@ -544,7 +546,28 @@ export class BlockFitGame implements GameInstance {
 
       case 'FIT_ROUND_CLAIM':
         if (msg.roundNumber === this.engine.matchScore.currentRound) {
-          this.handleRoundWon('opponent');
+          if (this.engine.status === 'playing') {
+            this.handleRoundWon('opponent');
+          } else if (this.session.peer?.role === 'host') {
+            // Host arbitration for simultaneous round claim
+            const guestWonFirst = msg.timestamp < this.localRoundClaimTime;
+            if (guestWonFirst) {
+              this.reconcileRoundLossToGuest();
+            }
+            this.sendNetworkMsg({
+              type: 'FIT_ROUND_RESOLVE',
+              roundNumber: msg.roundNumber,
+              winner: guestWonFirst ? 'guest' : 'host'
+            });
+          }
+        }
+        break;
+
+      case 'FIT_ROUND_RESOLVE':
+        if (this.session.peer?.role === 'guest' && msg.roundNumber === this.engine.matchScore.currentRound) {
+          if (msg.winner === 'host') {
+            this.reconcileRoundLossToGuest();
+          }
         }
         break;
 
@@ -642,7 +665,7 @@ export class BlockFitGame implements GameInstance {
   }
 
   private handleRoundWon(winner: 'player' | 'opponent') {
-    if (this.engine.status !== 'playing') return;
+    if (this.engine.status !== 'playing' || this.winnerLocked) return;
 
     if (this.trayHoldTimer !== null) {
       window.clearTimeout(this.trayHoldTimer);
@@ -661,6 +684,7 @@ export class BlockFitGame implements GameInstance {
     this.renderAll();
 
     if (winner === 'player') {
+      this.localRoundClaimTime = Date.now();
       sounds.playRoundComplete();
       confetti({
         particleCount: 75,
@@ -670,14 +694,20 @@ export class BlockFitGame implements GameInstance {
       this.sendNetworkMsg({
         type: 'FIT_ROUND_CLAIM',
         roundNumber: this.engine.matchScore.currentRound,
-        timestamp: Date.now()
+        timestamp: this.localRoundClaimTime
       });
     } else {
       sounds.playInvalidBuzz();
     }
 
     if (result === 'match_won') {
-      // Match Complete!
+      // Match Complete! Atomically lock match winner and stop AI
+      this.winnerLocked = true;
+      this.ai?.stop();
+      if (this.nextRoundTimer !== null) {
+        window.clearTimeout(this.nextRoundTimer);
+        this.nextRoundTimer = null;
+      }
       window.setTimeout(() => {
         this.showMatchOverModal();
       }, 1200);
@@ -696,7 +726,40 @@ export class BlockFitGame implements GameInstance {
     }
   }
 
+  private reconcileRoundLossToGuest() {
+    const result = this.engine.overrideRoundWinner('opponent');
+    this.updateHUD();
+    this.renderAll();
+
+    if (result === 'match_won') {
+      this.winnerLocked = true;
+      this.ai?.stop();
+      if (this.nextRoundTimer !== null) {
+        window.clearTimeout(this.nextRoundTimer);
+        this.nextRoundTimer = null;
+      }
+      this.roundWinnerOverlayEl.classList.add('hidden');
+      this.showMatchOverModal();
+    } else {
+      this.winnerLocked = false;
+      this.roundWinnerTextEl.textContent = `ENEMY TOOK ROUND ${this.engine.matchScore.currentRound}!`;
+      this.roundWinnerTextEl.className = 'text-3xl sm:text-4xl font-black tracking-tight text-center text-rose-400';
+      this.roundWinnerSubtextEl.textContent = `Score: You ${this.engine.matchScore.playerWins} - ${this.engine.matchScore.opponentWins} Enemy`;
+      this.roundWinnerOverlayEl.classList.remove('hidden');
+
+      if (this.nextRoundTimer !== null) {
+        window.clearTimeout(this.nextRoundTimer);
+      }
+      this.nextRoundTimer = window.setTimeout(() => {
+        this.roundWinnerOverlayEl.classList.add('hidden');
+        this.engine.nextRound();
+        this.startRoundFlow();
+      }, 2200);
+    }
+  }
+
   private showMatchOverModal() {
+    if (!this.engine.matchScore.matchWinner) return;
     const isPlayerWin = this.engine.matchScore.matchWinner === 'player';
     const trophy = document.getElementById('fit-modal-trophy');
     const title = document.getElementById('fit-modal-title');
@@ -767,6 +830,8 @@ export class BlockFitGame implements GameInstance {
 
   private startNewMatch(seed?: number) {
     this.rematchState = 'idle';
+    this.winnerLocked = false;
+    this.localRoundClaimTime = 0;
     this.matchOverModalEl.classList.add('hidden');
 
     const btn = document.getElementById('btn-fit-rematch');
@@ -781,6 +846,9 @@ export class BlockFitGame implements GameInstance {
   }
 
   private handleForfeitVictory(reason: string) {
+    if (this.winnerLocked || this.engine.status === 'match_over') return;
+    this.winnerLocked = true;
+
     if (this.countdownTimer !== null) {
       window.clearInterval(this.countdownTimer);
       this.countdownTimer = null;

@@ -132,4 +132,9 @@ export class SlingAI {
       case 'extreme': return MAX_PULL_DISTANCE - Math.random() * 2;
     }
   }
+
+  public stop(): void {
+    this.isPulling = false;
+    this.activePuck = null;
+  }
 }

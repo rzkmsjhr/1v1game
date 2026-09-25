@@ -372,7 +372,7 @@ export class TetrisGame implements GameInstance {
   }
 
   private handleForfeitVictory(reason: string) {
-    if (this.playerEngine?.isGameOver) {
+    if (this.playerEngine?.isGameOver || this.isGameOverHandled) {
       const rematchBtn = document.getElementById('btn-rematch');
       if (rematchBtn) {
         rematchBtn.textContent = 'Opponent Disconnected';

@@ -56,6 +56,7 @@ export class DriftRacingGame implements GameInstance {
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
   private roundReadyState: 'idle' | 'waiting_for_peer' = 'idle';
   private peerReadyForNextRound: boolean = false;
+  private winnerLocked: boolean = false;
 
   // Vehicle States
   public playerCar: VehiclePhysicsState;
@@ -914,6 +915,8 @@ export class DriftRacingGame implements GameInstance {
         this.roundState.roundType = 'solo_p1';
       }
     } else if (playerTotal > enemyTotal) {
+      if (this.winnerLocked) return;
+      this.winnerLocked = true;
       // Player Wins!
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       summaryEl.textContent = `🏆 VICTORY! You won the Tandem Battle (${playerTotal} vs ${enemyTotal} pts)!`;
@@ -924,6 +927,8 @@ export class DriftRacingGame implements GameInstance {
         btnText.textContent = 'Play Again (Rematch)';
       }
     } else {
+      if (this.winnerLocked) return;
+      this.winnerLocked = true;
       // Enemy Wins
       summaryEl.textContent = `DEFEAT! Rival took the Tandem Battle (${enemyTotal} vs ${playerTotal} pts).`;
       this.roundState.phase = 'match_end';
@@ -1088,6 +1093,7 @@ export class DriftRacingGame implements GameInstance {
     this.rematchState = 'idle';
     this.roundReadyState = 'idle';
     this.peerReadyForNextRound = false;
+    this.winnerLocked = false;
 
     const modal = this.container.querySelector('#drift-round-modal') as HTMLElement;
     if (modal) modal.classList.add('hidden');
@@ -1129,6 +1135,8 @@ export class DriftRacingGame implements GameInstance {
   }
 
   private handleForfeitVictory(reason: string) {
+    if (this.winnerLocked || this.roundState.phase === 'match_end') return;
+    this.winnerLocked = true;
     this.roundState.phase = 'match_end';
     sounds.playFanfare();
     confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });

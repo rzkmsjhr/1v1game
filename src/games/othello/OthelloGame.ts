@@ -49,6 +49,7 @@ export class OthelloGame implements GameInstance {
   private isMyTurn: boolean = true;
   private isProcessing: boolean = false;
   private forfeitMessage: string | null = null;
+  private winnerLocked: boolean = false;
 
   // Dice roll duel state (online)
   private myDiceRoll: number | null = null;
@@ -220,10 +221,11 @@ export class OthelloGame implements GameInstance {
   }
 
   private handleForfeitVictory(reason: string) {
-    if (this.engine.isGameOver) {
+    if (this.winnerLocked || this.engine.isGameOver) {
       this.renderRematchBanner();
       return;
     }
+    this.winnerLocked = true;
 
     if (this.activeDiceInterval) {
       clearInterval(this.activeDiceInterval);
@@ -1153,6 +1155,8 @@ export class OthelloGame implements GameInstance {
 
   private checkGameStatus() {
     if (this.engine.isGameOver) {
+      if (this.winnerLocked) return;
+      this.winnerLocked = true;
       const scores = this.engine.getScores();
       if (scores.black !== scores.white) {
         const winner = scores.black > scores.white ? 1 : 2;
@@ -1211,6 +1215,7 @@ export class OthelloGame implements GameInstance {
 
   private resetMatch() {
     this.rematchState = 'idle';
+    this.winnerLocked = false;
     this.forfeitMessage = null;
     this.engine.reset();
     this.isProcessing = false;

@@ -156,9 +156,6 @@ export class BlockFitAI {
 
     if (success) {
       this.onPiecePlaced?.(piece.id, piece.solutionR, piece.solutionC);
-      if (this.engine.opponentBoard.isComplete) {
-        this.engine.claimRoundWin('opponent');
-      }
     }
   }
 

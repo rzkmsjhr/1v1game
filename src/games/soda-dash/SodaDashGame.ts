@@ -46,6 +46,7 @@ export class SodaDashGame implements GameInstance {
   private remoteLastSyncTime: number = 0;
   private isInitialSeedSynced: boolean = false;
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
+  private winnerLocked: boolean = false;
 
   // Top-Middle 2-Line Bubble Chat Elements (Rival Info)
   private rivalBubbleEl!: HTMLElement;
@@ -767,7 +768,7 @@ export class SodaDashGame implements GameInstance {
     } else if (msg.type === 'DASH_GAME_OVER') {
       this.engine.opponent.isDead = true;
       this.engine.opponent.hearts = 0;
-      if (!this.engine.isGameOver) {
+      if (!this.winnerLocked && !this.engine.isGameOver) {
         this.handleGameOver('player');
       }
     }
@@ -990,9 +991,12 @@ export class SodaDashGame implements GameInstance {
   }
 
   private handleGameOver(winner: 'player' | 'opponent' | 'draw'): void {
-    if (this.gameOverModalEl && !this.gameOverModalEl.classList.contains('hidden')) {
+    if (this.winnerLocked || this.engine.isGameOver) {
       return;
     }
+    this.winnerLocked = true;
+    this.engine.isGameOver = true;
+    this.engine.winner = winner;
 
     const duration = Math.floor((Date.now() - this.startTime) / 1000);
     const pDist = Math.floor(this.engine.player.distance);
@@ -1107,6 +1111,7 @@ export class SodaDashGame implements GameInstance {
 
   private startNewMatch(seed?: number): void {
     this.rematchState = 'idle';
+    this.winnerLocked = false;
     this.gameOverModalEl.classList.add('hidden');
 
     const btn = document.getElementById('btn-dash-rematch');
@@ -1141,10 +1146,11 @@ export class SodaDashGame implements GameInstance {
   }
 
   private handleForfeitVictory(reason: string): void {
-    if (this.engine.isGameOver && this.gameOverModalEl && !this.gameOverModalEl.classList.contains('hidden')) {
+    if (this.winnerLocked || (this.engine.isGameOver && this.gameOverModalEl && !this.gameOverModalEl.classList.contains('hidden'))) {
       return;
     }
 
+    this.winnerLocked = true;
     this.engine.isGameOver = true;
     this.engine.winner = 'player';
     this.engine.opponent.isDead = true;

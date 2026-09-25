@@ -150,6 +150,7 @@ export class SnakeLadderGame implements GameInstance {
   private isRollingDiceAnimation: boolean = false;
   private isAIThinking: boolean = false;
   private isGameOver: boolean = false;
+  private winnerLocked: boolean = false;
 
   // Cached DOM elements
   private badgePlayerEl: HTMLElement | null = null;
@@ -397,7 +398,7 @@ export class SnakeLadderGame implements GameInstance {
   }
 
   private handleForfeitVictory(reason: string) {
-    if (this.isGameOver) {
+    if (this.winnerLocked || this.isGameOver) {
       const rematchBtn = document.getElementById('btn-sl-rematch');
       if (rematchBtn) {
         rematchBtn.textContent = 'Opponent Disconnected';
@@ -407,6 +408,7 @@ export class SnakeLadderGame implements GameInstance {
       return;
     }
 
+    this.winnerLocked = true;
     this.isGameOver = true;
     this.hideDuelModal();
 
@@ -1578,6 +1580,9 @@ export class SnakeLadderGame implements GameInstance {
   // GAME OVER & REMATCH
   // -------------------------------------------------------------
   private showGameOverModal(didIWin: boolean, message: string) {
+    if (this.winnerLocked) return;
+    this.winnerLocked = true;
+    this.isGameOver = true;
     this.rematchState = 'idle';
     const modal = document.getElementById('modal-game-over');
     const icon = document.getElementById('game-over-icon');
@@ -1610,6 +1615,7 @@ export class SnakeLadderGame implements GameInstance {
 
   private startNewMatch(boardConfig?: BoardConfig) {
     this.rematchState = 'idle';
+    this.winnerLocked = false;
     this.isGameOver = false;
     this.hideGameOverModal();
 

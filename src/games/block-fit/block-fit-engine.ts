@@ -200,6 +200,42 @@ export class BlockFitEngine {
     }
   }
 
+  /**
+   * Reconcile/override round winner when network tiebreaker resolves
+   */
+  public overrideRoundWinner(winner: 'player' | 'opponent'): 'round_cleared' | 'match_won' {
+    const prevWinner = this.roundWinner;
+    if (prevWinner === winner) {
+      return this.matchScore.matchWinner ? 'match_won' : 'round_cleared';
+    }
+
+    if (prevWinner === 'player') this.matchScore.playerWins = Math.max(0, this.matchScore.playerWins - 1);
+    else if (prevWinner === 'opponent') this.matchScore.opponentWins = Math.max(0, this.matchScore.opponentWins - 1);
+
+    if (winner === 'player') this.matchScore.playerWins++;
+    else if (winner === 'opponent') this.matchScore.opponentWins++;
+
+    this.roundWinner = winner;
+    const lastHistory = this.matchScore.history[this.matchScore.history.length - 1];
+    if (lastHistory && lastHistory.roundNumber === this.matchScore.currentRound) {
+      lastHistory.winner = winner;
+    }
+
+    if (this.matchScore.playerWins >= this.matchScore.targetWins) {
+      this.matchScore.matchWinner = 'player';
+      this.status = 'match_over';
+      return 'match_won';
+    } else if (this.matchScore.opponentWins >= this.matchScore.targetWins) {
+      this.matchScore.matchWinner = 'opponent';
+      this.status = 'match_over';
+      return 'match_won';
+    } else {
+      this.matchScore.matchWinner = null;
+      this.status = 'round_won';
+      return 'round_cleared';
+    }
+  }
+
   public nextRound() {
     if (this.matchScore.matchWinner) return;
     this.initRound(this.matchScore.currentRound + 1);

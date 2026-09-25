@@ -28,6 +28,9 @@ export class WaterSortGame implements GameInstance {
   private opponentName: string = 'Opponent';
   private opponentScore: number = 0;
   private opponentWon: boolean = false;
+  private winnerLocked: boolean = false;
+  private matchWinner: 'player' | 'opponent' | null = null;
+  private localWinTimestamp: number = 0;
   private matchSeed: number;
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
   private playerMatchWins: number = 0;
@@ -334,9 +337,28 @@ export class WaterSortGame implements GameInstance {
           this.updateOpponentClearedTray();
         }
         this.updateHUD(true);
-        if (msg.isWon && !this.engine.state.isWon) {
-          this.opponentWon = true;
-          this.handleMatchEnd('opponent');
+        if (msg.isWon) {
+          if (!this.winnerLocked) {
+            this.opponentWon = true;
+            this.handleMatchEnd('opponent');
+          } else if (this.session.peer?.role === 'host') {
+            // Simultaneous finish arbitration: host decides based on earlier completion timestamp
+            const guestWonFirst = (msg.timestamp || 0) < this.localWinTimestamp;
+            if (guestWonFirst) {
+              this.reconcileMatchLossToOpponent();
+            }
+            this.session.peer.sendMessage({
+              type: 'WATER_MATCH_RESOLVE',
+              winner: guestWonFirst ? 'guest' : 'host'
+            });
+          }
+        }
+        break;
+      case 'WATER_MATCH_RESOLVE':
+        if (this.session.peer?.role === 'guest') {
+          if (msg.winner === 'host') {
+            this.reconcileMatchLossToOpponent();
+          }
         }
         break;
       case 'WATER_REMATCH_REQUEST':
@@ -391,7 +413,7 @@ export class WaterSortGame implements GameInstance {
           }
         }
         this.updateHUD(true);
-        if (isWon && !this.engine.state.isWon) {
+        if (isWon && !this.winnerLocked) {
           this.opponentWon = true;
           this.handleMatchEnd('opponent');
         }
@@ -529,6 +551,9 @@ export class WaterSortGame implements GameInstance {
     this.selectedTubeIndex = null;
     this.opponentScore = 0;
     this.opponentWon = false;
+    this.winnerLocked = false;
+    this.matchWinner = null;
+    this.localWinTimestamp = 0;
     this.opponentCompletedColors = [];
     this.opponentReservoirState = { color: null, count: 0 };
 
@@ -1096,7 +1121,7 @@ export class WaterSortGame implements GameInstance {
   }
 
   private handleTubeClick(index: number) {
-    if (this.phase !== 'PLAYING' || this.isAnimating || this.engine.state.isWon || this.opponentWon) return;
+    if (this.phase !== 'PLAYING' || this.isAnimating || this.engine.state.isWon || this.opponentWon || this.winnerLocked) return;
 
     if (this.selectedTubeIndex === null) {
       // Pick source tube
@@ -1263,6 +1288,13 @@ export class WaterSortGame implements GameInstance {
       if (result?.isCompleted) {
         const completedColorDef = this.getColorDef(result.color);
         if (completedColorDef) {
+          // If this completion achieves victory, immediately lock winner and pause AI!
+          if (result.isWon || this.engine.state.isWon) {
+            this.winnerLocked = true;
+            this.localWinTimestamp = Date.now();
+            this.ai?.pause();
+            this.syncProgress();
+          }
           // Show the bowl completion animation before rendering the cleared state
           this.triggerColorCompleted(result.color);
           this.animateBowlCompletion(completedColorDef, () => {
@@ -1282,6 +1314,9 @@ export class WaterSortGame implements GameInstance {
       this.syncProgress();
 
       if (this.engine.state.isWon) {
+        this.winnerLocked = true;
+        this.localWinTimestamp = Date.now();
+        this.ai?.pause();
         this.handleMatchEnd('player');
       }
     });
@@ -1356,13 +1391,29 @@ export class WaterSortGame implements GameInstance {
         type: 'WATER_PROGRESS',
         score: this.engine.state.score,
         completedColors: this.engine.state.completedColors,
-        isWon: this.engine.state.isWon
+        isWon: this.engine.state.isWon,
+        timestamp: this.localWinTimestamp || Date.now()
       });
     }
   }
 
+  private reconcileMatchLossToOpponent() {
+    if (this.matchWinner === 'player') {
+      this.playerMatchWins = Math.max(0, this.playerMatchWins - 1);
+    }
+    this.matchWinner = null;
+    this.winnerLocked = false;
+    this.opponentWon = true;
+    this.handleMatchEnd('opponent');
+  }
+
   private handleMatchEnd(winner: 'player' | 'opponent', customMessage?: string) {
+    if (this.matchWinner !== null) return;
+    this.matchWinner = winner;
+    this.winnerLocked = true;
     this.phase = 'MATCH_OVER';
+    this.ai?.pause();
+
     if (this.countdownTimer !== null) {
       clearInterval(this.countdownTimer);
       this.countdownTimer = null;
@@ -1406,7 +1457,7 @@ export class WaterSortGame implements GameInstance {
   }
 
   private handleForfeitVictory(reason: string) {
-    if (this.phase === 'MATCH_OVER') {
+    if (this.phase === 'MATCH_OVER' || this.matchWinner !== null) {
       if (this.rematchBtnEl) {
         this.rematchBtnEl.textContent = 'Opponent Disconnected';
         this.rematchBtnEl.disabled = true;

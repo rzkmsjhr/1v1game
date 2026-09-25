@@ -44,6 +44,8 @@ export class SlingPuckGame implements GameInstance {
 
   private opponentName: string = 'Opponent';
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
+  private winnerLocked: boolean = false;
+  private localVictoryTimestamp: number = 0;
   private lastSyncBroadcastTime: number = 0;
   private lastBandBroadcastTime: number = 0;
   private lastOpponentBandPullTime: number = 0;
@@ -170,11 +172,21 @@ export class SlingPuckGame implements GameInstance {
     };
 
     this.engine.onMatchOver = (winner: PlayerSide) => {
+      if (this.winnerLocked) return;
+      this.winnerLocked = true;
+      this.ai?.stop();
+      this.engine.phase = 'MATCH_OVER';
+      this.engine.matchWinner = winner;
+
       const didIWin = winner === 'player';
+      if (didIWin) {
+        this.localVictoryTimestamp = Date.now();
+      }
       if (this.session.mode === 'online' && this.session.peer?.isConnected && didIWin) {
         this.session.peer.sendMessage({
           type: 'SLING_VICTORY',
-          winner: 'opponent' // From opponent perspective, opponent lost
+          winner: 'opponent',
+          timestamp: this.localVictoryTimestamp
         });
       }
       this.showGameOverModal(didIWin, didIWin ? 'You cleared all pucks from your side!' : `${this.opponentName} cleared all pucks first!`);
@@ -201,6 +213,7 @@ export class SlingPuckGame implements GameInstance {
         onStatusChange: (status: string, message?: string) => {
           origOnStatusChange?.(status as any, message);
           if (status === 'disconnected') {
+            if (this.winnerLocked || this.engine.phase === 'MATCH_OVER') return;
             this.showGameOverModal(true, 'Opponent disconnected. You win by forfeit!');
           }
         },
@@ -259,6 +272,7 @@ export class SlingPuckGame implements GameInstance {
   private handleNetworkMessage(msg: any) {
     switch (msg.type) {
       case 'PLAYER_LEAVE':
+        if (this.winnerLocked || this.engine.phase === 'MATCH_OVER') break;
         this.showGameOverModal(true, 'Opponent forfeited the match.');
         break;
       case 'SLING_START':
@@ -430,7 +444,34 @@ export class SlingPuckGame implements GameInstance {
         this.updateHUD();
         break;
       case 'SLING_VICTORY':
-        this.showGameOverModal(false, `${this.opponentName} cleared all pucks!`);
+        if (!this.winnerLocked) {
+          this.winnerLocked = true;
+          this.ai?.stop();
+          this.engine.phase = 'MATCH_OVER';
+          this.engine.matchWinner = 'opponent';
+          this.showGameOverModal(false, `${this.opponentName} cleared all pucks!`);
+        } else if (this.session.peer?.role === 'host') {
+          // Host arbitration for simultaneous puck clearing
+          const guestWonFirst = (msg.timestamp || 0) < this.localVictoryTimestamp;
+          if (guestWonFirst) {
+            this.winnerLocked = false;
+            this.engine.matchWinner = 'opponent';
+            this.showGameOverModal(false, `${this.opponentName} cleared all pucks first!`);
+          }
+          this.session.peer.sendMessage({
+            type: 'SLING_VICTORY_CONFIRM',
+            winner: guestWonFirst ? 'guest' : 'host'
+          });
+        }
+        break;
+      case 'SLING_VICTORY_CONFIRM':
+        if (this.session.peer?.role === 'guest') {
+          if (msg.winner === 'host') {
+            this.winnerLocked = false;
+            this.engine.matchWinner = 'opponent';
+            this.showGameOverModal(false, `${this.opponentName} cleared all pucks first!`);
+          }
+        }
         break;
       case 'REMATCH_REQUEST':
         this.showRematchOffer();
@@ -965,6 +1006,12 @@ export class SlingPuckGame implements GameInstance {
   // GAME OVER & REMATCH HANDLING
   // -------------------------------------------------------------
   private showGameOverModal(didIWin: boolean, message: string) {
+    if (this.winnerLocked && this.engine.phase === 'MATCH_OVER' && this.engine.matchWinner !== null) return;
+    this.winnerLocked = true;
+    this.ai?.stop();
+    this.engine.phase = 'MATCH_OVER';
+    this.engine.matchWinner = didIWin ? 'player' : 'opponent';
+
     const modal = document.getElementById('modal-sling-gameover');
     const title = document.getElementById('sling-gameover-title');
     const desc = document.getElementById('sling-gameover-desc');
@@ -1017,6 +1064,8 @@ export class SlingPuckGame implements GameInstance {
 
   private startNewMatch(seed?: number) {
     this.rematchState = 'idle';
+    this.winnerLocked = false;
+    this.localVictoryTimestamp = 0;
     const modal = document.getElementById('modal-sling-gameover');
     modal?.classList.add('hidden');
 

@@ -50,6 +50,7 @@ export class SheepFightGame implements GameInstance {
   private pingDotEl: HTMLElement | null = null;
   private pingTextEl: HTMLElement | null = null;
   private peerAwayBannerEl: HTMLElement | null = null;
+  private winnerLocked: boolean = false;
 
   // HUD Dirty-Checking Caches (to prevent per-frame DOM layout recalculations)
   private lastScoreText: string = '';
@@ -701,6 +702,9 @@ export class SheepFightGame implements GameInstance {
   }
 
   private handleMatchEnd(winner: 'player' | 'opponent' | 'draw') {
+    if (this.winnerLocked) return;
+    this.winnerLocked = true;
+    this.engine.state.winner = winner;
     this.gameOverModalEl.classList.remove('hidden');
 
     // Broadcast definitive final state if host
@@ -788,6 +792,7 @@ export class SheepFightGame implements GameInstance {
 
   private startNewMatch() {
     this.rematchState = 'idle';
+    this.winnerLocked = false;
     this.gameOverModalEl.classList.add('hidden');
 
     const btn = this.container.querySelector('#sf-btn-rematch') as HTMLButtonElement | null;
@@ -820,7 +825,7 @@ export class SheepFightGame implements GameInstance {
   }
 
   private handleOpponentDisconnect() {
-    if (this.engine.state.winner !== null) {
+    if (this.winnerLocked || this.engine.state.winner !== null) {
       const btn = this.container.querySelector('#sf-btn-rematch') as HTMLButtonElement | null;
       if (btn) {
         btn.textContent = 'Opponent Disconnected';
@@ -833,7 +838,7 @@ export class SheepFightGame implements GameInstance {
   }
 
   private handleOpponentForfeit(reason: string) {
-    if (this.engine.state.winner !== null) {
+    if (this.winnerLocked || this.engine.state.winner !== null) {
       const btn = this.container.querySelector('#sf-btn-rematch') as HTMLButtonElement | null;
       if (btn) {
         btn.textContent = 'Opponent Disconnected';
@@ -843,6 +848,7 @@ export class SheepFightGame implements GameInstance {
       return;
     }
 
+    this.winnerLocked = true;
     this.engine.state.winner = 'player';
     this.playVictorySound();
     confetti({

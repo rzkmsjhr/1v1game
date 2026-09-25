@@ -1601,6 +1601,7 @@ export class PoolGame implements GameInstance {
   }
 
   private handleGameOverTransition() {
+    if (this.isGameOverModalShown) return;
     this.isGameOverModalShown = true;
     const won = this.engine.winner === 'player';
     if (won) {
@@ -1613,6 +1614,7 @@ export class PoolGame implements GameInstance {
   }
 
   private showGameOverModal(playerWon: boolean, customSubtitle?: string) {
+    this.isGameOverModalShown = true;
     this.rematchState = 'idle';
     const modal = document.getElementById('modal-pool-gameover');
     const title = document.getElementById('pool-gameover-title');
