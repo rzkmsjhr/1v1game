@@ -5,6 +5,9 @@ export type NetworkMessage =
   | { type: 'TETRIS_PIECE_MOVE'; currentPiece: any; score: number }
   | { type: 'TETRIS_GARBAGE'; lines: number }
   | { type: 'TETRIS_START_SEED'; seed: number }
+  | { type: 'TETRIS_REQUEST_SEED' }
+  | { type: 'TETRIS_REMATCH_REQUEST' }
+  | { type: 'TETRIS_REMATCH_ACCEPT'; seed?: number }
   | { type: 'OTHELLO_MOVE'; r: number; c: number; player: number }
   | { type: 'OTHELLO_DICE_ROLL'; value: number }
   | { type: 'OTHELLO_DICE_REROLL' }

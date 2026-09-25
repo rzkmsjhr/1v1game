@@ -6,6 +6,7 @@ import { InputController } from '../../components/InputController';
 import { TetrisAI } from '../../ai/tetris-ai';
 import { sounds } from '../../engine/sound';
 import type { GameInstance, GameSession, AppTheme } from '../types';
+import type { NetworkHealth } from '../../network/webrtc-peer';
 
 function hashRoomCode(code?: string | null): number {
   if (!code) return 0;
@@ -39,6 +40,12 @@ export class TetrisGame implements GameInstance {
   private isMobileView: boolean = typeof window !== 'undefined' ? window.innerWidth < 768 : false;
   private isGameOverHandled: boolean = false;
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
+
+  // Network Health HUD elements
+  private pingEl: HTMLElement | null = null;
+  private pingDotEl: HTMLElement | null = null;
+  private pingTextEl: HTMLElement | null = null;
+  private peerAwayBannerEl: HTMLElement | null = null;
 
   // Cached DOM elements & dirty-checking fields to eliminate layout and canvas thrashing
   private statPlayerScoreEl: HTMLElement | null = null;
@@ -186,6 +193,10 @@ export class TetrisGame implements GameInstance {
   }
 
   public destroy() {
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+    }
+
     this.isRunning = false;
     if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
     if (this.trailingBroadcastTimer !== null) {
@@ -202,6 +213,10 @@ export class TetrisGame implements GameInstance {
     this.statOpponentGarbageEl = null;
     this.canvasHoldEl = null;
     this.canvasNextEls = [];
+    this.pingEl = null;
+    this.pingDotEl = null;
+    this.pingTextEl = null;
+    this.peerAwayBannerEl = null;
     this.container.innerHTML = '';
   }
 
@@ -274,50 +289,140 @@ export class TetrisGame implements GameInstance {
   private setupNetwork() {
     if (!this.session.peer) return;
 
-    const origOnMessage = (this.session.peer as any).events?.onMessage;
-    const origOnStatusChange = (this.session.peer as any).events?.onStatusChange;
+    const peer = this.session.peer;
+    const origOnMessage = (peer as any).events?.onMessage;
+    const origOnStatusChange = (peer as any).events?.onStatusChange;
+    const origOnHealthChange = (peer as any).events?.onHealthChange;
 
-    this.session.peer = Object.assign(this.session.peer, {
+    this.session.peer = Object.assign(peer, {
       events: {
-        ...(this.session.peer as any).events,
+        ...(peer as any).events,
         onMessage: (msg: any) => {
           origOnMessage?.(msg);
           this.handleNetworkMessage(msg);
         },
         onStatusChange: (status: string, message?: string) => {
           origOnStatusChange?.(status, message);
-          if (status === 'connected' && this.session.peer?.role === 'host') {
-            this.session.peer.sendMessage({ type: 'TETRIS_START_SEED', seed: this.matchSeed });
+          if (status === 'connected') {
+            if (peer.role === 'host') {
+              peer.sendMessage({ type: 'TETRIS_START_SEED', seed: this.matchSeed });
+            } else if (peer.role === 'guest') {
+              peer.sendMessage({ type: 'TETRIS_REQUEST_SEED' });
+            }
           }
           if (status === 'disconnected') {
-            this.handleOpponentDisconnected();
+            this.handleForfeitVictory('Opponent disconnected from the match.');
           }
+        },
+        onHealthChange: (health: NetworkHealth) => {
+          origOnHealthChange?.(health);
+          this.updateNetworkHealthHUD(health);
         }
       }
     });
 
-    this.session.peer.flushEarlyMessages();
+    peer.flushEarlyMessages?.();
 
-    if (this.session.peer.isConnected && this.session.peer.role === 'host') {
-      this.session.peer.sendMessage({ type: 'TETRIS_START_SEED', seed: this.matchSeed });
+    if (peer.isConnected) {
+      if (peer.role === 'host') {
+        peer.sendMessage({ type: 'TETRIS_START_SEED', seed: this.matchSeed });
+      } else if (peer.role === 'guest') {
+        peer.sendMessage({ type: 'TETRIS_REQUEST_SEED' });
+      }
+      this.updateNetworkHealthHUD({
+        rtt: peer.currentRtt,
+        status: peer.networkQuality,
+        isPeerVisible: peer.isPeerVisible
+      });
     }
 
     window.addEventListener('beforeunload', this.handleBeforeUnload);
   }
 
-  private handleOpponentDisconnected() {
-    if (this.playerEngine?.isGameOver) return;
+  private updateNetworkHealthHUD(health: NetworkHealth) {
+    if (!this.pingEl || !this.pingDotEl || !this.pingTextEl) return;
+    this.pingEl.classList.remove('hidden');
+    this.pingEl.classList.add('inline-flex');
+
+    if (health.status === 'stalled') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+      this.pingTextEl.textContent = 'Lag ⚠️';
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    } else if (health.status === 'poor') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+      this.pingTextEl.textContent = `${health.rtt}ms`;
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    } else if (health.status === 'moderate') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+      this.pingTextEl.textContent = `${health.rtt}ms`;
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    } else {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+      this.pingTextEl.textContent = `${health.rtt || 28}ms`;
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    }
+
+    if (this.peerAwayBannerEl) {
+      if (!health.isPeerVisible) {
+        this.peerAwayBannerEl.classList.remove('hidden');
+      } else {
+        this.peerAwayBannerEl.classList.add('hidden');
+      }
+    }
+  }
+
+  private handleForfeitVictory(reason: string) {
+    if (this.playerEngine?.isGameOver) {
+      const rematchBtn = document.getElementById('btn-rematch');
+      if (rematchBtn) {
+        rematchBtn.textContent = 'Opponent Disconnected';
+        rematchBtn.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+        rematchBtn.classList.remove('animate-pulse');
+      }
+      return;
+    }
+
+    this.isGameOverHandled = true;
     this.isRunning = false;
     this.inputController?.setEnabled(false);
+
     sounds.playWin();
-    confetti({ particleCount: 120, spread: 80 });
-    this.showGameOverModal(true, 'Opponent left or disconnected. You win by forfeit!');
+    confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+
+    const modal = document.getElementById('modal-gameover');
+    const title = document.getElementById('gameover-title');
+    const subtitle = document.getElementById('gameover-subtitle');
+    const rematchBtn = document.getElementById('btn-rematch');
+    const exitBtn = document.getElementById('btn-modal-exit');
+
+    if (title) {
+      title.textContent = 'VICTORY BY FORFEIT!';
+      title.className = 'text-2xl sm:text-3xl font-extrabold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500';
+    }
+    if (subtitle) {
+      subtitle.textContent = reason;
+    }
+    if (rematchBtn) {
+      rematchBtn.textContent = 'Opponent Disconnected';
+      rematchBtn.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+      rematchBtn.classList.remove('animate-pulse');
+    }
+    if (exitBtn) {
+      exitBtn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold cursor-pointer';
+    }
+    modal?.classList.remove('hidden');
   }
 
   private handleNetworkMessage(msg: any) {
     switch (msg.type) {
       case 'PLAYER_LEAVE':
-        this.handleOpponentDisconnected();
+        this.handleForfeitVictory('Opponent forfeited the match.');
+        break;
+
+      case 'TETRIS_REQUEST_SEED':
+        if (this.session.peer?.role === 'host' && this.session.peer.isConnected) {
+          this.session.peer.sendMessage({ type: 'TETRIS_START_SEED', seed: this.matchSeed });
+        }
         break;
 
       case 'TETRIS_START_SEED':
@@ -325,6 +430,8 @@ export class TetrisGame implements GameInstance {
           this.matchSeed = msg.seed;
           this.playerEngine.reset(true, msg.seed);
           this.opponentEngine.reset(false, msg.seed);
+          this.playerRenderer?.reset();
+          this.opponentRenderer?.reset();
           this.updateStatsUI(true);
           this.renderPreviews(true);
         }
@@ -364,10 +471,12 @@ export class TetrisGame implements GameInstance {
         this.handleGameOver(msg.didWin, true);
         break;
 
+      case 'TETRIS_REMATCH_REQUEST':
       case 'REMATCH_REQUEST':
         this.showRematchOffer();
         break;
 
+      case 'TETRIS_REMATCH_ACCEPT':
       case 'REMATCH_ACCEPT':
         this.startNewMatch(msg.seed);
         break;
@@ -491,9 +600,20 @@ export class TetrisGame implements GameInstance {
           <span class="text-gray-400 text-[10px] uppercase">${this.session.mode === 'ai' ? `AI: ${this.session.aiDifficulty}` : '1v1 Online'}</span>
         </div>
 
-        <div class="text-[10px] font-mono text-gray-500 font-semibold px-2 py-0.5 rounded bg-gray-500/10">
-          VS
+        <div class="flex items-center space-x-1.5">
+          <div id="tetris-net-ping" class="hidden items-center space-x-1 text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-300/40 dark:border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm">
+            <span id="tetris-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400"></span>
+            <span id="tetris-net-text">--ms</span>
+          </div>
+          <div class="text-[10px] font-mono text-gray-500 font-semibold px-2 py-0.5 rounded bg-gray-500/10">
+            VS
+          </div>
         </div>
+      </div>
+
+      <!-- Inactive Tab / Opponent Away Banner -->
+      <div id="tetris-peer-away-banner" class="hidden w-full max-w-md px-2 py-0.5 text-center rounded-lg bg-amber-100 dark:bg-amber-500/20 border border-amber-300/40 dark:border-amber-500/40 text-amber-700 dark:text-amber-300 font-bold text-[10px] tracking-wide animate-pulse">
+        ⚠️ Opponent is tabbed out / minimized
       </div>
 
       <!-- Main Game Container (Stacked Dashboard + Arena) -->
@@ -633,7 +753,17 @@ export class TetrisGame implements GameInstance {
           <span class="text-gray-500 uppercase">${this.session.mode === 'ai' ? `AI: ${this.session.aiDifficulty}` : '1v1 Online'}</span>
         </div>
 
-        <div class="w-16"></div>
+        <div class="flex items-center space-x-2">
+          <div id="tetris-net-ping" class="hidden items-center space-x-1 text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-300/40 dark:border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm">
+            <span id="tetris-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400"></span>
+            <span id="tetris-net-text">--ms</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inactive Tab / Opponent Away Banner -->
+      <div id="tetris-peer-away-banner" class="hidden w-full max-w-5xl px-3 py-1 mb-1 text-center rounded-lg bg-amber-100 dark:bg-amber-500/20 border border-amber-300/40 dark:border-amber-500/40 text-amber-700 dark:text-amber-300 font-bold text-xs tracking-wide animate-pulse">
+        ⚠️ Opponent is tabbed out / minimized
       </div>
 
       <!-- Main Battle Canvas Grid -->
@@ -768,6 +898,11 @@ export class TetrisGame implements GameInstance {
     this.canvasHoldEl = document.getElementById('canvas-hold') as HTMLCanvasElement;
     this.canvasNextEls = [0, 1, 2, 3].map(i => document.getElementById(`canvas-next-${i}`) as HTMLCanvasElement);
 
+    this.pingEl = document.getElementById('tetris-net-ping');
+    this.pingDotEl = document.getElementById('tetris-net-dot');
+    this.pingTextEl = document.getElementById('tetris-net-text');
+    this.peerAwayBannerEl = document.getElementById('tetris-peer-away-banner');
+
     // Reset caches so next UI pass paints cleanly
     this.cachedPlayerScore = -1;
     this.cachedPlayerLines = -1;
@@ -787,25 +922,7 @@ export class TetrisGame implements GameInstance {
     });
 
     document.getElementById('btn-rematch')?.addEventListener('click', () => {
-      if (this.session.mode === 'ai') {
-        this.startNewMatch();
-      } else if (this.session.peer?.isConnected) {
-        if (this.rematchState === 'offer_received') {
-          const newSeed = Math.floor(Math.random() * 2147483647) + 1;
-          this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT', seed: newSeed });
-          this.startNewMatch(newSeed);
-          return;
-        }
-        if (this.rematchState === 'idle') {
-          this.rematchState = 'requested';
-          this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
-          const btn = document.getElementById('btn-rematch');
-          if (btn) {
-            btn.textContent = 'Waiting for Opponent...';
-            btn.setAttribute('disabled', 'true');
-          }
-        }
-      }
+      this.handleRematch();
     });
 
     document.getElementById('btn-modal-exit')?.addEventListener('click', () => {
@@ -967,7 +1084,7 @@ export class TetrisGame implements GameInstance {
 
       const rematchBtn = document.getElementById('btn-rematch');
       const exitBtn = document.getElementById('btn-modal-exit');
-      this.rematchState = 'idle';
+
       if (customSubtitle) {
         rematchBtn?.classList.add('hidden');
         if (exitBtn) {
@@ -975,12 +1092,15 @@ export class TetrisGame implements GameInstance {
         }
       } else {
         rematchBtn?.classList.remove('hidden');
-        if (rematchBtn) {
-          rematchBtn.removeAttribute('disabled');
+        if (this.rematchState === 'offer_received') {
+          this.showRematchOffer();
+        } else if (rematchBtn) {
           rematchBtn.textContent = 'Play Again';
+          rematchBtn.classList.remove('opacity-70', 'cursor-not-allowed', 'animate-pulse', 'pointer-events-none');
+          rematchBtn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold cursor-pointer';
         }
         if (exitBtn) {
-          exitBtn.className = 'w-full py-2 text-xs font-semibold text-gray-500 hover:text-gray-400';
+          exitBtn.className = 'w-full py-2 text-xs font-semibold text-gray-500 hover:text-gray-400 cursor-pointer';
         }
       }
 
@@ -993,26 +1113,79 @@ export class TetrisGame implements GameInstance {
     modal?.classList.add('hidden');
   }
 
+  private handleRematch() {
+    const btn = document.getElementById('btn-rematch');
+
+    if (this.session.mode === 'ai') {
+      this.startNewMatch();
+      return;
+    }
+
+    if (!this.session.peer?.isConnected) return;
+
+    if (this.rematchState === 'offer_received') {
+      const newSeed = Math.floor(Math.random() * 2147483647) + 1;
+      this.session.peer.sendMessage({ type: 'TETRIS_REMATCH_ACCEPT', seed: newSeed });
+      this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT', seed: newSeed });
+      this.startNewMatch(newSeed);
+    } else if (this.rematchState === 'idle') {
+      this.rematchState = 'requested';
+      if (btn) {
+        btn.textContent = 'Waiting for Opponent...';
+        btn.classList.add('opacity-70', 'cursor-not-allowed');
+      }
+      this.session.peer.sendMessage({ type: 'TETRIS_REMATCH_REQUEST' });
+      this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
+    }
+  }
+
+  private showRematchOffer() {
+    if (this.rematchState === 'requested') {
+      // Both clicked rematch at around the same time!
+      const newSeed = Math.floor(Math.random() * 2147483647) + 1;
+      if (this.session.peer?.role === 'host') {
+        if (this.session.peer?.isConnected) {
+          this.session.peer.sendMessage({ type: 'TETRIS_REMATCH_ACCEPT', seed: newSeed });
+          this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT', seed: newSeed });
+        }
+        this.startNewMatch(newSeed);
+      }
+      return;
+    }
+
+    this.rematchState = 'offer_received';
+    const subtitle = document.getElementById('gameover-subtitle');
+    if (subtitle) subtitle.textContent = 'Opponent offered a rematch!';
+    const btn = document.getElementById('btn-rematch');
+    if (btn) {
+      btn.textContent = 'Accept Rematch!';
+      btn.classList.remove('opacity-70', 'cursor-not-allowed', 'hidden');
+      btn.className = 'w-full py-3 px-6 rounded-xl font-black tracking-wider uppercase text-white bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all cursor-pointer animate-pulse';
+    }
+    sounds.playRoundComplete();
+  }
+
   private startNewMatch(seed?: number) {
     this.rematchState = 'idle';
     this.hideGameOverModal();
+
+    const btn = document.getElementById('btn-rematch');
+    if (btn) {
+      btn.textContent = 'Play Again';
+      btn.classList.remove('opacity-70', 'cursor-not-allowed', 'animate-pulse', 'pointer-events-none');
+      btn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold cursor-pointer';
+    }
+
     const newSeed = seed || Math.floor(Math.random() * 2147483647) + 1;
     this.matchSeed = newSeed;
     this.playerEngine.reset(true, newSeed);
     this.opponentEngine.reset(false, newSeed);
+    this.playerRenderer?.reset();
+    this.opponentRenderer?.reset();
+    this.ai?.reset();
+    this.opponentScore = 0;
     this.updateStatsUI(true);
     this.renderPreviews(true);
     this.startLoop();
-  }
-
-  private showRematchOffer() {
-    this.rematchState = 'offer_received';
-    const subtitle = document.getElementById('gameover-subtitle');
-    if (subtitle) subtitle.textContent = 'Opponent requested a rematch!';
-    const btn = document.getElementById('btn-rematch');
-    if (btn) {
-      btn.removeAttribute('disabled');
-      btn.textContent = 'Accept Rematch';
-    }
   }
 }

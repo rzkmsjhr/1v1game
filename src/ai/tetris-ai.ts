@@ -297,4 +297,11 @@ export class TetrisAI {
   private cloneGrid(grid: (string | null)[][]): (string | null)[][] {
     return grid.map(row => [...row]);
   }
+
+  public reset(): void {
+    this.lastActionTime = 0;
+    this.currentPlannedMove = null;
+    this.stepState = 'rotate';
+    this.activePieceType = null;
+  }
 }

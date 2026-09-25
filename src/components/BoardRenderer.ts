@@ -68,6 +68,13 @@ export class BoardRenderer {
     };
   }
 
+  public reset(): void {
+    this.particles = [];
+    this.floatingTexts = [];
+    this.shakeOffset = { x: 0, y: 0 };
+    this.shakeTimer = 0;
+  }
+
   public addLineClearParticles(row: number, color: string) {
     const screenY = (row - BUFFER_ROWS) * this.blockSize + this.blockSize / 2;
     for (let c = 0; c < COLS; c++) {
