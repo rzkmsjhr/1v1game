@@ -26,6 +26,8 @@ export type NetworkMessage =
   | { type: 'SNAKE_INITIAL_CHOICE'; choice: 'start_first' | 'start_second' }
   | { type: 'SNAKE_DICE_ROLL'; d1: number; d2: number; total: number; isDouble: boolean }
   | { type: 'SNAKE_MOVE_COMPLETE'; finalPos: number }
+  | { type: 'SNAKE_REMATCH_REQUEST' }
+  | { type: 'SNAKE_REMATCH_ACCEPT'; seed?: number }
   | { type: 'SLING_START'; seed: number }
   | { type: 'SLING_PUCK_CROSSED'; id: number; x: number; y: number; vx: number; vy: number; color?: 'black' | 'red' }
   | { type: 'SLING_BAND_PULL'; isStretched: boolean; isDragging?: boolean; puckId?: number; x?: number; y?: number }

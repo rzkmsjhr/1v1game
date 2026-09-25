@@ -1,6 +1,6 @@
 import confetti from 'canvas-confetti';
 import { GameInstance, GameSession, AppTheme } from '../types';
-import type { NetworkMessage } from '../../network/webrtc-peer';
+import type { NetworkHealth, NetworkMessage } from '../../network/webrtc-peer';
 import { sounds } from '../../engine/sound';
 import { SnakeLadderEngine, generateBoard, getTileCoord } from './snake-ladder-engine';
 import { SnakeLadderRenderer, getSnakeBezier, evaluateCubicBezier, getTokenCoord, getMyTokenCoord } from './renderers/SnakeLadderRenderer';
@@ -168,6 +168,12 @@ export class SnakeLadderGame implements GameInstance {
   private tokenPlayerBodyEl: SVGGraphicsElement | null = null;
   private tokenOpponentBodyEl: SVGGraphicsElement | null = null;
 
+  // Network Health HUD elements
+  private pingEl: HTMLElement | null = null;
+  private pingDotEl: HTMLElement | null = null;
+  private pingTextEl: HTMLElement | null = null;
+  private peerAwayBannerEl: HTMLElement | null = null;
+
   // Active animation handles
   private activeHopRaf: number | null = null;
   private activeRepositionRaf: number | null = null;
@@ -232,6 +238,10 @@ export class SnakeLadderGame implements GameInstance {
   }
 
   public destroy() {
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+    }
+
     this.isProcessingMove = false;
     this.isAIThinking = false;
     this.isRollingDiceAnimation = false;
@@ -263,6 +273,10 @@ export class SnakeLadderGame implements GameInstance {
     this.tokenOpponentEl = null;
     this.tokenPlayerBodyEl = null;
     this.tokenOpponentBodyEl = null;
+    this.pingEl = null;
+    this.pingDotEl = null;
+    this.pingTextEl = null;
+    this.peerAwayBannerEl = null;
     this.container.innerHTML = '';
   }
 
@@ -289,12 +303,14 @@ export class SnakeLadderGame implements GameInstance {
   private setupNetwork() {
     if (!this.session.peer) return;
 
-    const origOnMessage = this.session.peer.events?.onMessage;
-    const origOnStatusChange = this.session.peer.events?.onStatusChange;
+    const peer = this.session.peer;
+    const origOnMessage = peer.events?.onMessage;
+    const origOnStatusChange = peer.events?.onStatusChange;
+    const origOnHealthChange = peer.events?.onHealthChange;
 
-    this.session.peer = Object.assign(this.session.peer, {
+    this.session.peer = Object.assign(peer, {
       events: {
-        ...this.session.peer.events,
+        ...peer.events,
         onMessage: (msg: NetworkMessage) => {
           origOnMessage?.(msg);
           this.handleNetworkMessage(msg);
@@ -302,47 +318,120 @@ export class SnakeLadderGame implements GameInstance {
         onStatusChange: (status: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error', message?: string) => {
           origOnStatusChange?.(status, message);
           if (status === 'connected') {
-            if (this.session.peer?.role === 'host') {
-              this.session.peer.sendMessage({
+            if (peer.role === 'host') {
+              peer.sendMessage({
                 type: 'SNAKE_INIT_BOARD',
                 board: this.engine.board
               });
-            } else if (this.session.peer?.role === 'guest') {
-              this.session.peer.sendMessage({
+            } else if (peer.role === 'guest') {
+              peer.sendMessage({
                 type: 'SNAKE_REQUEST_BOARD'
               });
             }
           }
           if (status === 'disconnected') {
-            this.handleOpponentDisconnected();
+            this.handleForfeitVictory('Opponent disconnected from the match.');
           }
+        },
+        onHealthChange: (health: NetworkHealth) => {
+          origOnHealthChange?.(health);
+          this.updateNetworkHealthHUD(health);
         }
       }
     });
 
-    this.session.peer.flushEarlyMessages();
+    peer.flushEarlyMessages();
 
     // Send board request/init if already connected
-    if (this.session.peer.isConnected) {
-      if (this.session.peer.role === 'host') {
-        this.session.peer.sendMessage({
+    if (peer.isConnected) {
+      if (peer.role === 'host') {
+        peer.sendMessage({
           type: 'SNAKE_INIT_BOARD',
           board: this.engine.board
         });
-      } else if (this.session.peer.role === 'guest') {
-        this.session.peer.sendMessage({
+      } else if (peer.role === 'guest') {
+        peer.sendMessage({
           type: 'SNAKE_REQUEST_BOARD'
         });
       }
+      this.updateNetworkHealthHUD({
+        rtt: peer.currentRtt,
+        status: peer.networkQuality,
+        isPeerVisible: peer.isPeerVisible
+      });
     }
 
     window.addEventListener('beforeunload', this.handleBeforeUnload);
   }
 
-  private handleOpponentDisconnected() {
-    if (this.session.mode === 'online' && !this.isGameOver) {
-      this.showGameOverModal(true, `${this.opponentName} lost connection or left the match.`);
+  private updateNetworkHealthHUD(health: NetworkHealth) {
+    if (!this.pingEl || !this.pingDotEl || !this.pingTextEl) return;
+    this.pingEl.classList.remove('hidden');
+    this.pingEl.classList.add('inline-flex');
+
+    if (health.status === 'stalled') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+      this.pingTextEl.textContent = 'Lag ⚠️';
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    } else if (health.status === 'poor') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+      this.pingTextEl.textContent = `${health.rtt}ms`;
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    } else if (health.status === 'moderate') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+      this.pingTextEl.textContent = `${health.rtt}ms`;
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    } else {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+      this.pingTextEl.textContent = `${health.rtt || 28}ms`;
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm';
     }
+
+    if (this.peerAwayBannerEl) {
+      if (!health.isPeerVisible) {
+        this.peerAwayBannerEl.classList.remove('hidden');
+      } else {
+        this.peerAwayBannerEl.classList.add('hidden');
+      }
+    }
+  }
+
+  private handleForfeitVictory(reason: string) {
+    if (this.isGameOver) {
+      const rematchBtn = document.getElementById('btn-sl-rematch');
+      if (rematchBtn) {
+        rematchBtn.textContent = 'Opponent Disconnected';
+        rematchBtn.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+        rematchBtn.classList.remove('animate-pulse');
+      }
+      return;
+    }
+
+    this.isGameOver = true;
+    this.hideDuelModal();
+
+    sounds.playFanfare();
+    confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+
+    const modal = document.getElementById('modal-game-over');
+    const icon = document.getElementById('game-over-icon');
+    const title = document.getElementById('game-over-title');
+    const desc = document.getElementById('game-over-desc');
+    const rematchBtn = document.getElementById('btn-sl-rematch');
+
+    if (icon) icon.textContent = '🏆';
+    if (title) {
+      title.textContent = 'VICTORY BY FORFEIT!';
+      title.className = 'text-2xl sm:text-3xl font-extrabold mb-1 text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500';
+    }
+    if (desc) desc.textContent = reason;
+    if (rematchBtn) {
+      rematchBtn.textContent = 'Opponent Disconnected';
+      rematchBtn.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+      rematchBtn.classList.remove('animate-pulse');
+    }
+
+    if (modal) modal.classList.remove('hidden');
   }
 
   private handleBeforeUnload = () => {
@@ -354,7 +443,7 @@ export class SnakeLadderGame implements GameInstance {
   private handleNetworkMessage(msg: any) {
     switch (msg.type) {
       case 'PLAYER_LEAVE':
-        this.showGameOverModal(true, 'Opponent left the game.');
+        this.handleForfeitVictory('Opponent forfeited the match.');
         break;
       case 'SNAKE_REQUEST_BOARD':
         if (this.session.peer?.role === 'host') {
@@ -422,9 +511,11 @@ export class SnakeLadderGame implements GameInstance {
           });
         });
         break;
+      case 'SNAKE_REMATCH_REQUEST':
       case 'REMATCH_REQUEST':
         this.showRematchOffer();
         break;
+      case 'SNAKE_REMATCH_ACCEPT':
       case 'REMATCH_ACCEPT':
         this.startNewMatch(msg.seed ? generateBoard(msg.seed) : undefined);
         break;
@@ -442,13 +533,24 @@ export class SnakeLadderGame implements GameInstance {
         
         <!-- Top Information & Score Strip -->
         <div class="w-full max-w-5xl flex flex-col shrink-0 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'} pb-1.5 gap-1">
-          <!-- Row 1: Exit & Title -->
+          <!-- Row 1: Exit & Title & Net Ping -->
           <div class="w-full flex items-center justify-between px-1 text-xs">
             <button id="btn-sl-exit" class="ps-btn-secondary px-3 py-1 rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer active:scale-95" title="Exit to Game Hub">
               <span>← Exit</span>
             </button>
             <span class="text-[11px] font-bold text-gray-400 font-mono tracking-wider uppercase">SNAKES & LADDERS • 100 TILES</span>
-            <span class="text-[10px] font-mono text-gray-400 hidden sm:inline">${this.session.mode === 'ai' ? 'VS AI' : '1V1 ONLINE'}</span>
+            <div class="flex items-center space-x-1.5">
+              <div id="sl-net-ping" class="hidden items-center space-x-1 text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-300/40 dark:border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm">
+                <span id="sl-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400"></span>
+                <span id="sl-net-text">--ms</span>
+              </div>
+              <span class="text-[10px] font-mono text-gray-400 hidden sm:inline">${this.session.mode === 'ai' ? 'VS AI' : '1V1 ONLINE'}</span>
+            </div>
+          </div>
+
+          <!-- Inactive Tab / Opponent Away Banner -->
+          <div id="sl-peer-away-banner" class="hidden w-full px-2 py-0.5 text-center rounded-lg bg-amber-100 dark:bg-amber-500/20 border border-amber-300/40 dark:border-amber-500/40 text-amber-700 dark:text-amber-300 font-bold text-[10px] tracking-wide animate-pulse">
+            ⚠️ Opponent is tabbed out / minimized
           </div>
 
           <!-- Row 2: Players Status & Turn Center Banner -->
@@ -599,6 +701,10 @@ export class SnakeLadderGame implements GameInstance {
     this.diceFace2El = document.getElementById('dice-face-2');
     this.diceTotalTextEl = document.getElementById('dice-total-text');
     this.diceDoublesTagEl = document.getElementById('dice-doubles-tag');
+    this.pingEl = document.getElementById('sl-net-ping');
+    this.pingDotEl = document.getElementById('sl-net-dot');
+    this.pingTextEl = document.getElementById('sl-net-text');
+    this.peerAwayBannerEl = document.getElementById('sl-peer-away-banner');
   }
 
   private cacheTokenElements() {
@@ -1480,12 +1586,18 @@ export class SnakeLadderGame implements GameInstance {
     const btn = document.getElementById('btn-sl-rematch');
 
     if (icon) icon.textContent = didIWin ? '🏆' : '💀';
-    if (title) title.textContent = didIWin ? 'VICTORY!' : 'DEFEAT!';
+    if (title) {
+      title.textContent = didIWin ? 'VICTORY!' : 'DEFEAT!';
+      title.className = didIWin
+        ? 'text-2xl sm:text-3xl font-black mb-1 text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500'
+        : 'text-2xl sm:text-3xl font-black mb-1 text-rose-500';
+    }
     if (desc) desc.textContent = message;
     if (btn) {
+      btn.classList.remove('opacity-70', 'opacity-50', 'cursor-not-allowed', 'animate-pulse', 'pointer-events-none');
       btn.removeAttribute('disabled');
-      btn.textContent = 'Rematch';
-      btn.className = 'ps-btn-primary px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider';
+      btn.textContent = 'Play Again';
+      btn.className = 'flex-1 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/30 cursor-pointer active:scale-95';
     }
 
     if (modal) modal.classList.remove('hidden');
@@ -1498,7 +1610,18 @@ export class SnakeLadderGame implements GameInstance {
 
   private startNewMatch(boardConfig?: BoardConfig) {
     this.rematchState = 'idle';
+    this.isGameOver = false;
     this.hideGameOverModal();
+
+    const btn = document.getElementById('btn-sl-rematch');
+    if (btn) {
+      btn.textContent = 'Play Again';
+      btn.classList.remove('opacity-70', 'opacity-50', 'cursor-not-allowed', 'animate-pulse', 'pointer-events-none');
+      btn.removeAttribute('disabled');
+      btn.className = 'flex-1 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/30 cursor-pointer active:scale-95';
+    }
+
+    this.ai?.reset();
     this.engine.reset(boardConfig);
     this.playerDuelD1 = null;
     this.playerDuelD2 = null;
@@ -1506,16 +1629,21 @@ export class SnakeLadderGame implements GameInstance {
     this.oppDuelD2 = null;
     this.isDuelRolling = false;
     this.lastDice = { d1: 1, d2: 1, total: 2, isDouble: false };
-    this.updateDiceDisplay(this.lastDice);
+    this.updateDiceDisplay(this.lastDice, true);
     this.renderBoard();
-    this.updateHUD();
+    this.updateHUD(true);
     this.showDuelModal();
   }
 
   private handleRematchClick() {
     if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      const btn = document.getElementById('btn-sl-rematch');
       if (this.rematchState === 'offer_received') {
-        const seed = Math.floor(Math.random() * 10000000);
+        const seed = Math.floor(Math.random() * 2147483647) + 1;
+        this.session.peer.sendMessage({
+          type: 'SNAKE_REMATCH_ACCEPT',
+          seed
+        });
         this.session.peer.sendMessage({
           type: 'REMATCH_ACCEPT',
           seed
@@ -1526,11 +1654,14 @@ export class SnakeLadderGame implements GameInstance {
       if (this.rematchState === 'idle') {
         this.rematchState = 'requested';
         this.session.peer.sendMessage({
+          type: 'SNAKE_REMATCH_REQUEST'
+        });
+        this.session.peer.sendMessage({
           type: 'REMATCH_REQUEST'
         });
-        const btn = document.getElementById('btn-sl-rematch');
         if (btn) {
           btn.textContent = 'Waiting for Opponent...';
+          btn.classList.add('opacity-70', 'cursor-not-allowed');
           btn.setAttribute('disabled', 'true');
         }
       }
@@ -1541,12 +1672,28 @@ export class SnakeLadderGame implements GameInstance {
   }
 
   private showRematchOffer() {
+    if (this.rematchState === 'requested') {
+      const seed = Math.floor(Math.random() * 2147483647) + 1;
+      if (this.session.peer?.role === 'host') {
+        if (this.session.peer?.isConnected) {
+          this.session.peer.sendMessage({ type: 'SNAKE_REMATCH_ACCEPT', seed });
+          this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT', seed });
+        }
+        this.startNewMatch(generateBoard(seed));
+      }
+      return;
+    }
+
     this.rematchState = 'offer_received';
+    const desc = document.getElementById('game-over-desc');
+    if (desc) desc.textContent = 'Opponent offered a rematch!';
     const btn = document.getElementById('btn-sl-rematch');
     if (btn) {
+      btn.textContent = 'Accept Rematch!';
       btn.removeAttribute('disabled');
-      btn.textContent = 'Opponent Wants Rematch! Accept?';
-      btn.className = 'ps-btn-primary px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider animate-bounce';
+      btn.classList.remove('opacity-70', 'cursor-not-allowed', 'pointer-events-none');
+      btn.className = 'flex-1 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider text-white bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all cursor-pointer animate-pulse';
     }
+    sounds.playRoundComplete();
   }
 }

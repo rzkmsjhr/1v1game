@@ -27,4 +27,8 @@ export class SnakeLadderAI {
     // High tempo: playing first gives significant mathematical edge
     return 'start_first';
   }
+
+  public reset(): void {
+    // Stateless delay calculator, reset hook for interface parity
+  }
 }
