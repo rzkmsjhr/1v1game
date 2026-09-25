@@ -22,6 +22,8 @@ export type NetworkMessage =
   | { type: 'POOL_SYNC_TABLE'; balls: Array<{ id: number; x: number; y: number; isPotted: boolean; isSinking: boolean }>; currentTurn: 'player' | 'opponent'; playerGroup: any; opponentGroup: any; phase: any; winner?: any }
   | { type: 'POOL_MOVE_BALL'; x: number; y: number }
   | { type: 'POOL_PLACE_BALL'; x: number; y: number }
+  | { type: 'POOL_REMATCH_REQUEST' }
+  | { type: 'POOL_REMATCH_ACCEPT' }
   | { type: 'SNAKE_INIT_BOARD'; board: any }
   | { type: 'SNAKE_REQUEST_BOARD' }
   | { type: 'SNAKE_INITIAL_ROLL'; d1: number; d2: number; total: number }

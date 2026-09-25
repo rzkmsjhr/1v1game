@@ -26,6 +26,10 @@ export class PoolAI {
     this.difficulty = difficulty;
   }
 
+  public reset(): void {
+    // Stateless AI resets cleanly
+  }
+
   // Calculate lag shot power based on AI difficulty
   public getLagShotPower(): number {
     // Perfect distance power is ~0.615

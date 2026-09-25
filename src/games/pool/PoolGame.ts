@@ -131,6 +131,10 @@ export class PoolGame implements GameInstance {
   private badgeOpponentGroupEl: HTMLElement | null = null;
   private iconPlayerBallEl: HTMLElement | null = null;
   private iconOpponentBallEl: HTMLElement | null = null;
+  private pingEl: HTMLElement | null = null;
+  private pingDotEl: HTMLElement | null = null;
+  private pingTextEl: HTMLElement | null = null;
+  private peerAwayBannerEl: HTMLElement | null = null;
   private cachedPlayerGroupText: string = '';
   private cachedOpponentGroupText: string = '';
   private cachedIconPlayerKey: string = '';
@@ -200,6 +204,9 @@ export class PoolGame implements GameInstance {
       window.removeEventListener('pointermove', this.handleWindowPointerMove);
       this.handleWindowPointerMove = null;
     }
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+    }
     if (this.handleWindowPointerUp) {
       window.removeEventListener('pointerup', this.handleWindowPointerUp);
       window.removeEventListener('pointercancel', this.handleWindowPointerUp);
@@ -214,6 +221,10 @@ export class PoolGame implements GameInstance {
     this.badgeOpponentGroupEl = null;
     this.iconPlayerBallEl = null;
     this.iconOpponentBallEl = null;
+    this.pingEl = null;
+    this.pingDotEl = null;
+    this.pingTextEl = null;
+    this.peerAwayBannerEl = null;
     this.container.style.height = '';
     this.container.style.maxHeight = '';
     this.container.style.padding = '';
@@ -280,7 +291,7 @@ export class PoolGame implements GameInstance {
       onStatusChange: (status: string, message?: string) => {
         origOnStatusChange?.(status as any, message);
         if (status === 'disconnected') {
-          this.showGameOverModal(true, 'Opponent disconnected. You win by forfeit!');
+          this.handleForfeitVictory('Opponent disconnected from the match.');
         }
       },
       onHealthChange: (health: NetworkHealth) => {
@@ -300,36 +311,31 @@ export class PoolGame implements GameInstance {
   }
 
   private updateNetworkHealthHUD(health: NetworkHealth) {
-    const pingEl = document.getElementById('pool-net-ping');
-    const dotEl = document.getElementById('pool-net-dot');
-    const textEl = document.getElementById('pool-net-text');
-    const awayBanner = document.getElementById('pool-peer-away-banner');
-
-    if (pingEl && dotEl && textEl) {
+    if (this.pingEl && this.pingDotEl && this.pingTextEl) {
       if (health.status === 'stalled') {
-        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
-        textEl.textContent = 'Lag ⚠️';
-        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+        this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+        this.pingTextEl.textContent = 'Lag ⚠️';
+        this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
       } else if (health.status === 'poor') {
-        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
-        textEl.textContent = `${health.rtt}ms`;
-        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+        this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+        this.pingTextEl.textContent = `${health.rtt}ms`;
+        this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
       } else if (health.status === 'moderate') {
-        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
-        textEl.textContent = `${health.rtt}ms`;
-        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5';
+        this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+        this.pingTextEl.textContent = `${health.rtt}ms`;
+        this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5';
       } else {
-        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
-        textEl.textContent = `${health.rtt || 30}ms`;
-        pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5';
+        this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+        this.pingTextEl.textContent = `${health.rtt || 30}ms`;
+        this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5';
       }
     }
 
-    if (awayBanner) {
+    if (this.peerAwayBannerEl) {
       if (!health.isPeerVisible) {
-        awayBanner.classList.remove('hidden');
+        this.peerAwayBannerEl.classList.remove('hidden');
       } else {
-        awayBanner.classList.add('hidden');
+        this.peerAwayBannerEl.classList.add('hidden');
       }
     }
   }
@@ -337,7 +343,7 @@ export class PoolGame implements GameInstance {
   private handleNetworkMessage(msg: any) {
     switch (msg.type) {
       case 'PLAYER_LEAVE':
-        this.showGameOverModal(true, 'Opponent forfeited the match.');
+        this.handleForfeitVictory('Opponent forfeited the match.');
         break;
       case 'POOL_LAG_SHOT':
         this.engine.shootLagBall(false, msg.power);
@@ -440,9 +446,11 @@ export class PoolGame implements GameInstance {
         this.engine.confirmBallInHand();
         this.updateHUD(true);
         break;
+      case 'POOL_REMATCH_REQUEST':
       case 'REMATCH_REQUEST':
         this.showRematchOffer();
         break;
+      case 'POOL_REMATCH_ACCEPT':
       case 'REMATCH_ACCEPT':
         this.startNewMatch();
         break;
@@ -685,6 +693,10 @@ export class PoolGame implements GameInstance {
     this.badgeOpponentGroupEl = document.getElementById('badge-opponent-group');
     this.iconPlayerBallEl = document.getElementById('icon-player-ball');
     this.iconOpponentBallEl = document.getElementById('icon-opponent-ball');
+    this.pingEl = document.getElementById('pool-net-ping');
+    this.pingDotEl = document.getElementById('pool-net-dot');
+    this.pingTextEl = document.getElementById('pool-net-text');
+    this.peerAwayBannerEl = document.getElementById('pool-peer-away-banner');
 
     this.renderer = new PoolRenderer(this.canvas);
 
@@ -784,24 +796,7 @@ export class PoolGame implements GameInstance {
 
     // Rematch button
     document.getElementById('btn-pool-rematch')?.addEventListener('click', () => {
-      if (this.session.mode === 'ai') {
-        this.startNewMatch();
-      } else if (this.session.peer?.isConnected) {
-        if (this.rematchState === 'offer_received') {
-          this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT' });
-          this.startNewMatch();
-          return;
-        }
-        if (this.rematchState === 'idle') {
-          this.rematchState = 'requested';
-          this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
-          const btn = document.getElementById('btn-pool-rematch');
-          if (btn) {
-            btn.textContent = 'Waiting for Opponent...';
-            btn.setAttribute('disabled', 'true');
-          }
-        }
-      }
+      this.handleRematchClick();
     });
 
     // Shot Power Controls
@@ -1638,8 +1633,46 @@ export class PoolGame implements GameInstance {
       if (btn) {
         btn.removeAttribute('disabled');
         btn.textContent = 'Rematch';
-        btn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold';
+        btn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold cursor-pointer';
       }
+    }
+  }
+
+  private handleForfeitVictory(reason: string) {
+    if (this.engine.phase === 'GAME_OVER' || this.isGameOverModalShown) {
+      const btn = document.getElementById('btn-pool-rematch');
+      if (btn) {
+        btn.setAttribute('disabled', 'true');
+        btn.textContent = 'Opponent Disconnected';
+        btn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold opacity-50 cursor-not-allowed';
+      }
+      return;
+    }
+
+    this.hideLagModal();
+    this.engine.phase = 'GAME_OVER';
+    this.engine.winner = 'player';
+    this.engine.gameOverReason = reason;
+    this.isGameOverModalShown = true;
+    sounds.playWin();
+    confetti({ particleCount: 120, spread: 80 });
+
+    const modal = document.getElementById('modal-pool-gameover');
+    const title = document.getElementById('pool-gameover-title');
+    const desc = document.getElementById('pool-gameover-desc');
+    const btn = document.getElementById('btn-pool-rematch');
+
+    if (modal && title && desc) {
+      title.innerHTML = '🏆 VICTORY BY FORFEIT!';
+      title.className = 'text-2xl sm:text-3xl font-extrabold mb-2 text-amber-400 animate-bounce';
+      desc.textContent = reason;
+      modal.classList.remove('hidden');
+    }
+
+    if (btn) {
+      btn.setAttribute('disabled', 'true');
+      btn.textContent = 'Opponent Disconnected';
+      btn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold opacity-50 cursor-not-allowed';
     }
   }
 
@@ -1651,9 +1684,19 @@ export class PoolGame implements GameInstance {
   private startNewMatch() {
     this.rematchState = 'idle';
     this.hideGameOverModal();
+    this.hideLagModal();
     this.isLagModalShown = false;
     this.isGameOverModalShown = false;
     this.isAITurnProcessing = false;
+    this.ai?.reset?.();
+
+    const btn = document.getElementById('btn-pool-rematch');
+    if (btn) {
+      btn.removeAttribute('disabled');
+      btn.textContent = 'Rematch';
+      btn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold cursor-pointer';
+    }
+
     if (this.session.mode === 'online' && this.session.peer?.role === 'guest') {
       this.engine.isAuthoritative = false;
     } else {
@@ -1664,12 +1707,54 @@ export class PoolGame implements GameInstance {
   }
 
   private showRematchOffer() {
+    if (this.rematchState === 'requested') {
+      // Both clicked rematch simultaneously! Host takes authority to accept
+      if (this.session.peer?.role === 'host') {
+        this.session.peer.sendMessage({ type: 'POOL_REMATCH_ACCEPT' });
+        this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT' });
+      }
+      this.startNewMatch();
+      return;
+    }
+
     this.rematchState = 'offer_received';
+    sounds.playRoundComplete();
     const btn = document.getElementById('btn-pool-rematch');
     if (btn) {
       btn.removeAttribute('disabled');
       btn.textContent = 'Accept Rematch!';
-      btn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold animate-pulse bg-emerald-600';
+      btn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold animate-pulse bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 shadow-lg shadow-emerald-500/50 cursor-pointer';
+    }
+  }
+
+  private handleRematchClick() {
+    if (this.session.mode === 'ai') {
+      this.startNewMatch();
+      return;
+    }
+
+    if (!this.session.peer?.isConnected) {
+      this.startNewMatch();
+      return;
+    }
+
+    if (this.rematchState === 'offer_received') {
+      this.session.peer.sendMessage({ type: 'POOL_REMATCH_ACCEPT' });
+      this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT' });
+      this.startNewMatch();
+      return;
+    }
+
+    if (this.rematchState === 'idle') {
+      this.rematchState = 'requested';
+      this.session.peer.sendMessage({ type: 'POOL_REMATCH_REQUEST' });
+      this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
+      const btn = document.getElementById('btn-pool-rematch');
+      if (btn) {
+        btn.textContent = 'Waiting for Opponent...';
+        btn.setAttribute('disabled', 'true');
+        btn.className = 'ps-btn-primary w-full py-3 rounded-xl text-sm font-semibold opacity-70 cursor-not-allowed';
+      }
     }
   }
 
