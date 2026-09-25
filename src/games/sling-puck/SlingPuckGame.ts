@@ -1006,13 +1006,16 @@ export class SlingPuckGame implements GameInstance {
   // GAME OVER & REMATCH HANDLING
   // -------------------------------------------------------------
   private showGameOverModal(didIWin: boolean, message: string) {
-    if (this.winnerLocked && this.engine.phase === 'MATCH_OVER' && this.engine.matchWinner !== null) return;
+    const modal = document.getElementById('modal-sling-gameover');
+    const isModalVisible = modal && !modal.classList.contains('hidden');
+    if (this.winnerLocked && isModalVisible && this.engine.matchWinner === (didIWin ? 'player' : 'opponent')) {
+      return;
+    }
     this.winnerLocked = true;
     this.ai?.stop();
     this.engine.phase = 'MATCH_OVER';
     this.engine.matchWinner = didIWin ? 'player' : 'opponent';
 
-    const modal = document.getElementById('modal-sling-gameover');
     const title = document.getElementById('sling-gameover-title');
     const desc = document.getElementById('sling-gameover-desc');
     const icon = document.getElementById('sling-gameover-icon');

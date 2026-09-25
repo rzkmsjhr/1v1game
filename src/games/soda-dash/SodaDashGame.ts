@@ -759,7 +759,12 @@ export class SodaDashGame implements GameInstance {
       opp.isTurbo = msg.isTurbo;
       opp.hasShield = msg.hasShield;
       opp.heldItem = msg.heldItem;
-      if (opp.hearts <= 0) opp.isDead = true;
+      if (opp.hearts <= 0) {
+        opp.isDead = true;
+        if (!this.winnerLocked) {
+          this.handleGameOver('player');
+        }
+      }
       this.updateHUD();
     } else if (msg.type === 'DASH_ITEM_DROP') {
       this.engine.track.addDynamicItem('SODA_SPILL', msg.z, msg.lane);
@@ -768,7 +773,7 @@ export class SodaDashGame implements GameInstance {
     } else if (msg.type === 'DASH_GAME_OVER') {
       this.engine.opponent.isDead = true;
       this.engine.opponent.hearts = 0;
-      if (!this.winnerLocked && !this.engine.isGameOver) {
+      if (!this.winnerLocked) {
         this.handleGameOver('player');
       }
     }
@@ -991,7 +996,7 @@ export class SodaDashGame implements GameInstance {
   }
 
   private handleGameOver(winner: 'player' | 'opponent' | 'draw'): void {
-    if (this.winnerLocked || this.engine.isGameOver) {
+    if (this.winnerLocked) {
       return;
     }
     this.winnerLocked = true;
