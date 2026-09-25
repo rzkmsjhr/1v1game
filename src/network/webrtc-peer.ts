@@ -63,6 +63,8 @@ export type NetworkMessage =
   | { type: 'DASH_EVENT'; title: string; message: string; icon: string }
   | { type: 'SHEEP_DEPLOY'; laneIndex: number; size: 'small' | 'medium' | 'big' | 'giant'; id: string; timestamp: number }
   | { type: 'SHEEP_REMATCH' }
+  | { type: 'SHEEP_REMATCH_REQUEST' }
+  | { type: 'SHEEP_REMATCH_ACCEPT' }
   | {
       type: 'SHEEP_SYNC';
       lanes: Array<{

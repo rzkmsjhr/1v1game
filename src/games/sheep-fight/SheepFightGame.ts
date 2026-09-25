@@ -6,6 +6,7 @@ import { SheepEngine } from './engine/sheep-engine';
 import { SheepFightRenderer } from './renderers/SheepFightRenderer';
 import { SheepAI } from './ai/sheep-ai';
 import confetti from 'canvas-confetti';
+import { sounds } from '../../engine/sound';
 
 export class SheepFightGame implements GameInstance {
   private container: HTMLElement;
@@ -43,6 +44,12 @@ export class SheepFightGame implements GameInstance {
   private gameOverModalEl!: HTMLElement;
   private gameOverTitleEl!: HTMLElement;
   private gameOverStatsEl!: HTMLElement;
+
+  // Network Health HUD Elements
+  private pingEl: HTMLElement | null = null;
+  private pingDotEl: HTMLElement | null = null;
+  private pingTextEl: HTMLElement | null = null;
+  private peerAwayBannerEl: HTMLElement | null = null;
 
   // HUD Dirty-Checking Caches (to prevent per-frame DOM layout recalculations)
   private lastScoreText: string = '';
@@ -238,6 +245,10 @@ export class SheepFightGame implements GameInstance {
     this.gameOverTitleEl = this.container.querySelector('#sf-game-over-title')!;
     this.gameOverStatsEl = this.container.querySelector('#sf-game-over-stats')!;
     this.laneButtons = Array.from(this.container.querySelectorAll('.sf-lane-btn'));
+    this.pingEl = this.container.querySelector('#sf-net-ping');
+    this.pingDotEl = this.container.querySelector('#sf-net-dot');
+    this.pingTextEl = this.container.querySelector('#sf-net-text');
+    this.peerAwayBannerEl = this.container.querySelector('#sf-peer-away-banner');
 
     // Exit Buttons (Send PLAYER_LEAVE if online and connected)
     const handleExit = () => {
@@ -455,36 +466,33 @@ export class SheepFightGame implements GameInstance {
   }
 
   private updateNetworkHealthHUD(health: NetworkHealth) {
-    const pingEl = this.container.querySelector('#sf-net-ping') as HTMLElement | null;
-    const dotEl = this.container.querySelector('#sf-net-dot') as HTMLElement | null;
-    const textEl = this.container.querySelector('#sf-net-text') as HTMLElement | null;
-    const awayBanner = this.container.querySelector('#sf-peer-away-banner') as HTMLElement | null;
+    if (!this.pingEl || !this.pingDotEl || !this.pingTextEl) return;
+    this.pingEl.classList.remove('hidden');
+    this.pingEl.classList.add('inline-flex');
 
-    if (pingEl && dotEl && textEl) {
-      if (health.status === 'stalled') {
-        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
-        textEl.textContent = 'Lag ⚠️';
-        pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
-      } else if (health.status === 'poor') {
-        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
-        textEl.textContent = `${health.rtt}ms`;
-        pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
-      } else if (health.status === 'moderate') {
-        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
-        textEl.textContent = `${health.rtt}ms`;
-        pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5';
-      } else {
-        dotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
-        textEl.textContent = `${health.rtt || 25}ms`;
-        pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5';
-      }
+    if (health.status === 'stalled') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+      this.pingTextEl.textContent = 'Lag ⚠️';
+      this.pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+    } else if (health.status === 'poor') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+      this.pingTextEl.textContent = `${health.rtt}ms`;
+      this.pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5';
+    } else if (health.status === 'moderate') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+      this.pingTextEl.textContent = `${health.rtt}ms`;
+      this.pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5';
+    } else {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+      this.pingTextEl.textContent = `${health.rtt || 25}ms`;
+      this.pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5';
     }
 
-    if (awayBanner) {
+    if (this.peerAwayBannerEl) {
       if (!health.isPeerVisible) {
-        awayBanner.classList.remove('hidden');
+        this.peerAwayBannerEl.classList.remove('hidden');
       } else {
-        awayBanner.classList.add('hidden');
+        this.peerAwayBannerEl.classList.add('hidden');
       }
     }
   }
@@ -508,14 +516,13 @@ export class SheepFightGame implements GameInstance {
         this.handleOpponentForfeit('Opponent forfeited the match.');
         break;
       }
+      case 'SHEEP_REMATCH_REQUEST':
       case 'REMATCH_REQUEST': {
         this.showRematchOffer();
         break;
       }
-      case 'REMATCH_ACCEPT': {
-        this.startNewMatch();
-        break;
-      }
+      case 'SHEEP_REMATCH_ACCEPT':
+      case 'REMATCH_ACCEPT':
       case 'SHEEP_REMATCH': {
         this.startNewMatch();
         break;
@@ -741,25 +748,42 @@ export class SheepFightGame implements GameInstance {
       return;
     }
 
+    if (!this.session.peer?.isConnected) return;
+
     if (this.rematchState === 'offer_received') {
-      this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT' });
+      this.session.peer.sendMessage({ type: 'SHEEP_REMATCH_ACCEPT' });
+      this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT' });
       this.startNewMatch();
     } else if (this.rematchState === 'idle') {
       this.rematchState = 'requested';
       btn.textContent = 'Waiting for Opponent...';
-      btn.classList.add('opacity-70', 'cursor-not-allowed');
-      this.session.peer?.sendMessage({ type: 'REMATCH_REQUEST' });
+      btn.classList.add('opacity-70', 'cursor-not-allowed', 'pointer-events-none');
+      this.session.peer.sendMessage({ type: 'SHEEP_REMATCH_REQUEST' });
+      this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
     }
   }
 
   private showRematchOffer() {
+    if (this.rematchState === 'requested') {
+      // Both clicked rematch at around the same time!
+      if (this.session.peer?.role === 'host') {
+        if (this.session.peer?.isConnected) {
+          this.session.peer.sendMessage({ type: 'SHEEP_REMATCH_ACCEPT' });
+          this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT' });
+        }
+        this.startNewMatch();
+      }
+      return;
+    }
+
     this.rematchState = 'offer_received';
     const btn = this.container.querySelector('#sf-btn-rematch') as HTMLButtonElement | null;
     if (btn) {
       btn.textContent = 'Accept Rematch!';
-      btn.classList.remove('opacity-70', 'cursor-not-allowed', 'hidden');
+      btn.classList.remove('opacity-70', 'opacity-50', 'cursor-not-allowed', 'hidden', 'pointer-events-none');
       btn.className = 'flex-1 py-2.5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all cursor-pointer animate-pulse';
     }
+    sounds.playRoundComplete();
   }
 
   private startNewMatch() {
@@ -770,9 +794,10 @@ export class SheepFightGame implements GameInstance {
     if (btn) {
       btn.textContent = 'Play Again';
       btn.className = 'flex-1 py-2.5 rounded-xl text-xs font-black bg-blue-600 hover:bg-blue-500 text-white transition shadow-lg cursor-pointer';
-      btn.classList.remove('opacity-70', 'cursor-not-allowed', 'hidden');
+      btn.classList.remove('opacity-70', 'opacity-50', 'cursor-not-allowed', 'hidden', 'pointer-events-none', 'animate-pulse');
     }
 
+    this.ai?.reset();
     this.engine.reset();
     const isHost = this.session.peer?.role === 'host';
     this.engine.isAuthoritative = this.session.mode !== 'online' || isHost;
@@ -795,29 +820,47 @@ export class SheepFightGame implements GameInstance {
   }
 
   private handleOpponentDisconnect() {
-    if (this.engine.state.winner !== null) return;
-    this.handleOpponentForfeit('Opponent disconnected. You win by forfeit!');
+    if (this.engine.state.winner !== null) {
+      const btn = this.container.querySelector('#sf-btn-rematch') as HTMLButtonElement | null;
+      if (btn) {
+        btn.textContent = 'Opponent Disconnected';
+        btn.classList.remove('animate-pulse');
+        btn.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+      }
+      return;
+    }
+    this.handleOpponentForfeit('Opponent disconnected from the match.');
   }
 
   private handleOpponentForfeit(reason: string) {
+    if (this.engine.state.winner !== null) {
+      const btn = this.container.querySelector('#sf-btn-rematch') as HTMLButtonElement | null;
+      if (btn) {
+        btn.textContent = 'Opponent Disconnected';
+        btn.classList.remove('animate-pulse');
+        btn.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+      }
+      return;
+    }
+
     this.engine.state.winner = 'player';
     this.playVictorySound();
     confetti({
-      particleCount: 45,
-      spread: 60,
-      origin: { y: 0.6 },
-      ticks: 150,
-      disableForReducedMotion: true
+      particleCount: 120,
+      spread: 80,
+      origin: { y: 0.6 }
     });
 
     this.gameOverModalEl.classList.remove('hidden');
-    this.gameOverTitleEl.textContent = '🏆 VICTORY!';
-    this.gameOverTitleEl.className = 'text-3xl font-black text-blue-400 tracking-tight';
+    this.gameOverTitleEl.textContent = '🏆 VICTORY BY FORFEIT!';
+    this.gameOverTitleEl.className = 'text-2xl sm:text-3xl font-extrabold mb-1 text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500';
     this.gameOverStatsEl.textContent = reason;
 
     const btn = this.container.querySelector('#sf-btn-rematch') as HTMLButtonElement | null;
     if (btn) {
-      btn.classList.add('hidden');
+      btn.textContent = 'Opponent Disconnected';
+      btn.classList.remove('hidden', 'animate-pulse');
+      btn.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
     }
   }
 
@@ -1010,5 +1053,9 @@ export class SheepFightGame implements GameInstance {
       this.audioCtx.close().catch(() => {});
       this.audioCtx = null;
     }
+    this.pingEl = null;
+    this.pingDotEl = null;
+    this.pingTextEl = null;
+    this.peerAwayBannerEl = null;
   }
 }

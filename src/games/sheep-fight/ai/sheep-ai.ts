@@ -125,4 +125,8 @@ export class SheepAI {
       this.engine.deploySheep(bestLane, 'opponent');
     }
   }
+
+  public reset(): void {
+    this.resetTimer();
+  }
 }
