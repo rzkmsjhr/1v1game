@@ -53,6 +53,14 @@ export class WaterAI {
     this.pause();
   }
 
+  public reset(newTubes?: string[][]): void {
+    this.pause();
+    this.recentMoves = [];
+    if (newTubes) {
+      this.engine = new WaterEngine(newTubes);
+    }
+  }
+
   public getScore(): number {
     return this.engine.state.score;
   }

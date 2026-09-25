@@ -90,6 +90,8 @@ export type NetworkMessage =
   | { type: 'WATER_REQUEST_SEED' }
   | { type: 'WATER_PROGRESS'; score: number; completedColors: string[]; isWon: boolean }
   | { type: 'WATER_REMATCH'; seed: number }
+  | { type: 'WATER_REMATCH_REQUEST' }
+  | { type: 'WATER_REMATCH_ACCEPT'; seed?: number }
   | { type: 'WATER_POUR_TUBE'; color: string; srcIndex: number; dstIndex: number }
   | { type: 'WATER_POUR_BOWL'; color: string; count: number; newBowlCount: number; isCompleted: boolean; score: number }
   | {

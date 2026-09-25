@@ -115,7 +115,15 @@ export class WaterSortGame implements GameInstance {
     } else {
       this.startCountdown();
     }
+
+    window.addEventListener('beforeunload', this.handleBeforeUnload);
   }
+
+  private handleBeforeUnload = () => {
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+    }
+  };
 
   private getAudioContext(): AudioContext | null {
     if (!sounds.enabled) return null;
@@ -208,9 +216,7 @@ export class WaterSortGame implements GameInstance {
             }
           }
           if (status === 'disconnected') {
-            if (this.phase !== 'MATCH_OVER' && !this.opponentWon && !this.engine.state.isWon) {
-              this.handleMatchEnd('player', 'Opponent disconnected. You win by forfeit!');
-            }
+            this.handleForfeitVictory('Opponent disconnected from the match.');
           }
         },
         onHealthChange: (health: NetworkHealth) => {
@@ -276,9 +282,7 @@ export class WaterSortGame implements GameInstance {
   private handleNetworkMessage(msg: any) {
     switch (msg.type) {
       case 'PLAYER_LEAVE':
-        if (this.phase !== 'MATCH_OVER' && !this.opponentWon && !this.engine.state.isWon) {
-          this.handleMatchEnd('player', 'Opponent forfeited the match.');
-        }
+        this.handleForfeitVictory('Opponent forfeited the match.');
         break;
       case 'WATER_REQUEST_SEED':
         if (this.session.peer?.role === 'host') {
@@ -335,12 +339,12 @@ export class WaterSortGame implements GameInstance {
           this.handleMatchEnd('opponent');
         }
         break;
+      case 'WATER_REMATCH_REQUEST':
       case 'REMATCH_REQUEST':
         this.showRematchOffer();
         break;
+      case 'WATER_REMATCH_ACCEPT':
       case 'REMATCH_ACCEPT':
-        this.startNewMatch(msg.seed);
-        break;
       case 'WATER_REMATCH':
         this.startNewMatch(msg.seed);
         break;
@@ -465,26 +469,46 @@ export class WaterSortGame implements GameInstance {
       return;
     }
 
+    if (!this.session.peer?.isConnected) {
+      this.startNewMatch();
+      return;
+    }
+
     if (this.rematchState === 'offer_received') {
       const seed = Math.floor(Math.random() * 1000000);
-      this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT', seed });
+      this.session.peer.sendMessage({ type: 'WATER_REMATCH_ACCEPT', seed });
+      this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT', seed });
       this.startNewMatch(seed);
     } else if (this.rematchState === 'idle') {
       this.rematchState = 'requested';
       if (this.rematchBtnEl) {
         this.rematchBtnEl.textContent = 'Waiting for Opponent...';
-        this.rematchBtnEl.classList.add('opacity-70', 'cursor-not-allowed');
+        this.rematchBtnEl.disabled = true;
+        this.rematchBtnEl.className = 'ps-btn-primary w-full py-3 rounded-xl text-xs font-bold opacity-70 cursor-not-allowed';
       }
-      this.session.peer?.sendMessage({ type: 'REMATCH_REQUEST' });
+      this.session.peer.sendMessage({ type: 'WATER_REMATCH_REQUEST' });
+      this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
     }
   }
 
   private showRematchOffer() {
+    if (this.rematchState === 'requested') {
+      // Both clicked rematch simultaneously! Host takes authority to accept
+      if (this.session.peer?.role === 'host') {
+        const seed = Math.floor(Math.random() * 1000000);
+        this.session.peer.sendMessage({ type: 'WATER_REMATCH_ACCEPT', seed });
+        this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT', seed });
+        this.startNewMatch(seed);
+      }
+      return;
+    }
+
     this.rematchState = 'offer_received';
+    sounds.playRoundComplete();
     if (this.rematchBtnEl) {
+      this.rematchBtnEl.disabled = false;
       this.rematchBtnEl.textContent = 'Accept Rematch!';
-      this.rematchBtnEl.classList.remove('opacity-70', 'cursor-not-allowed');
-      this.rematchBtnEl.className = 'w-full py-3 rounded-xl text-xs font-black tracking-wider uppercase text-white bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all cursor-pointer animate-pulse';
+      this.rematchBtnEl.className = 'w-full py-3 rounded-xl text-xs font-black tracking-wider uppercase text-white bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/50 active:scale-95 transition-all cursor-pointer animate-pulse';
     }
   }
 
@@ -494,8 +518,9 @@ export class WaterSortGame implements GameInstance {
     modal?.classList.add('hidden');
 
     if (this.rematchBtnEl) {
+      this.rematchBtnEl.disabled = false;
       this.rematchBtnEl.textContent = 'Play Next Match';
-      this.rematchBtnEl.className = 'ps-btn-primary w-full py-3 rounded-xl text-xs font-bold';
+      this.rematchBtnEl.className = 'ps-btn-primary w-full py-3 rounded-xl text-xs font-bold cursor-pointer';
     }
 
     this.matchSeed = seed !== undefined ? seed : Math.floor(Math.random() * 1000000);
@@ -918,6 +943,9 @@ export class WaterSortGame implements GameInstance {
   private setupEventListeners() {
     // Exit
     document.getElementById('water-btn-exit')?.addEventListener('click', () => {
+      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+      }
       this.session.onExit();
     });
 
@@ -970,6 +998,9 @@ export class WaterSortGame implements GameInstance {
     });
 
     document.getElementById('water-btn-return-hub')?.addEventListener('click', () => {
+      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+      }
       this.session.onExit();
     });
 
@@ -1374,6 +1405,31 @@ export class WaterSortGame implements GameInstance {
     this.updateHUD(true);
   }
 
+  private handleForfeitVictory(reason: string) {
+    if (this.phase === 'MATCH_OVER') {
+      if (this.rematchBtnEl) {
+        this.rematchBtnEl.textContent = 'Opponent Disconnected';
+        this.rematchBtnEl.disabled = true;
+        this.rematchBtnEl.className = 'ps-btn-primary w-full py-3 rounded-xl text-xs font-bold opacity-50 cursor-not-allowed';
+      }
+      return;
+    }
+
+    this.handleMatchEnd('player', reason);
+
+    const title = document.getElementById('water-victory-title');
+    if (title) {
+      title.innerHTML = '🏆 VICTORY BY FORFEIT!';
+      title.className = 'text-2xl sm:text-3xl font-extrabold mb-1 text-amber-400 animate-bounce';
+    }
+
+    if (this.rematchBtnEl) {
+      this.rematchBtnEl.textContent = 'Opponent Disconnected';
+      this.rematchBtnEl.disabled = true;
+      this.rematchBtnEl.className = 'ps-btn-primary w-full py-3 rounded-xl text-xs font-bold opacity-50 cursor-not-allowed';
+    }
+  }
+
   private shakeTube(index: number) {
     const el = document.getElementById(`water-tube-${index}`);
     if (el) {
@@ -1668,6 +1724,10 @@ export class WaterSortGame implements GameInstance {
   }
 
   public destroy() {
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+    }
+    window.removeEventListener('beforeunload', this.handleBeforeUnload);
     this.ai?.destroy();
     this.ai = null;
     if (this.countdownTimer !== null) {
@@ -1682,6 +1742,30 @@ export class WaterSortGame implements GameInstance {
       this.audioCtx.close().catch(() => {});
       this.audioCtx = null;
     }
+    this.tubesContainer = null;
+    this.reservoirEl = null;
+    this.colorRibbonEl = null;
+    this.undoBtn = null;
+    this.hintBtn = null;
+    this.resetBtn = null;
+    this.statusBannerEl = null;
+    this.statusTextEl = null;
+    this.hintTextEl = null;
+    this.scoreTrackerEl = null;
+    this.badgePlayerEl = null;
+    this.badgeOppEl = null;
+    this.countdownOverlayEl = null;
+    this.countdownNumberEl = null;
+    this.countdownSubtitleEl = null;
+    this.peerAwayBannerEl = null;
+    this.netPingEl = null;
+    this.netDotEl = null;
+    this.netTextEl = null;
+    this.rematchBtnEl = null;
+    this.enemyToastEl = null;
+    this.oppClearedTrayEl = null;
+    this.oppBowlStatusEl = null;
+    this.oppAvatarEl = null;
     this.container.innerHTML = '';
   }
 }
