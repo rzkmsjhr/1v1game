@@ -1,6 +1,7 @@
 import confetti from 'canvas-confetti';
 import { OthelloEngine, BOARD_SIZE, type PlayerColor, type MoveResult } from './othello-engine';
 import type { GameInstance, GameSession, AppTheme } from '../types';
+import type { NetworkHealth, NetworkMessage } from '../../network/webrtc-peer';
 import { sounds } from '../../engine/sound';
 
 function renderDiceFace(value: number | null, isDark: boolean): string {
@@ -70,6 +71,12 @@ export class OthelloGame implements GameInstance {
   private rematchBannerEl: HTMLElement | null = null;
   private activeDiceInterval: any = null;
 
+  // Network Health HUD elements
+  private pingEl: HTMLElement | null = null;
+  private pingDotEl: HTMLElement | null = null;
+  private pingTextEl: HTMLElement | null = null;
+  private peerAwayBannerEl: HTMLElement | null = null;
+
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
     this.session = session;
@@ -108,6 +115,9 @@ export class OthelloGame implements GameInstance {
   }
 
   public destroy() {
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+    }
     if (this.activeDiceInterval) {
       clearInterval(this.activeDiceInterval);
       this.activeDiceInterval = null;
@@ -123,6 +133,10 @@ export class OthelloGame implements GameInstance {
     this.turnIndicatorEl = null;
     this.modalLayerEl = null;
     this.rematchBannerEl = null;
+    this.pingEl = null;
+    this.pingDotEl = null;
+    this.pingTextEl = null;
+    this.peerAwayBannerEl = null;
     this.container.innerHTML = '';
   }
 
@@ -135,37 +149,95 @@ export class OthelloGame implements GameInstance {
   private setupNetworkListeners() {
     if (!this.session.peer) return;
 
-    const origOnMessage = (this.session.peer as any).events?.onMessage;
-    const origOnStatusChange = (this.session.peer as any).events?.onStatusChange;
+    const peer = this.session.peer;
+    const origOnMessage = (peer as any).events?.onMessage;
+    const origOnStatusChange = (peer as any).events?.onStatusChange;
+    const origOnHealthChange = (peer as any).events?.onHealthChange;
 
-    this.session.peer = Object.assign(this.session.peer, {
+    this.session.peer = Object.assign(peer, {
       events: {
-        ...(this.session.peer as any).events,
-        onMessage: (msg: any) => {
+        ...(peer as any).events,
+        onMessage: (msg: NetworkMessage) => {
           origOnMessage?.(msg);
           this.handleNetworkMessage(msg);
         },
         onStatusChange: (status: string, message?: string) => {
           origOnStatusChange?.(status, message);
           if (status === 'disconnected') {
-            this.handleOpponentDisconnected();
+            this.handleForfeitVictory('Opponent disconnected from the match.');
           }
+        },
+        onHealthChange: (health: NetworkHealth) => {
+          origOnHealthChange?.(health);
+          this.updateNetworkHealthHUD(health);
         }
       }
     });
 
-    this.session.peer.flushEarlyMessages();
+    peer.flushEarlyMessages?.();
+
+    if (peer.isConnected) {
+      this.updateNetworkHealthHUD({
+        rtt: peer.currentRtt,
+        status: peer.networkQuality,
+        isPeerVisible: peer.isPeerVisible
+      });
+    }
 
     window.addEventListener('beforeunload', this.handleBeforeUnload);
   }
 
-  private handleOpponentDisconnected() {
-    if (this.engine.isGameOver) return;
+  private updateNetworkHealthHUD(health: NetworkHealth) {
+    if (!this.pingEl || !this.pingDotEl || !this.pingTextEl) return;
+    this.pingEl.classList.remove('hidden');
+    this.pingEl.classList.add('inline-flex');
+
+    if (health.status === 'stalled') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+      this.pingTextEl.textContent = 'Lag ⚠️';
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    } else if (health.status === 'poor') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+      this.pingTextEl.textContent = `${health.rtt}ms`;
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    } else if (health.status === 'moderate') {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+      this.pingTextEl.textContent = `${health.rtt}ms`;
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    } else {
+      this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+      this.pingTextEl.textContent = `${health.rtt || 28}ms`;
+      this.pingEl.className = 'inline-flex items-center space-x-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm';
+    }
+
+    if (this.peerAwayBannerEl) {
+      if (!health.isPeerVisible) {
+        this.peerAwayBannerEl.classList.remove('hidden');
+      } else {
+        this.peerAwayBannerEl.classList.add('hidden');
+      }
+    }
+  }
+
+  private handleForfeitVictory(reason: string) {
+    if (this.engine.isGameOver) {
+      this.renderRematchBanner();
+      return;
+    }
+
+    if (this.activeDiceInterval) {
+      clearInterval(this.activeDiceInterval);
+      this.activeDiceInterval = null;
+    }
+    this.isRollingAnimation = false;
+
     this.gamePhase = 'playing';
     this.engine.isGameOver = true;
-    this.forfeitMessage = 'Opponent left or disconnected. You win by forfeit!';
+    this.forfeitMessage = reason;
+
     sounds.playWin();
     confetti({ particleCount: 120, spread: 80 });
+
     this.renderModalLayer();
     this.updateHUD();
     this.renderRematchBanner();
@@ -173,7 +245,7 @@ export class OthelloGame implements GameInstance {
 
   private handleNetworkMessage(msg: any) {
     if (msg.type === 'PLAYER_LEAVE') {
-      this.handleOpponentDisconnected();
+      this.handleForfeitVictory('Opponent forfeited the match.');
     } else if (msg.type === 'OTHELLO_DICE_ROLL') {
       sounds.playDiceRoll();
       const oppDice = document.getElementById('opp-dice-container');
@@ -211,9 +283,9 @@ export class OthelloGame implements GameInstance {
       if (move) {
         this.executeMoveWithAnimation(msg.r, msg.c, move, false);
       }
-    } else if (msg.type === 'REMATCH_REQUEST') {
+    } else if (msg.type === 'OTHELLO_REMATCH_REQUEST' || msg.type === 'REMATCH_REQUEST') {
       this.showRematchOffer();
-    } else if (msg.type === 'REMATCH_ACCEPT') {
+    } else if (msg.type === 'OTHELLO_REMATCH_ACCEPT' || msg.type === 'REMATCH_ACCEPT') {
       this.resetMatch();
     }
   }
@@ -398,7 +470,7 @@ export class OthelloGame implements GameInstance {
       <div class="w-full max-w-2xl flex flex-col items-center justify-center p-3 sm:p-4 relative">
         
         <!-- Top Status Bar (Locked height & overflow-protected to eliminate screen push/jump) -->
-        <div class="w-full h-11 min-h-[44px] max-h-[44px] shrink-0 flex items-center justify-between px-1 mb-3 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'}">
+        <div class="w-full h-11 min-h-[44px] max-h-[44px] shrink-0 flex items-center justify-between px-1 mb-2 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'}">
           <button id="btn-othello-exit" class="ps-btn-secondary px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1 shrink-0 active:scale-95 transition-transform" title="Exit to Arcade Hub">
             <span>← Exit</span>
           </button>
@@ -410,9 +482,20 @@ export class OthelloGame implements GameInstance {
             <div id="othello-turn-indicator" class="w-3 h-3 shrink-0 rounded-full bg-gray-900 border border-gray-600 animate-pulse"></div>
           </div>
 
-          <div class="text-xs font-mono text-gray-500 shrink-0 text-right">
-            ${this.session.mode === 'ai' ? `AI: ${this.session.aiDifficulty?.toUpperCase()}` : '1v1 Online'}
+          <div class="flex items-center space-x-1.5 shrink-0 text-right">
+            <div id="othello-net-ping" class="hidden items-center space-x-1 text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-300/40 dark:border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm">
+              <span id="othello-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400"></span>
+              <span id="othello-net-text">--ms</span>
+            </div>
+            <span class="text-xs font-mono text-gray-500">
+              ${this.session.mode === 'ai' ? `AI: ${this.session.aiDifficulty?.toUpperCase()}` : '1V1 ONLINE'}
+            </span>
           </div>
+        </div>
+
+        <!-- Inactive Tab / Opponent Away Banner -->
+        <div id="othello-peer-away-banner" class="hidden w-full px-2 py-0.5 mb-2 text-center rounded-lg bg-amber-100 dark:bg-amber-500/20 border border-amber-300/40 dark:border-amber-500/40 text-amber-700 dark:text-amber-300 font-bold text-[10px] tracking-wide animate-pulse">
+          ⚠️ Opponent is tabbed out / minimized
         </div>
 
         <!-- Disc Score Cards -->
@@ -477,6 +560,10 @@ export class OthelloGame implements GameInstance {
     this.turnIndicatorEl = this.container.querySelector('#othello-turn-indicator');
     this.rematchBannerEl = this.container.querySelector('#othello-rematch-layer');
     this.modalLayerEl = this.container.querySelector('#othello-modal-layer');
+    this.pingEl = this.container.querySelector('#othello-net-ping');
+    this.pingDotEl = this.container.querySelector('#othello-net-dot');
+    this.pingTextEl = this.container.querySelector('#othello-net-text');
+    this.peerAwayBannerEl = this.container.querySelector('#othello-peer-away-banner');
 
     this.cellEls = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
     for (let r = 0; r < BOARD_SIZE; r++) {
@@ -665,47 +752,76 @@ export class OthelloGame implements GameInstance {
       return;
     }
 
+    const isConnected = this.session.mode === 'online' && this.session.peer?.isConnected;
+    const isPeerGone = this.session.mode === 'online' && !isConnected;
+
+    let rematchBtnText = 'Play Again';
+    let rematchBtnClass = 'ps-btn-primary px-8 py-3 rounded-2xl text-sm font-bold shadow-lg shadow-emerald-500/25 active:scale-95 cursor-pointer';
+    let isRematchDisabled = false;
+
+    if (isPeerGone) {
+      rematchBtnText = 'Opponent Disconnected';
+      rematchBtnClass = 'ps-btn-primary px-8 py-3 rounded-2xl text-sm font-bold opacity-50 cursor-not-allowed pointer-events-none';
+      isRematchDisabled = true;
+    } else if (this.rematchState === 'requested') {
+      rematchBtnText = 'Waiting for Opponent...';
+      rematchBtnClass = 'ps-btn-primary px-8 py-3 rounded-2xl text-sm font-bold opacity-70 cursor-not-allowed pointer-events-none';
+      isRematchDisabled = true;
+    } else if (this.rematchState === 'offer_received') {
+      rematchBtnText = 'Accept Rematch!';
+      rematchBtnClass = 'w-full max-w-xs py-3 px-6 rounded-2xl font-black text-sm uppercase tracking-wider text-white bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all cursor-pointer animate-pulse';
+    }
+
+    const scores = this.engine.getScores();
+    const isDraw = scores.black === scores.white;
+    const winner = scores.black > scores.white ? 1 : 2;
+    const isWinner = !isDraw && winner === this.myPlayer;
+    const myScore = this.myPlayer === 1 ? scores.black : scores.white;
+    const oppScore = this.myPlayer === 1 ? scores.white : scores.black;
+
     this.rematchBannerEl.innerHTML = `
-      <div class="mt-6 flex flex-col items-center space-y-3">
+      <div class="mt-5 flex flex-col items-center space-y-3">
         ${this.forfeitMessage ? `
-          <div class="px-5 py-2.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-sm font-bold text-center shadow-lg shadow-emerald-500/10">
-            🏆 ${this.forfeitMessage}
+          <div class="text-center space-y-1">
+            <h3 class="text-2xl sm:text-3xl font-extrabold mb-1 text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500">
+              🏆 VICTORY BY FORFEIT!
+            </h3>
+            <p class="text-xs sm:text-sm text-gray-400">
+              ${this.forfeitMessage}
+            </p>
           </div>
-        ` : ''}
-        ${(!this.forfeitMessage || this.session.mode === 'ai') ? `
-          <button id="btn-othello-rematch" class="ps-btn-primary px-8 py-3 rounded-2xl text-sm font-bold shadow-lg shadow-emerald-500/25">
-            ${this.rematchState === 'requested' ? 'Waiting for Opponent...' : (this.rematchState === 'offer_received' ? 'Accept Rematch' : 'Play Again')}
-          </button>
         ` : `
-          <button id="btn-othello-back" class="ps-btn-primary px-8 py-3 rounded-2xl text-sm font-bold shadow-lg shadow-emerald-500/25">
-            Back to Dashboard
-          </button>
+          <div class="text-center space-y-1">
+            <h3 class="text-2xl sm:text-3xl font-extrabold mb-1 ${isWinner ? 'text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500' : (isDraw ? 'text-gray-300' : 'text-rose-500')}">
+              ${isWinner ? '🏆 VICTORY!' : (isDraw ? '🤝 DRAW MATCH!' : '💀 DEFEAT')}
+            </h3>
+            <p class="text-xs sm:text-sm text-gray-400">
+              ${this.rematchState === 'offer_received'
+                ? 'Opponent offered a rematch!'
+                : (isWinner ? `You dominated the board with ${myScore} discs!` : (isDraw ? 'Both players tied with equal discs!' : `Opponent won with ${oppScore} discs.`))}
+            </p>
+          </div>
         `}
+
+        <div class="flex items-center space-x-3 w-full max-w-xs justify-center">
+          <button id="btn-othello-rematch" class="${rematchBtnClass}" ${isRematchDisabled ? 'disabled' : ''}>
+            ${rematchBtnText}
+          </button>
+          <button id="btn-othello-back" class="ps-btn-secondary px-6 py-3 rounded-2xl text-sm font-bold active:scale-95 cursor-pointer">
+            Exit
+          </button>
+        </div>
       </div>
     `;
 
     document.getElementById('btn-othello-rematch')?.addEventListener('click', () => {
-      if (this.session.mode === 'ai') {
-        this.resetMatch();
-      } else if (this.session.peer?.isConnected) {
-        if (this.rematchState === 'offer_received') {
-          this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT' });
-          this.resetMatch();
-          return;
-        }
-        if (this.rematchState === 'idle') {
-          this.rematchState = 'requested';
-          this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
-          const btn = document.getElementById('btn-othello-rematch');
-          if (btn) {
-            btn.textContent = 'Waiting for Opponent...';
-            btn.setAttribute('disabled', 'true');
-          }
-        }
-      }
+      this.handleRematchClick();
     });
 
     document.getElementById('btn-othello-back')?.addEventListener('click', () => {
+      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+      }
       this.session.onExit();
     });
   }
@@ -1052,9 +1168,45 @@ export class OthelloGame implements GameInstance {
     }
   }
 
+  private handleRematchClick() {
+    if (this.session.mode === 'ai') {
+      this.resetMatch();
+      return;
+    }
+
+    if (!this.session.peer?.isConnected) return;
+
+    if (this.rematchState === 'offer_received') {
+      this.session.peer.sendMessage({ type: 'OTHELLO_REMATCH_ACCEPT' });
+      this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT' });
+      this.resetMatch();
+      return;
+    }
+
+    if (this.rematchState === 'idle') {
+      this.rematchState = 'requested';
+      this.session.peer.sendMessage({ type: 'OTHELLO_REMATCH_REQUEST' });
+      this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
+      this.renderRematchBanner();
+    }
+  }
+
   private showRematchOffer() {
+    if (this.rematchState === 'requested') {
+      // Both clicked rematch at around the same time!
+      if (this.session.peer?.role === 'host') {
+        if (this.session.peer?.isConnected) {
+          this.session.peer.sendMessage({ type: 'OTHELLO_REMATCH_ACCEPT' });
+          this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT' });
+        }
+        this.resetMatch();
+      }
+      return;
+    }
+
     this.rematchState = 'offer_received';
     this.renderRematchBanner();
+    sounds.playRoundComplete();
   }
 
   private resetMatch() {
