@@ -225,4 +225,10 @@ export class SodaDashAI {
     this.pendingActionTimer = (baseDelay + extraDelayMs) / 1000;
     this.pendingAction = action;
   }
+
+  public reset(): void {
+    this.pendingActionTimer = 0;
+    this.pendingAction = null;
+    this.lastProcessedItemId = null;
+  }
 }

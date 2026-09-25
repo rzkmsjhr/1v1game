@@ -131,6 +131,15 @@ export class SodaDashRenderer {
     this.generateSkyline();
   }
 
+  public reset(): void {
+    for (let i = 0; i < this.particlePool.length; i++) {
+      this.particlePool[i].active = false;
+    }
+    for (let i = 0; i < this.floatingTextPool.length; i++) {
+      this.floatingTextPool[i].active = false;
+    }
+  }
+
   private generateSkyline(): void {
     if (typeof document === 'undefined') return;
     if (!this.skylineCanvas) {

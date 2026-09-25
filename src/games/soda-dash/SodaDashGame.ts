@@ -45,6 +45,7 @@ export class SodaDashGame implements GameInstance {
   private remoteTargetJumpY: number = 0;
   private remoteLastSyncTime: number = 0;
   private isInitialSeedSynced: boolean = false;
+  private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
 
   // Top-Middle 2-Line Bubble Chat Elements (Rival Info)
   private rivalBubbleEl!: HTMLElement;
@@ -584,13 +585,19 @@ export class SodaDashGame implements GameInstance {
       },
       onStatusChange: (status: string, message?: string) => {
         origOnStatusChange?.(status as any, message);
-        if (status === 'connected' && this.session.peer?.role === 'host') {
-          this.session.peer.sendMessage({
-            type: 'DASH_READY',
-            seed: this.engine.track.getSeed()
-          });
+        if (status === 'connected') {
+          if (this.session.peer?.role === 'host') {
+            this.session.peer.sendMessage({
+              type: 'DASH_READY',
+              seed: this.engine.track.getSeed()
+            });
+          } else if (this.session.peer?.role === 'guest') {
+            this.session.peer.sendMessage({
+              type: 'DASH_REQUEST_SEED'
+            });
+          }
         } else if (status === 'disconnected') {
-          this.handleGameOver('player');
+          this.handleForfeitVictory('Opponent disconnected from the match.');
         }
       },
       onHealthChange: (health: NetworkHealth) => {
@@ -605,6 +612,10 @@ export class SodaDashGame implements GameInstance {
           type: 'DASH_READY',
           seed: this.engine.track.getSeed()
         });
+      } else if (this.session.peer.role === 'guest') {
+        this.session.peer.sendMessage({
+          type: 'DASH_REQUEST_SEED'
+        });
       }
       this.updateNetworkHealthHUD({
         rtt: this.session.peer.currentRtt,
@@ -612,6 +623,9 @@ export class SodaDashGame implements GameInstance {
         isPeerVisible: this.session.peer.isPeerVisible
       });
     }
+
+    // Flush any early messages that arrived before handlers were attached
+    peer.flushEarlyMessages?.();
 
     // 20Hz state broadcast interval
     this.syncIntervalId = window.setInterval(() => {
@@ -653,6 +667,7 @@ export class SodaDashGame implements GameInstance {
 
   private broadcastState(): void {
     if (!this.session.peer || this.session.mode !== 'online' || !this.session.peer.isConnected) return;
+    if (this.engine.isGameOver) return; // Suppress broadcasts once match is concluded
     const p = this.engine.player;
 
     const msg: DashNetworkMessage = {
@@ -676,18 +691,31 @@ export class SodaDashGame implements GameInstance {
   }
 
   private handleNetworkMessage(msg: DashNetworkMessage): void {
-    if (msg.type === 'DASH_READY') {
+    if (!msg || !msg.type) return;
+
+    if (msg.type === 'PLAYER_LEAVE') {
+      this.handleForfeitVictory('Opponent forfeited the match.');
+      return;
+    } else if (msg.type === 'DASH_REQUEST_SEED') {
+      if (this.session.peer?.role === 'host' && this.session.peer.isConnected) {
+        this.session.peer.sendMessage({
+          type: 'DASH_READY',
+          seed: this.engine.track.getSeed()
+        });
+      }
+      return;
+    } else if (msg.type === 'DASH_READY') {
       if (!this.isInitialSeedSynced) {
         this.isInitialSeedSynced = true;
-        this.engine.reset(msg.seed);
-        this.remoteTargetDistance = 0;
-        this.remoteTargetSpeed = 16;
-        this.remoteTargetLane = 1;
-        this.remoteTargetX = 1;
-        this.remoteTargetJumpY = 0;
-        this.remoteLastSyncTime = performance.now();
-        this.updateHUD();
+        this.startNewMatch(msg.seed);
       }
+      return;
+    } else if (msg.type === 'DASH_REMATCH_REQUEST' || msg.type === 'REMATCH_REQUEST') {
+      this.showRematchOffer();
+      return;
+    } else if (msg.type === 'DASH_REMATCH_ACCEPT' || msg.type === 'REMATCH_ACCEPT' || msg.type === 'DASH_REMATCH') {
+      this.startNewMatch(msg.seed);
+      return;
     } else if (msg.type === 'DASH_ACTION') {
       const opp = this.engine.opponent;
       if (msg.action === 'MOVE_LEFT') {
@@ -739,17 +767,9 @@ export class SodaDashGame implements GameInstance {
     } else if (msg.type === 'DASH_GAME_OVER') {
       this.engine.opponent.isDead = true;
       this.engine.opponent.hearts = 0;
-      this.handleGameOver('player');
-    } else if (msg.type === 'DASH_REMATCH') {
-      this.engine.reset(msg.seed);
-      this.remoteTargetDistance = 0;
-      this.remoteTargetSpeed = 16;
-      this.remoteTargetLane = 1;
-      this.remoteTargetX = 1;
-      this.remoteTargetJumpY = 0;
-      this.remoteLastSyncTime = performance.now();
-      this.gameOverModalEl.classList.add('hidden');
-      this.updateHUD();
+      if (!this.engine.isGameOver) {
+        this.handleGameOver('player');
+      }
     }
   }
 
@@ -988,6 +1008,15 @@ export class SodaDashGame implements GameInstance {
       iconEl.textContent = winner === 'player' ? '🏆' : winner === 'draw' ? '🤝' : '💀';
     }
 
+    const descEl = document.getElementById('dash-winner-desc');
+    if (descEl) {
+      descEl.textContent = winner === 'player'
+        ? 'You outlasted your rival!'
+        : winner === 'draw'
+        ? 'Simultaneous wipeout! Incredible duel.'
+        : 'Your rival outlasted you. Better luck next time!';
+    }
+
     this.gameOverStatsEl.innerHTML = `
       <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Distance Run:</span> <b class="font-mono text-slate-900 dark:text-white">${pDist} m</b></div>
       <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Rival Distance:</span> <b class="font-mono text-slate-900 dark:text-white">${oDist} m</b></div>
@@ -995,6 +1024,15 @@ export class SodaDashGame implements GameInstance {
       <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Obstacles Dodged:</span> <b class="font-mono text-slate-900 dark:text-white">${this.obstaclesDodged}</b></div>
       <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Match Duration:</span> <b class="font-mono text-slate-900 dark:text-white">${duration}s</b></div>
     `;
+
+    const btn = document.getElementById('btn-dash-rematch');
+    if (this.rematchState === 'offer_received') {
+      this.showRematchOffer();
+    } else if (btn) {
+      btn.textContent = 'Play Again';
+      btn.classList.remove('opacity-70', 'cursor-not-allowed', 'animate-pulse', 'pointer-events-none');
+      btn.className = 'w-full py-3 px-6 rounded-xl font-black tracking-wider uppercase text-white bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-500/30 active:scale-95 transition-all cursor-pointer';
+    }
 
     this.gameOverModalEl.classList.remove('hidden');
 
@@ -1016,25 +1054,134 @@ export class SodaDashGame implements GameInstance {
   }
 
   private handleRematch(): void {
-    const newSeed = Date.now();
+    const btn = document.getElementById('btn-dash-rematch');
+
+    if (this.session.mode !== 'online') {
+      this.startNewMatch();
+      return;
+    }
+
+    if (this.rematchState === 'offer_received') {
+      const seed = Date.now();
+      if (this.session.peer?.isConnected) {
+        this.session.peer.sendMessage({ type: 'DASH_REMATCH_ACCEPT', seed });
+        this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT', seed });
+      }
+      this.startNewMatch(seed);
+    } else if (this.rematchState === 'idle') {
+      this.rematchState = 'requested';
+      if (btn) {
+        btn.textContent = 'Waiting for Opponent...';
+        btn.classList.add('opacity-70', 'cursor-not-allowed');
+      }
+      if (this.session.peer?.isConnected) {
+        this.session.peer.sendMessage({ type: 'DASH_REMATCH_REQUEST' });
+        this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
+      }
+    }
+  }
+
+  private showRematchOffer(): void {
+    if (this.rematchState === 'requested') {
+      // Both clicked rematch!
+      const seed = Date.now();
+      if (this.session.peer?.role === 'host') {
+        if (this.session.peer?.isConnected) {
+          this.session.peer.sendMessage({ type: 'DASH_REMATCH_ACCEPT', seed });
+          this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT', seed });
+        }
+        this.startNewMatch(seed);
+      }
+      return;
+    }
+
+    this.rematchState = 'offer_received';
+    const btn = document.getElementById('btn-dash-rematch');
+    if (btn) {
+      btn.textContent = 'Accept Rematch!';
+      btn.classList.remove('opacity-70', 'cursor-not-allowed');
+      btn.className = 'w-full py-3 px-6 rounded-xl font-black tracking-wider uppercase text-white bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all cursor-pointer animate-pulse';
+    }
+    sounds.playRoundComplete();
+  }
+
+  private startNewMatch(seed?: number): void {
+    this.rematchState = 'idle';
+    this.gameOverModalEl.classList.add('hidden');
+
+    const btn = document.getElementById('btn-dash-rematch');
+    if (btn) {
+      btn.textContent = 'Play Again';
+      btn.classList.remove('opacity-70', 'cursor-not-allowed', 'animate-pulse', 'pointer-events-none');
+      btn.className = 'w-full py-3 px-6 rounded-xl font-black tracking-wider uppercase text-white bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-500/30 active:scale-95 transition-all cursor-pointer';
+    }
+
+    const newSeed = seed !== undefined ? seed : Date.now();
     this.engine.reset(newSeed);
+    this.renderer.reset();
+    this.ai?.reset();
+
     this.remoteTargetDistance = 0;
     this.remoteTargetSpeed = 16;
     this.remoteTargetLane = 1;
     this.remoteTargetX = 1;
     this.remoteTargetJumpY = 0;
     this.remoteLastSyncTime = performance.now();
-    this.gameOverModalEl.classList.add('hidden');
+    this.lastTime = performance.now();
     this.startTime = Date.now();
     this.obstaclesDodged = 0;
+    this.maxSpeedReached = 0;
+    this.lastPDist = -1;
+    this.lastODist = -1;
+    this.lastKmh = -1;
+    this.lastLeadText = '';
+    this.lastLeadClass = '';
+    this.lastHeldItem = '__init__';
     this.updateHUD();
+  }
 
-    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
-      this.session.peer.sendMessage({
-        type: 'DASH_REMATCH',
-        seed: newSeed
-      });
+  private handleForfeitVictory(reason: string): void {
+    if (this.engine.isGameOver && this.gameOverModalEl && !this.gameOverModalEl.classList.contains('hidden')) {
+      return;
     }
+
+    this.engine.isGameOver = true;
+    this.engine.winner = 'player';
+    this.engine.opponent.isDead = true;
+    this.engine.opponent.hearts = 0;
+
+    sounds.playFanfare();
+    confetti({ particleCount: 100, spread: 80, origin: { y: 0.5 } });
+
+    const duration = Math.floor((Date.now() - this.startTime) / 1000);
+    const pDist = Math.floor(this.engine.player.distance);
+    const oDist = Math.floor(this.engine.opponent.distance);
+
+    this.gameOverTitleEl.textContent = 'VICTORY BY FORFEIT!';
+    this.gameOverTitleEl.className = 'text-2xl sm:text-3xl font-black tracking-tight mb-2 text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500';
+
+    const iconEl = document.getElementById('dash-winner-icon');
+    if (iconEl) iconEl.textContent = '🏆';
+
+    const descEl = document.getElementById('dash-winner-desc');
+    if (descEl) descEl.textContent = reason;
+
+    this.gameOverStatsEl.innerHTML = `
+      <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Distance Run:</span> <b class="font-mono text-slate-900 dark:text-white">${pDist} m</b></div>
+      <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Rival Distance:</span> <b class="font-mono text-slate-900 dark:text-white">${oDist} m</b></div>
+      <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Peak Speed:</span> <b class="font-mono text-slate-900 dark:text-white">${this.maxSpeedReached} km/h</b></div>
+      <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Obstacles Dodged:</span> <b class="font-mono text-slate-900 dark:text-white">${this.obstaclesDodged}</b></div>
+      <div class="flex justify-between text-slate-600 dark:text-slate-300"><span>Match Duration:</span> <b class="font-mono text-slate-900 dark:text-white">${duration}s</b></div>
+    `;
+
+    const btn = document.getElementById('btn-dash-rematch');
+    if (btn) {
+      btn.textContent = 'Opponent Disconnected';
+      btn.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+      btn.classList.remove('animate-pulse');
+    }
+
+    this.gameOverModalEl.classList.remove('hidden');
   }
 
   // -------------------------------------------------------------
@@ -1049,6 +1196,10 @@ export class SodaDashGame implements GameInstance {
   }
 
   public destroy(): void {
+    if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+      this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+    }
+
     if (this.animFrameId !== null) {
       cancelAnimationFrame(this.animFrameId);
       this.animFrameId = null;

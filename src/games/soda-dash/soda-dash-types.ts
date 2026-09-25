@@ -75,6 +75,9 @@ export type DashNetworkMessage =
       seed: number;
     }
   | {
+      type: 'DASH_REQUEST_SEED';
+    }
+  | {
       type: 'DASH_SYNC';
       distance: number;
       speed: number;
@@ -112,6 +115,23 @@ export type DashNetworkMessage =
   | {
       type: 'DASH_REMATCH';
       seed: number;
+    }
+  | {
+      type: 'DASH_REMATCH_REQUEST';
+    }
+  | {
+      type: 'DASH_REMATCH_ACCEPT';
+      seed?: number;
+    }
+  | {
+      type: 'REMATCH_REQUEST';
+    }
+  | {
+      type: 'REMATCH_ACCEPT';
+      seed?: number;
+    }
+  | {
+      type: 'PLAYER_LEAVE';
     }
   | {
       type: 'DASH_EVENT';
