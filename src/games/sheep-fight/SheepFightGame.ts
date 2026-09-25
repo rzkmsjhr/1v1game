@@ -108,8 +108,8 @@ export class SheepFightGame implements GameInstance {
 
         <!-- TOP BAR: Header, Scores & Mode -->
         <div id="sf-top-bar" class="px-3 py-2 flex items-center justify-between border-b ${
-          isDark ? 'border-slate-800 bg-slate-900/90' : 'border-slate-200 bg-white/95'
-        } backdrop-blur z-20 select-none shrink-0">
+          isDark ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'
+        } z-20 select-none shrink-0">
           <button id="sf-btn-exit" class="px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
             isDark ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300' : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-700'
           }">
@@ -292,8 +292,8 @@ export class SheepFightGame implements GameInstance {
     const topBar = this.container.querySelector('#sf-top-bar');
     if (topBar) {
       topBar.className = `px-3 py-2 flex items-center justify-between border-b ${
-        isDark ? 'border-slate-800 bg-slate-900/90' : 'border-slate-200 bg-white/95'
-      } backdrop-blur z-20 select-none shrink-0`;
+        isDark ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'
+      } z-20 select-none shrink-0`;
     }
 
     const exitBtn = this.container.querySelector('#sf-btn-exit');
@@ -563,9 +563,8 @@ export class SheepFightGame implements GameInstance {
       const dt = Math.min(0.1, (now - this.lastTime) / 1000);
       this.lastTime = now;
 
-      // If game has ended, stop heavy physics and AI simulation, render idle pasture
+      // If game has ended, pause canvas re-rendering so 100% frame budget is dedicated to smooth victory confetti and modal
       if (this.engine.state.winner !== null) {
-        this.renderer.render(this.engine.state, 0, this.currentVirtualWidth);
         this.animFrameId = requestAnimationFrame(loop);
         return;
       }
@@ -705,6 +704,9 @@ export class SheepFightGame implements GameInstance {
     if (this.winnerLocked) return;
     this.winnerLocked = true;
     this.engine.state.winner = winner;
+
+    // Render the final match-end state once onto the canvas
+    this.renderer.render(this.engine.state, 0, this.currentVirtualWidth);
     this.gameOverModalEl.classList.remove('hidden');
 
     // Broadcast definitive final state if host
@@ -719,10 +721,9 @@ export class SheepFightGame implements GameInstance {
     if (winner === 'player') {
       this.playVictorySound();
       confetti({
-        particleCount: 45,
+        particleCount: 50,
         spread: 60,
         origin: { y: 0.6 },
-        ticks: 150,
         disableForReducedMotion: true
       });
       this.gameOverTitleEl.textContent = '🏆 VICTORY!';
@@ -814,6 +815,9 @@ export class SheepFightGame implements GameInstance {
     this.lastCdPercent = -1;
     this.lastLaneStates = [];
 
+    // Render the initial clean pasture immediately
+    this.renderer.render(this.engine.state, 0, this.currentVirtualWidth);
+
     // Host sends immediate state sync upon reset
     if (this.session.mode === 'online' && this.session.peer?.isConnected && isHost) {
       this.session.peer.sendMessage({
@@ -850,11 +854,15 @@ export class SheepFightGame implements GameInstance {
 
     this.winnerLocked = true;
     this.engine.state.winner = 'player';
+
+    // Render the final match-end state once onto the canvas
+    this.renderer.render(this.engine.state, 0, this.currentVirtualWidth);
     this.playVictorySound();
     confetti({
-      particleCount: 120,
-      spread: 80,
-      origin: { y: 0.6 }
+      particleCount: 50,
+      spread: 60,
+      origin: { y: 0.6 },
+      disableForReducedMotion: true
     });
 
     this.gameOverModalEl.classList.remove('hidden');
