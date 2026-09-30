@@ -50,13 +50,13 @@ export class SkylineStackEngine {
   private createInitialPlayerState(id: 'player' | 'opponent', name: string): SkylinePlayerState {
     const crane: CraneState = {
       anchorX: 0,
-      anchorY: SKYLINE_CONSTANTS.FOUNDATION_HEIGHT + SKYLINE_CONSTANTS.CRANE_CABLE_LENGTH + 70,
+      anchorY: SKYLINE_CONSTANTS.FOUNDATION_HEIGHT + SKYLINE_CONSTANTS.CRANE_CABLE_LENGTH + SKYLINE_CONSTANTS.HOOK_CLEARANCE,
       cableLength: SKYLINE_CONSTANTS.CRANE_CABLE_LENGTH,
       angle: 0,
       angularVelocity: SKYLINE_CONSTANTS.CRANE_BASE_SWING_SPEED,
       speedMultiplier: 1.0,
       hookX: 0,
-      hookY: SKYLINE_CONSTANTS.FOUNDATION_HEIGHT + 70,
+      hookY: SKYLINE_CONSTANTS.FOUNDATION_HEIGHT + SKYLINE_CONSTANTS.HOOK_CLEARANCE,
       holdingBlock: null
     };
 
@@ -182,7 +182,7 @@ export class SkylineStackEngine {
     const topFloorY = topFloor ? topFloor.y + topFloor.height : SKYLINE_CONSTANTS.FOUNDATION_HEIGHT;
 
     // 1. Crane Anchor Position follows the top of the tower
-    const desiredAnchorY = topFloorY + SKYLINE_CONSTANTS.CRANE_CABLE_LENGTH + 95;
+    const desiredAnchorY = topFloorY + SKYLINE_CONSTANTS.HOOK_CLEARANCE + SKYLINE_CONSTANTS.CRANE_CABLE_LENGTH;
     this.state.crane.anchorY += (desiredAnchorY - this.state.crane.anchorY) * Math.min(1.0, dt * 6.0);
 
     // Crane swing speed increases slightly as tower grows taller
@@ -203,16 +203,20 @@ export class SkylineStackEngine {
     }
 
     // 2. Tower Wobble Harmonic Spring Physics
-    const wobbleSpringK = SKYLINE_CONSTANTS.WOBBLE_SPRING_K;
-    const wobbleDamping = SKYLINE_CONSTANTS.WOBBLE_DAMPING;
-    const wobbleAcc = -wobbleSpringK * this.state.wobbleAngle - wobbleDamping * this.state.wobbleVelocity;
+    // Frequency increases dynamically as the tower gets taller: shakes faster the taller the building!
+    const floorCount = Math.max(1, this.state.floors.length - 1);
+    const currentFreq = SKYLINE_CONSTANTS.WOBBLE_BASE_FREQ + SKYLINE_CONSTANTS.WOBBLE_FREQ_PER_FLOOR * floorCount;
+    const springK = currentFreq * currentFreq; // k = ω²
+    const dampingC = 2.0 * SKYLINE_CONSTANTS.WOBBLE_DAMPING_RATIO * currentFreq; // Underdamped c = 2ζω for smooth multi-cycle sway
+
+    const wobbleAcc = -springK * this.state.wobbleAngle - dampingC * this.state.wobbleVelocity;
     this.state.wobbleVelocity += wobbleAcc * dt;
     this.state.wobbleAngle += this.state.wobbleVelocity * dt;
 
     // Clamp maximum wobble
     if (Math.abs(this.state.wobbleAngle) > SKYLINE_CONSTANTS.MAX_WOBBLE_ANGLE) {
       this.state.wobbleAngle = Math.sign(this.state.wobbleAngle) * SKYLINE_CONSTANTS.MAX_WOBBLE_ANGLE;
-      this.state.wobbleVelocity *= -0.4;
+      this.state.wobbleVelocity *= -0.3;
     }
 
     // 3. Falling Block Dynamics
@@ -279,6 +283,10 @@ export class SkylineStackEngine {
     let placedX = fb.x;
     let popGain = 50;
 
+    const floorCount = Math.max(1, this.state.floors.length - 1);
+    // Taller building has more mass/leverage up high, exciting stronger torque
+    const heightLeverage = 1.0 + Math.min(1.4, floorCount * 0.05);
+
     if (absOffset <= SKYLINE_CONSTANTS.PERFECT_THRESHOLD) {
       quality = 'perfect';
       isPerfect = true;
@@ -291,21 +299,24 @@ export class SkylineStackEngine {
       popGain = 100 + this.state.combo * 50;
 
       // PERFECT stabilizes the tower sway!
-      this.state.wobbleAngle *= 0.3;
-      this.state.wobbleVelocity *= 0.2;
+      this.state.wobbleAngle *= 0.25;
+      this.state.wobbleVelocity *= 0.15;
     } else if (absOffset <= SKYLINE_CONSTANTS.GREAT_THRESHOLD) {
       quality = 'great';
       this.state.combo = 0;
       popGain = 75;
       // Slight torque impulse
-      const impulse = (rawOffsetDx / SKYLINE_CONSTANTS.MAX_OVERHANG) * 0.06;
+      const edgeFraction = (absOffset - SKYLINE_CONSTANTS.PERFECT_THRESHOLD) / (SKYLINE_CONSTANTS.GREAT_THRESHOLD - SKYLINE_CONSTANTS.PERFECT_THRESHOLD);
+      const impulse = Math.sign(rawOffsetDx) * (0.04 + 0.08 * edgeFraction) * heightLeverage;
       this.state.wobbleVelocity += impulse;
     } else {
+      // GOOD: Placed near the edge!
       quality = 'good';
       this.state.combo = 0;
       popGain = 40;
-      // Significant torque impulse!
-      const impulse = (rawOffsetDx / SKYLINE_CONSTANTS.MAX_OVERHANG) * 0.16;
+      // Substantial torque impulse when dropped near the edge!
+      const edgeFraction = (absOffset - SKYLINE_CONSTANTS.GREAT_THRESHOLD) / (SKYLINE_CONSTANTS.MAX_OVERHANG - SKYLINE_CONSTANTS.GREAT_THRESHOLD);
+      const impulse = Math.sign(rawOffsetDx) * (0.12 + 0.24 * Math.pow(edgeFraction, 1.2)) * heightLeverage;
       this.state.wobbleVelocity += impulse;
     }
 
@@ -391,7 +402,7 @@ export class SkylineStackEngine {
    */
   public calculateTopFloorSwayX(): number {
     const totalHeight = this.getTowerHeight();
-    return Math.sin(this.state.wobbleAngle) * (totalHeight * 0.28);
+    return Math.sin(this.state.wobbleAngle) * (totalHeight * 0.32);
   }
 
   /**
@@ -400,8 +411,9 @@ export class SkylineStackEngine {
   public calculateFloorSwayX(floorIndex: number): number {
     if (floorIndex === 0) return 0;
     const progress = floorIndex / Math.max(1, this.state.floors.length - 1);
-    // Quadratic sway profile: higher floors sway significantly more
-    return Math.sin(this.state.wobbleAngle) * (this.getTowerHeight() * 0.28) * (progress * progress);
+    // Elastic cantilever curved sway: bottom anchored, upper floors sway wide
+    const curve = 0.3 * progress + 0.7 * (progress * progress);
+    return Math.sin(this.state.wobbleAngle) * (this.getTowerHeight() * 0.32) * curve;
   }
 
   public getTowerHeight(): number {

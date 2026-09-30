@@ -36,24 +36,24 @@ export class SkylineStackAI {
 
     switch (this.difficulty) {
       case 'easy':
-        minWait = 0.6;
-        maxWait = 1.4;
-        jitterSpread = 28.0;
+        minWait = 0.5;
+        maxWait = 1.2;
+        jitterSpread = 18.0;
         break;
       case 'medium':
-        minWait = 0.35;
-        maxWait = 0.8;
-        jitterSpread = 12.0;
+        minWait = 0.3;
+        maxWait = 0.7;
+        jitterSpread = 8.0;
         break;
       case 'hard':
-        minWait = 0.18;
-        maxWait = 0.45;
-        jitterSpread = 4.5;
+        minWait = 0.15;
+        maxWait = 0.35;
+        jitterSpread = 3.0;
         break;
       case 'extreme':
-        minWait = 0.08;
-        maxWait = 0.22;
-        jitterSpread = 1.5;
+        minWait = 0.06;
+        maxWait = 0.18;
+        jitterSpread = 1.0;
         break;
     }
 
@@ -93,11 +93,11 @@ export class SkylineStackAI {
     const distanceToTarget = Math.abs(hookX - targetX);
 
     // Dynamic release window based on difficulty
-    let releaseWindow = 12.0;
-    if (this.difficulty === 'extreme') releaseWindow = 3.5;
-    else if (this.difficulty === 'hard') releaseWindow = 6.0;
-    else if (this.difficulty === 'medium') releaseWindow = 14.0;
-    else releaseWindow = 26.0;
+    let releaseWindow = 9.0;
+    if (this.difficulty === 'extreme') releaseWindow = 2.5;
+    else if (this.difficulty === 'hard') releaseWindow = 4.5;
+    else if (this.difficulty === 'medium') releaseWindow = 9.0;
+    else releaseWindow = 18.0;
 
     if (distanceToTarget <= releaseWindow) {
       this.engine.dropBlock();

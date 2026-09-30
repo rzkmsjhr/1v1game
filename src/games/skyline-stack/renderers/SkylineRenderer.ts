@@ -291,6 +291,9 @@ export class SkylineRenderer {
   /**
    * Renders placed skyscraper floors with harmonic spring sway
    */
+  /**
+   * Renders placed skyscraper floors with harmonic spring sway
+   */
   private renderSkyscraper(
     ctx: CanvasRenderingContext2D,
     state: SkylinePlayerState,
@@ -302,71 +305,113 @@ export class SkylineRenderer {
 
     for (let i = 1; i < floors.length; i++) {
       const floor = floors[i];
-      // Quadratic sway displacement: higher floors sway significantly more!
+      // Elastic cantilever sway: higher floors sway significantly more!
       const swayFraction = i / Math.max(1, floors.length - 1);
-      const swayX = Math.sin(state.wobbleAngle) * (floors.length * SKYLINE_CONSTANTS.BLOCK_HEIGHT * 0.28) * (swayFraction * swayFraction);
+      const curve = 0.3 * swayFraction + 0.7 * (swayFraction * swayFraction);
+      const swayX = Math.sin(state.wobbleAngle) * (floors.length * SKYLINE_CONSTANTS.BLOCK_HEIGHT * 0.32) * curve;
+      const floorTilt = state.wobbleAngle * swayFraction;
 
-      const screenX = cx + floor.x + swayX - floor.width * 0.5;
-      const screenY = gy - floor.y - floor.height;
+      const screenCenterX = cx + floor.x + swayX;
+      const screenCenterY = gy - floor.y - floor.height * 0.5;
 
-      // Floor block main body
-      ctx.fillStyle = floor.color;
-      ctx.fillRect(screenX, screenY, floor.width, floor.height);
+      ctx.save();
+      ctx.translate(screenCenterX, screenCenterY);
+      ctx.rotate(floorTilt);
 
-      // 3D architectural bevel / highlight (top and left edge)
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
-      ctx.fillRect(screenX, screenY, floor.width, 3);
-      ctx.fillRect(screenX, screenY, 3, floor.height);
+      this.drawSquareFloorBlock(
+        ctx,
+        floor.width,
+        floor.height,
+        floor.color,
+        floor.accentColor,
+        floor.windowLights,
+        isDark,
+        floor.type === 'penthouse'
+      );
 
-      // Floor drop shadow (bottom edge)
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
-      ctx.fillRect(screenX, screenY + floor.height - 3, floor.width, 3);
-      ctx.fillRect(screenX + floor.width - 3, screenY, 3, floor.height);
+      ctx.restore();
+    }
+  }
 
-      // Accent cornices / ledges
-      ctx.fillStyle = floor.accentColor;
-      ctx.fillRect(screenX - 2, screenY, floor.width + 4, 4);
+  /**
+   * Renders a perfect 1:1 square architectural modular floor block with a 2x2 window grid
+   */
+  private drawSquareFloorBlock(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    color: string,
+    accentColor: string,
+    windowLights: boolean[],
+    isDark: boolean,
+    isPenthouse: boolean = false
+  ) {
+    const halfW = w * 0.5;
+    const halfH = h * 0.5;
 
-      // Windows
-      const winW = 12;
-      const winH = 16;
-      const spacing = (floor.width - floor.windowCount * winW) / (floor.windowCount + 1);
+    // Floor square main body
+    ctx.fillStyle = color;
+    ctx.fillRect(-halfW, -halfH, w, h);
 
-      for (let wIdx = 0; wIdx < floor.windowCount; wIdx++) {
-        const winX = screenX + spacing + wIdx * (winW + spacing);
-        const winY = screenY + 11;
+    // 3D architectural bevel highlights (top and left edges)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+    ctx.fillRect(-halfW, -halfH, w, 3);
+    ctx.fillRect(-halfW, -halfH, 3, h);
 
-        const isLit = floor.windowLights[wIdx] ?? true;
+    // Floor drop shadow (bottom and right edges)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.26)';
+    ctx.fillRect(-halfW, halfH - 3, w, 3);
+    ctx.fillRect(halfW - 3, -halfH, 3, h);
+
+    // Top accent cornice / ledge trim
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(-halfW - 2, -halfH, w + 4, 3.5);
+
+    // 2x2 Grid of Windows for square apartment block
+    const winW = 16;
+    const winH = 16;
+    const colX = [-halfW + 11, halfW - 11 - winW];
+    const rowY = [-halfH + 12, halfH - 12 - winH];
+
+    let wIdx = 0;
+    for (let r = 0; r < 2; r++) {
+      for (let c = 0; c < 2; c++) {
+        const wx = colX[c];
+        const wy = rowY[r];
+        const isLit = windowLights[wIdx++] ?? true;
+
+        // Window pane background
+        ctx.fillStyle = isLit ? (isDark ? '#fef08a' : '#bae6fd') : (isDark ? '#1e293b' : '#64748b');
+        ctx.fillRect(wx, wy, winW, winH);
+
+        // Window cross frame (+)
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+        ctx.fillRect(wx + winW * 0.5 - 0.75, wy, 1.5, winH);
+        ctx.fillRect(wx, wy + winH * 0.5 - 0.75, winW, 1.5);
+
+        // Glass reflection glint
         if (isLit) {
-          ctx.fillStyle = isDark ? '#fef08a' : '#bae6fd'; // Glowing warm amber or cool sky blue
-        } else {
-          ctx.fillStyle = isDark ? '#1e293b' : '#64748b'; // Dark unlit
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+          ctx.fillRect(wx + 2, wy + 2, 4, 4);
         }
-
-        ctx.fillRect(winX, winY, winW, winH);
-
-        // Window frame divider
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-        ctx.fillRect(winX + winW * 0.5 - 0.5, winY, 1, winH);
-        ctx.fillRect(winX, winY + winH * 0.5 - 0.5, winW, 1);
       }
+    }
 
-      // If it's the golden crown penthouse, draw spires and victory antenna!
-      if (floor.type === 'penthouse') {
-        ctx.fillStyle = '#f59e0b';
-        // Central spire antenna
-        ctx.fillRect(screenX + floor.width * 0.5 - 3, screenY - 28, 6, 28);
-        ctx.beginPath();
-        ctx.arc(screenX + floor.width * 0.5, screenY - 30, 5, 0, Math.PI * 2);
-        ctx.fill();
+    // Penthouse spire and beacon
+    if (isPenthouse) {
+      ctx.fillStyle = '#f59e0b';
+      // Central spire antenna
+      ctx.fillRect(-3, -halfH - 28, 6, 28);
+      ctx.beginPath();
+      ctx.arc(0, -halfH - 30, 5, 0, Math.PI * 2);
+      ctx.fill();
 
-        // Pulsing red aviation warning beacon
-        const beaconAlpha = 0.5 + Math.sin(this.animTime * 6.0) * 0.5;
-        ctx.fillStyle = `rgba(239, 68, 68, ${beaconAlpha})`;
-        ctx.beginPath();
-        ctx.arc(screenX + floor.width * 0.5, screenY - 30, 4, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      // Pulsing red aviation beacon
+      const beaconAlpha = 0.5 + Math.sin(this.animTime * 6.0) * 0.5;
+      ctx.fillStyle = `rgba(239, 68, 68, ${beaconAlpha})`;
+      ctx.beginPath();
+      ctx.arc(0, -halfH - 30, 4, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
@@ -379,32 +424,22 @@ export class SkylineRenderer {
     cx: number,
     gy: number
   ) {
-    const screenX = cx + block.x - block.width * 0.5;
-    const screenY = gy - block.y - block.height;
+    const screenCenterX = cx + block.x;
+    const screenCenterY = gy - block.y - block.height * 0.5;
+    const isDark = this.currentTheme === 'dark';
 
     ctx.save();
-    ctx.fillStyle = block.color;
-    ctx.fillRect(screenX, screenY, block.width, block.height);
-
-    // Bevel highlights
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.fillRect(screenX, screenY, block.width, 3);
-    ctx.fillRect(screenX, screenY, 3, block.height);
-
-    ctx.fillStyle = block.accentColor;
-    ctx.fillRect(screenX - 2, screenY, block.width + 4, 4);
-
-    // Windows
-    const winW = 12;
-    const winH = 16;
-    const spacing = (block.width - block.windowCount * winW) / (block.windowCount + 1);
-    for (let wIdx = 0; wIdx < block.windowCount; wIdx++) {
-      const winX = screenX + spacing + wIdx * (winW + spacing);
-      const winY = screenY + 11;
-      ctx.fillStyle = '#fef08a';
-      ctx.fillRect(winX, winY, winW, winH);
-    }
-
+    ctx.translate(screenCenterX, screenCenterY);
+    this.drawSquareFloorBlock(
+      ctx,
+      block.width,
+      block.height,
+      block.color,
+      block.accentColor,
+      block.windowLights,
+      isDark,
+      block.type === 'penthouse'
+    );
     ctx.restore();
   }
 
@@ -467,29 +502,24 @@ export class SkylineRenderer {
     // 4. Block currently held by the hook
     if (crane.holdingBlock) {
       const block = crane.holdingBlock;
-      const bScreenX = hookScreenX - block.width * 0.5;
-      const bScreenY = hookScreenY + 6;
+      const bCenterScreenX = hookScreenX;
+      const bCenterScreenY = hookScreenY + 6 + block.height * 0.5;
+      const isDark = this.currentTheme === 'dark';
 
-      ctx.fillStyle = block.color;
-      ctx.fillRect(bScreenX, bScreenY, block.width, block.height);
-
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-      ctx.fillRect(bScreenX, bScreenY, block.width, 3);
-      ctx.fillRect(bScreenX, bScreenY, 3, block.height);
-
-      ctx.fillStyle = block.accentColor;
-      ctx.fillRect(bScreenX - 2, bScreenY, block.width + 4, 4);
-
-      // Windows
-      const winW = 12;
-      const winH = 16;
-      const spacing = (block.width - block.windowCount * winW) / (block.windowCount + 1);
-      for (let wIdx = 0; wIdx < block.windowCount; wIdx++) {
-        const winX = bScreenX + spacing + wIdx * (winW + spacing);
-        const winY = bScreenY + 11;
-        ctx.fillStyle = '#fef08a';
-        ctx.fillRect(winX, winY, winW, winH);
-      }
+      ctx.save();
+      ctx.translate(bCenterScreenX, bCenterScreenY);
+      ctx.rotate(crane.angle * 0.35); // Suspended block rocks gently with crane swing
+      this.drawSquareFloorBlock(
+        ctx,
+        block.width,
+        block.height,
+        block.color,
+        block.accentColor,
+        block.windowLights,
+        isDark,
+        block.type === 'penthouse'
+      );
+      ctx.restore();
     }
 
     ctx.restore();
@@ -504,20 +534,26 @@ export class SkylineRenderer {
     cx: number,
     gy: number
   ) {
+    const isDark = this.currentTheme === 'dark';
     for (const b of blocks) {
       ctx.save();
       const screenX = cx + b.x;
-      const screenY = gy - b.y;
+      const screenY = gy - b.y - b.height * 0.5;
 
       ctx.translate(screenX, screenY);
       ctx.rotate(b.rotation);
       ctx.globalAlpha = Math.max(0, b.alpha);
 
-      ctx.fillStyle = b.color;
-      ctx.fillRect(-b.width * 0.5, -b.height * 0.5, b.width, b.height);
-
-      ctx.fillStyle = b.accentColor;
-      ctx.fillRect(-b.width * 0.5 - 2, -b.height * 0.5, b.width + 4, 4);
+      this.drawSquareFloorBlock(
+        ctx,
+        b.width,
+        b.height,
+        b.color,
+        b.accentColor,
+        [true, false, true, false],
+        isDark,
+        b.type === 'penthouse'
+      );
 
       ctx.restore();
     }
