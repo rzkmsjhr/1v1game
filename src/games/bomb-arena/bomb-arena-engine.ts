@@ -329,12 +329,14 @@ export class BombArenaEngine {
     const r = BOMB_ARENA_CONSTANTS.PLAYER_RADIUS;
     const b = this.state.bounds;
 
-    if (x - r < b.minCol) return b.minCol - (x - r);
-    if (x + r > b.maxCol + 1) return (x + r) - (b.maxCol + 1);
-    if (y - r < b.minRow) return b.minRow - (y - r);
-    if (y + r > b.maxRow + 1) return (y + r) - (b.maxRow + 1);
-
+    // Boundary overlap — measured but NOT early-returned so that fence
+    // overlap is still checked and parallel-to-wall movement isn't blocked.
     let maxOverlap = 0;
+    if (x - r < b.minCol) maxOverlap = Math.max(maxOverlap, b.minCol - (x - r));
+    if (x + r > b.maxCol + 1) maxOverlap = Math.max(maxOverlap, (x + r) - (b.maxCol + 1));
+    if (y - r < b.minRow) maxOverlap = Math.max(maxOverlap, b.minRow - (y - r));
+    if (y + r > b.maxRow + 1) maxOverlap = Math.max(maxOverlap, (y + r) - (b.maxRow + 1));
+
     const minC = Math.max(0, Math.floor(x - r));
     const maxC = Math.min(BOMB_ARENA_CONSTANTS.GRID_COLS - 1, Math.floor(x + r));
     const minR = Math.max(0, Math.floor(y - r));
