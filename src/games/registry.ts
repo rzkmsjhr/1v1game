@@ -10,6 +10,7 @@ import { SheepFightGame } from './sheep-fight/SheepFightGame';
 import { WaterSortGame } from './water-sort/WaterSortGame';
 import { DriftRacingGame } from './drift-racing/DriftRacingGame';
 import { SkylineStackGame } from './skyline-stack/SkylineStackGame';
+import { BombArenaGame } from './bomb-arena/BombArenaGame';
 
 export const GAMES_REGISTRY: GameDefinition[] = [
   {
@@ -513,5 +514,52 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     screenshotUrl: '/screenshots/skyline-stack.png',
     supportsAI: true,
     create: (container, session) => new SkylineStackGame(container, session)
+  },
+  {
+    id: 'bomb-arena',
+    title: 'Bomb Arena 1v1',
+    subtitle: 'Fence & Blast Duel',
+    description: 'High-stakes portrait grid duel. Place wooden fences to box in your rival, drop obsidian bombs with 3-second fuses, and out-maneuver the collapsing danger zone in Best-of-3 tactical warfare!',
+    genre: 'Action Strategy',
+    badge: 'New 1v1 Battle',
+    bannerGradient: 'from-orange-600 via-rose-700 to-zinc-950',
+    accentColor: '#f97316',
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none">
+      <defs>
+        <radialGradient id="bomb-body" cx="35%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#475569"/>
+          <stop offset="60%" stop-color="#0f172a"/>
+          <stop offset="100%" stop-color="#020617"/>
+        </radialGradient>
+        <linearGradient id="fence-wood" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#d97706"/>
+          <stop offset="100%" stop-color="#78350f"/>
+        </linearGradient>
+        <linearGradient id="fuse-glow" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#ef4444"/>
+          <stop offset="50%" stop-color="#f59e0b"/>
+          <stop offset="100%" stop-color="#fef08a"/>
+        </linearGradient>
+      </defs>
+      <!-- Wood fence planks on left background -->
+      <path d="M 2 13 L 4 10 L 6 13 L 6 21 L 2 21 Z" fill="url(#fence-wood)" stroke="#fef3c7" stroke-width="0.5"/>
+      <path d="M 6 13 L 8 10 L 10 13 L 10 21 L 6 21 Z" fill="url(#fence-wood)" stroke="#fef3c7" stroke-width="0.5"/>
+      <rect x="1.5" y="14.5" width="9" height="1.8" rx="0.5" fill="#92400e" stroke="#fef3c7" stroke-width="0.4"/>
+      <rect x="1.5" y="18.5" width="9" height="1.8" rx="0.5" fill="#92400e" stroke="#fef3c7" stroke-width="0.4"/>
+      <!-- Bomb body -->
+      <circle cx="15.5" cy="15.5" r="6" fill="url(#bomb-body)" stroke="#64748b" stroke-width="0.6"/>
+      <!-- Bomb cap -->
+      <rect x="13.5" y="8.5" width="4" height="2" rx="0.6" fill="#64748b"/>
+      <!-- Curved fuse -->
+      <path d="M 15.5 8.5 C 15.5 5.5, 19 6.5, 19 3.5" stroke="#94a3b8" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+      <!-- Spark / blast flame on fuse tip -->
+      <circle cx="19" cy="3.5" r="1.8" fill="url(#fuse-glow)"/>
+      <circle cx="19" cy="3.5" r="0.8" fill="#ffffff"/>
+      <!-- Gloss highlight on bomb -->
+      <ellipse cx="13.8" cy="13.2" rx="1.6" ry="1" transform="rotate(-30 13.8 13.2)" fill="#ffffff" opacity="0.6"/>
+    </svg>`,
+    screenshotUrl: '/screenshots/bomb-arena.png',
+    supportsAI: true,
+    create: (container, session) => new BombArenaGame(container, session)
   }
 ];

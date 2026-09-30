@@ -128,6 +128,19 @@ export type NetworkMessage =
   | { type: 'STACK_REMATCH'; seed: number }
   | { type: 'STACK_REMATCH_REQUEST' }
   | { type: 'STACK_REMATCH_ACCEPT'; seed?: number }
+  | { type: 'BOMB_INIT'; seed: number; roundsToWin: number }
+  | { type: 'BOMB_REQUEST_SEED' }
+  | { type: 'BOMB_MOVE'; x: number; y: number; facing: string; isMoving: boolean; timestamp: number }
+  | { type: 'BOMB_PLACE_FENCE'; col: number; row: number; id: string; timestamp: number }
+  | { type: 'BOMB_PLACE_BOMB'; col: number; row: number; id: string; timestamp: number }
+  | { type: 'BOMB_EXPLODE'; id: string; destroyedFences: Array<{ col: number; row: number }>; timestamp: number }
+  | { type: 'BOMB_PLAYER_HIT'; victim: 'player' | 'opponent'; killer: 'player' | 'opponent' | 'crush'; roundNum: number; timestamp: number }
+  | { type: 'BOMB_ROUND_START'; roundNum: number; seed: number }
+  | { type: 'BOMB_VICTORY'; winner: 'player' | 'opponent'; timestamp: number }
+  | { type: 'BOMB_VICTORY_CONFIRM'; winner: 'host' | 'guest' }
+  | { type: 'BOMB_REMATCH'; seed: number }
+  | { type: 'BOMB_REMATCH_REQUEST' }
+  | { type: 'BOMB_REMATCH_ACCEPT'; seed?: number }
   | { type: 'CUSTOM'; payload: any };
 
 export type NetworkQuality = 'good' | 'moderate' | 'poor' | 'stalled';

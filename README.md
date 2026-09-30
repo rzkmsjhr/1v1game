@@ -1,6 +1,6 @@
 # 🎮 1v1 Arcade Arena (Multiplayer & AI)
 
-A modern, competitive 1v1 web arcade featuring **11 real-time games** built with TypeScript, Vite, Tailwind CSS, HTML5 Canvas, and the Web Audio API. Play head-to-head against friends via direct peer-to-peer **WebRTC** or challenge intelligent **AI bots** with scalable difficulty tiers.
+A modern, competitive 1v1 web arcade featuring **12 real-time games** built with TypeScript, Vite, Tailwind CSS, HTML5 Canvas, and the Web Audio API. Play head-to-head against friends via direct peer-to-peer **WebRTC** or challenge intelligent **AI bots** with scalable difficulty tiers.
 
 ![Arcade Preview](preview.png)
 
@@ -80,6 +80,15 @@ A modern, competitive 1v1 web arcade featuring **11 real-time games** built with
 - **First to Penthouse (Floor 30) or Survival**: Race head-to-head to top out the 30th floor penthouse, or win by outlasting your rival if their tower collapses.
 - **Dynamic Stratosphere Visuals**: Smooth vertical camera tracking as your skyscraper ascends from city street level through sunset orange and twilight purple into the star-studded stratosphere.
 - **Scalable AI Bots**: 4 difficulty tiers (Easy, Medium, Hard, Extreme) simulating human release reflexes, timing jitter, and sway compensation.
+
+### 12. Bomb Arena 1v1 (Fence & Blast Duel)
+- **Streamlined 2-Item Tactical Grid**: A vertical portrait arena ($6 \times 12$ tiles) featuring just two items: wooden barricades (fences) and obsidian bombs.
+- **Strategic Fencing**: Fences obstruct movement for both players and completely block/shield against bomb shockwaves. Fencing can be used to trap your opponent or build an emergency shield against incoming blasts.
+- **3-Second Fuse & Threat Preview**: Bombs tick down over 3 seconds with audible fuse clicks and real-time visual danger overlays highlighting upcoming blast corridors. Friendly fire is active!
+- **Dynamic Shrinking Arena**: As the match progresses, the arena collapses row by row and column by column from the borders ($12\times6 \rightarrow 10\times6 \rightarrow 8\times6 \rightarrow 8\times4 \rightarrow 6\times4$), forcing tense close-quarters duels.
+- **Best of 3 Format**: First player to secure 2 round victories claims championship glory, complete with match round history badges, countdown resets, and a two-way rematch handshake.
+- **Intuitive Touch & Keyboard Controls**: Option A layout featuring a responsive virtual D-Pad on the left and dedicated `[🧱 FENCE]` and `[💣 BOMB]` action buttons on the right, plus full WASD/Arrow Keys + J/K keyboard shortcuts.
+- **Tactical AI Bot**: 4 difficulty tiers (Easy, Medium, Hard, Extreme) with BFS danger-avoidance pathfinding, trapping algorithms, and strategic barricade demolition.
 
 ---
 
