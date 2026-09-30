@@ -118,6 +118,15 @@ export type NetworkMessage =
   | { type: 'DRIFT_ROUND_READY'; roundNum: number }
   | { type: 'DRIFT_ROUND_END'; roundNum: number; score: number; timeElapsed: number; dq: boolean }
   | { type: 'DRIFT_REMATCH'; seed: number }
+  | { type: 'STACK_INIT'; seed: number; targetFloors: number }
+  | { type: 'STACK_REQUEST_SEED' }
+  | { type: 'STACK_DROP'; floorNumber: number; x: number; isPerfect: boolean; combo: number; timestamp: number }
+  | { type: 'STACK_MISS'; remainingLives: number; timestamp: number }
+  | { type: 'STACK_SYNC'; currentFloor: number; wobbleAngle: number; population: number; lives: number; combo: number; timestamp: number }
+  | { type: 'STACK_VICTORY'; winner: 'player' | 'opponent'; timestamp: number }
+  | { type: 'STACK_VICTORY_CONFIRM'; winner: 'host' | 'guest' }
+  | { type: 'STACK_REMATCH_REQUEST' }
+  | { type: 'STACK_REMATCH_ACCEPT'; seed?: number }
   | { type: 'CUSTOM'; payload: any };
 
 export type NetworkQuality = 'good' | 'moderate' | 'poor' | 'stalled';

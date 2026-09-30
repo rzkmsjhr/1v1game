@@ -1,6 +1,6 @@
 # 🎮 1v1 Arcade Arena (Multiplayer & AI)
 
-A modern, competitive 1v1 web arcade featuring **10 real-time games** built with TypeScript, Vite, Tailwind CSS, HTML5 Canvas, and the Web Audio API. Play head-to-head against friends via direct peer-to-peer **WebRTC** or challenge intelligent **AI bots** with scalable difficulty tiers.
+A modern, competitive 1v1 web arcade featuring **11 real-time games** built with TypeScript, Vite, Tailwind CSS, HTML5 Canvas, and the Web Audio API. Play head-to-head against friends via direct peer-to-peer **WebRTC** or challenge intelligent **AI bots** with scalable difficulty tiers.
 
 ![Arcade Preview](preview.png)
 
@@ -72,6 +72,15 @@ A modern, competitive 1v1 web arcade featuring **10 real-time games** built with
 - **One More Time (OMT) & Sudden Death**: Exact score ties trigger OMT (repeats 2-round battle). Persistent ties advance to a 1-by-1 Sudden Death Solo Drift Sprint where the highest score combined with the lowest elapsed time wins!
 - **Authentic OEM Car Models**: Pure OEM factory proportions for the **Toyota Sprinter Trueno AE86** and **Nissan Silvia S15 Spec-R** with tucked wheels that articulate upon counter-steering, rolling tire treads, specular edge contrast, and roof numbers (0–99).
 
+### 11. Skyline Stack 1v1 (Wobbly Skyscraper Stacker)
+- **Swinging Construction Crane Physics**: Drop prefabricated modular floors from a swinging pendulum crane hook. Winch cable dynamics and pendulum momentum dictate release trajectory.
+- **Harmonic Tower Sway Engine**: Off-center placements impart dynamic angular torque, exciting damped harmonic oscillator vibrations ($\alpha = -k \cdot \theta - c \cdot \omega$). As the building grows taller, sway displacement amplifies quadratically!
+- **Overhang Tumbling Misses & Lives**: Excessively misaligned blocks tumble off the structure with full rotational physics and bounce away. Players start with 3 lives; 3 drops lost triggers a structural collapse defeat.
+- **Combos & "PERFECT!" Dampening**: Bullseye drops ($\le 4.5\text{px}$) trigger a "PERFECT!" bonus with ascending pentatonic chimes, spark particles, and instant tower stabilization (dampens 70% of wobble sway). Consecutive perfects chain combo multipliers and boost building population!
+- **First to Penthouse (Floor 30) or Survival**: Race head-to-head to top out the 30th floor penthouse, or win by outlasting your rival if their tower collapses.
+- **Dynamic Stratosphere Visuals**: Smooth vertical camera tracking as your skyscraper ascends from city street level through sunset orange and twilight purple into the star-studded stratosphere.
+- **Scalable AI Bots**: 4 difficulty tiers (Easy, Medium, Hard, Extreme) simulating human release reflexes, timing jitter, and sway compensation.
+
 ---
 
 ## ⚡ Core Features
@@ -113,6 +122,7 @@ A modern, competitive 1v1 web arcade featuring **10 real-time games** built with
 | **Sheep Fight** | Click lane deployment buttons (1–5) | Tap lane deployment buttons (1–5) |
 | **Water Sort** | Click source tube, then click destination tube<br>Click reservoir flask to extract target color<br>Undo / Hint / Reset buttons | Tap source tube, then tap target tube<br>Tap reservoir flask to extract target color<br>Undo / Hint / Reset buttons |
 | **Tandem Drift Battle** | `W` / `↑`: Throttle<br>`S` / `↓`: Foot Brake<br>`A` / `D` or `←` / `→`: Steer<br>`Space`: Handbrake (Initiate Drift) | On-screen steering controls / pedals |
+| **Skyline Stack** | `Space` / `Enter` / `↓`: Drop floor<br>Click screen or **Drop Floor** button | Tap large **Drop Floor** button or anywhere on canvas |
 
 ---
 

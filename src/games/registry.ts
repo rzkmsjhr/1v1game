@@ -9,6 +9,7 @@ import { SodaDashGame } from './soda-dash/SodaDashGame';
 import { SheepFightGame } from './sheep-fight/SheepFightGame';
 import { WaterSortGame } from './water-sort/WaterSortGame';
 import { DriftRacingGame } from './drift-racing/DriftRacingGame';
+import { SkylineStackGame } from './skyline-stack/SkylineStackGame';
 
 export const GAMES_REGISTRY: GameDefinition[] = [
   {
@@ -463,5 +464,54 @@ export const GAMES_REGISTRY: GameDefinition[] = [
     screenshotUrl: '/screenshots/drift-racing.png',
     supportsAI: true,
     create: (container, session) => new DriftRacingGame(container, session)
+  },
+  {
+    id: 'skyline-stack',
+    title: 'Skyline Stack 1v1',
+    subtitle: 'Wobbly Skyscraper Stacker',
+    description: 'Drop floors from a swinging construction crane, counter harmonic tower sway, and race to crown the 30th floor penthouse in a high-tension stacking duel!',
+    genre: 'Physics Arcade',
+    badge: '1v1 Stacker Duel',
+    bannerGradient: 'from-amber-500 via-orange-600 to-rose-700',
+    accentColor: '#f59e0b',
+    iconSvg: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none">
+      <defs>
+        <linearGradient id="crane-yellow" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#fde047"/>
+          <stop offset="100%" stop-color="#d97706"/>
+        </linearGradient>
+        <linearGradient id="block-cyan" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#38bdf8"/>
+          <stop offset="100%" stop-color="#0284c7"/>
+        </linearGradient>
+        <linearGradient id="block-amber" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#fbbf24"/>
+          <stop offset="100%" stop-color="#b45309"/>
+        </linearGradient>
+      </defs>
+      <!-- Overhead Crane Arm -->
+      <path d="M 2 3 L 22 3 M 6 3 L 6 6 M 14 3 L 14 6" stroke="url(#crane-yellow)" stroke-width="1.8" stroke-linecap="round"/>
+      <circle cx="21" cy="3" r="1.2" fill="#ef4444"/>
+      <!-- Winch Cable & Hook -->
+      <path d="M 12 3 L 12 7.5" stroke="#94a3b8" stroke-width="1.2"/>
+      <path d="M 12 7.5 C 12 9, 13.5 9, 13.5 8" stroke="#cbd5e1" stroke-width="1.2" fill="none"/>
+      <!-- Suspended Floor Block -->
+      <rect x="7" y="9" width="10" height="4.5" rx="1" fill="url(#block-cyan)" stroke="#bae6fd" stroke-width="0.6"/>
+      <rect x="8.5" y="10.2" width="2" height="2" fill="#fef08a"/>
+      <rect x="13.5" y="10.2" width="2" height="2" fill="#fef08a"/>
+      <!-- Slightly Angled Stacked Tower Blocks (Swaying Effect) -->
+      <g transform="rotate(3 12 17)">
+        <rect x="6.8" y="14.5" width="10.4" height="4" rx="1" fill="url(#block-amber)" stroke="#fde68a" stroke-width="0.5"/>
+        <rect x="8.2" y="15.5" width="1.8" height="1.8" fill="#fef08a"/>
+        <rect x="11.1" y="15.5" width="1.8" height="1.8" fill="#fef08a"/>
+        <rect x="14" y="15.5" width="1.8" height="1.8" fill="#fef08a"/>
+      </g>
+      <!-- Foundation Block at Bottom -->
+      <rect x="5" y="19.5" width="14" height="3" rx="0.8" fill="#475569" stroke="#94a3b8" stroke-width="0.6"/>
+      <rect x="5" y="21.5" width="14" height="1" fill="#eab308"/>
+    </svg>`,
+    screenshotUrl: '/screenshots/skyline-stack.png',
+    supportsAI: true,
+    create: (container, session) => new SkylineStackGame(container, session)
   }
 ];
