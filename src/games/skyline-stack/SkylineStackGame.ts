@@ -150,9 +150,10 @@ export class SkylineStackGame implements GameInstance {
         <div id="stack-bottom-dock" class="p-3 border-t ${
           isDark ? 'border-slate-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/95'
         } z-20 shrink-0">
-          <button id="stack-btn-drop" class="w-full py-3.5 px-4 rounded-2xl font-black text-sm sm:text-base tracking-wider uppercase text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 shadow-xl shadow-orange-500/35 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2">
+          <button id="stack-btn-drop" class="w-full py-3 sm:py-3.5 px-4 rounded-2xl font-black text-sm sm:text-base tracking-wider uppercase text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 shadow-xl shadow-orange-500/35 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2">
             <span>🏗️</span>
-            <span>DROP FLOOR [TAP / SPACE]</span>
+            <span class="sm:hidden">TAP TO DROP</span>
+            <span class="hidden sm:inline">DROP FLOOR [TAP / SPACE]</span>
           </button>
         </div>
 

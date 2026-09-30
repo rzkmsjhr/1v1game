@@ -94,6 +94,19 @@ export class SkylineRenderer {
     const width = this.canvas.width;
     const height = this.canvas.height;
     const dpr = window.devicePixelRatio || 1;
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    const logicalW = width / dpr;
+    const logicalH = height / dpr;
+
+    // Responsive Viewport Zoom:
+    // Scale smoothly so mobile (logicalW < 540px) matches desktop framing (~540px reference)
+    // Prevents mobile from feeling cramped or overly zoomed in!
+    const viewScale = Math.min(1.0, Math.max(0.55, logicalW / 540));
+    const worldW = logicalW / viewScale;
+    const worldH = logicalH / viewScale;
+    const centerX = worldW * 0.5;
 
     // Smooth camera tracking: keep top floor and crane in balanced vertical focus
     const topFloor = playerState.floors[playerState.floors.length - 1];
@@ -101,25 +114,23 @@ export class SkylineRenderer {
     this.targetCameraY = Math.max(0, topFloorY - SKYLINE_CONSTANTS.FOUNDATION_HEIGHT);
     this.cameraY += (this.targetCameraY - this.cameraY) * Math.min(1.0, dt * 5.0);
 
+    // Ground baseline Y in world coordinates
+    const groundScreenY = worldH * 0.74 + this.cameraY;
+
+    // ----------------------------------------------------
+    // WORLD PASS: Scaled game world (Crane, Skyscraper, Particles)
+    // ----------------------------------------------------
     ctx.save();
-    ctx.scale(dpr, dpr);
-
-    const logicalW = width / dpr;
-    const logicalH = height / dpr;
-
-    // Center X of the player's tower
-    const centerX = logicalW * 0.5;
-    // Ground baseline Y on screen (smoothly recedes down as tower rises, showing 4-6 floors below the crane)
-    const groundScreenY = logicalH * 0.74 + this.cameraY;
+    ctx.scale(viewScale, viewScale);
 
     // 1. Render Sky & Atmosphere Background
-    this.renderAtmosphere(ctx, logicalW, logicalH, this.cameraY);
+    this.renderAtmosphere(ctx, worldW, worldH, this.cameraY);
 
     // 2. Render Parallax City Skyline
-    this.renderCitySkyline(ctx, logicalW, logicalH, this.cameraY);
+    this.renderCitySkyline(ctx, worldW, worldH, this.cameraY);
 
     // 3. Render Foundation Ground
-    this.renderGround(ctx, centerX, groundScreenY, logicalW);
+    this.renderGround(ctx, centerX, groundScreenY, worldW);
 
     // 4. Render Skyscraper Floors with Dynamic Sway
     this.renderSkyscraper(ctx, playerState, centerX, groundScreenY);
@@ -132,19 +143,24 @@ export class SkylineRenderer {
       this.renderFallingBlock(ctx, playerState.fallingBlock, centerX, groundScreenY);
     }
 
-    // 7. Render Swinging Construction Crane
-    this.renderCrane(ctx, playerState.crane, centerX, groundScreenY, logicalW, logicalH);
+    // 7. Render Swinging Construction Crane ('r'-shaped cosmetic crane)
+    this.renderCrane(ctx, playerState.crane, centerX, groundScreenY, worldW, worldH);
 
     // 8. Render Particles & Floating Texts
     this.updateAndRenderParticles(ctx, dt, centerX, groundScreenY);
     this.updateAndRenderFloatingTexts(ctx, dt, centerX, groundScreenY);
 
-    // 9. Render Rival Ghost Mini-Tower HUD (in portrait or single-canvas mode)
+    ctx.restore(); // Restore world pass
+
+    // ----------------------------------------------------
+    // SCREEN PASS: Fixed UI overlays pinned to viewport edges
+    // ----------------------------------------------------
+    // 9. Render Rival Ghost Mini-Tower HUD
     if (rivalState) {
       this.renderRivalGhostHUD(ctx, rivalState, logicalW, logicalH);
     }
 
-    ctx.restore();
+    ctx.restore(); // Restore dpr scale
   }
 
   /**
@@ -524,10 +540,10 @@ export class SkylineRenderer {
     const isDark = this.currentTheme === 'dark';
 
     // Position of the left vertical mast (the vertical stem of the 'r')
-    // Placed on the left side of the screen, safely clear of the center tower
-    const mastX = Math.max(32, Math.min(cx - 160, logicalW * 0.18));
+    // Placed on the left side of the screen, safely clear of the center tower and swing arc
+    const mastX = Math.max(54, cx - 195);
     const jibTopY = anchorScreenY - 14;
-    const jibEndX = Math.min(logicalW - 14, cx + 165);
+    const jibEndX = Math.min(logicalW - 14, cx + 185);
     const mastBottomY = Math.min(logicalH + 120, gy);
 
     ctx.save();
@@ -586,7 +602,7 @@ export class SkylineRenderer {
     }
 
     // 2. Counter-Jib & Heavy Counterweights (the back left tail of the 'r')
-    const counterJibLeft = mastX - 44;
+    const counterJibLeft = mastX - 38;
     ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
