@@ -287,11 +287,12 @@ export class BombArenaRenderer {
     let targetCol = Math.floor(p.x);
     let targetRow = Math.floor(p.y);
 
+    // Target placement is BEHIND the player (opposite of facing)
     switch (p.facing) {
-      case 'up': targetRow -= 1; break;
-      case 'down': targetRow += 1; break;
-      case 'left': targetCol -= 1; break;
-      case 'right': targetCol += 1; break;
+      case 'up': targetRow += 1; break;    // behind = below
+      case 'down': targetRow -= 1; break;  // behind = above
+      case 'left': targetCol += 1; break;  // behind = right
+      case 'right': targetCol -= 1; break; // behind = left
     }
 
     const b = state.bounds;
@@ -616,23 +617,24 @@ export class BombArenaRenderer {
         ctx.save();
         ctx.translate(px, py + bobY);
 
+        // Arrow points BEHIND the player (opposite of facing) to show placement target
         let angle = 0;
         switch (p.facing) {
-          case 'up': angle = -Math.PI / 2; break;
-          case 'down': angle = Math.PI / 2; break;
-          case 'left': angle = Math.PI; break;
-          case 'right': angle = 0; break;
+          case 'up': angle = Math.PI / 2; break;     // arrow points down (behind)
+          case 'down': angle = -Math.PI / 2; break;  // arrow points up (behind)
+          case 'left': angle = 0; break;              // arrow points right (behind)
+          case 'right': angle = Math.PI; break;       // arrow points left (behind)
         }
         ctx.rotate(angle);
 
-        // Check if target tile in front is within bounds and open
+        // Check if target tile BEHIND player is within bounds and open
         let targetCol = Math.floor(p.x);
         let targetRow = Math.floor(p.y);
         switch (p.facing) {
-          case 'up': targetRow -= 1; break;
-          case 'down': targetRow += 1; break;
-          case 'left': targetCol -= 1; break;
-          case 'right': targetCol += 1; break;
+          case 'up': targetRow += 1; break;    // behind = below
+          case 'down': targetRow -= 1; break;  // behind = above
+          case 'left': targetCol += 1; break;  // behind = right
+          case 'right': targetCol -= 1; break; // behind = left
         }
         const b = state.bounds;
         const inBounds = targetCol >= b.minCol && targetCol <= b.maxCol && targetRow >= b.minRow && targetRow <= b.maxRow;

@@ -467,16 +467,16 @@ export class BombArenaEngine {
 
     switch (p.facing) {
       case 'up':
-        targetRow -= 1;
+        targetRow += 1;   // facing up → place behind (below)
         break;
       case 'down':
-        targetRow += 1;
+        targetRow -= 1;   // facing down → place behind (above)
         break;
       case 'left':
-        targetCol -= 1;
+        targetCol += 1;   // facing left → place behind (right)
         break;
       case 'right':
-        targetCol += 1;
+        targetCol -= 1;   // facing right → place behind (left)
         break;
     }
 
