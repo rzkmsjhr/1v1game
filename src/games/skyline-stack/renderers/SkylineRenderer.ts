@@ -917,33 +917,33 @@ export class SkylineRenderer {
     _h: number
   ) {
     const isDark = this.currentTheme === 'dark';
-    const hudW = 44;
-    const hudH = 160;
-    const hudX = w - hudW - 14;
-    const hudY = 65;
+    const hudW = 40;
+    const hudH = 94;
+    const hudX = w - hudW - 12;
+    const hudY = 12;
 
     ctx.save();
     // Glassmorphic container
-    ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255, 255, 255, 0.88)';
+    ctx.fillStyle = isDark ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.90)';
     ctx.strokeStyle = isDark ? 'rgba(51, 65, 85, 0.8)' : 'rgba(203, 213, 225, 0.9)';
     ctx.lineWidth = 1.5;
 
     ctx.beginPath();
-    ctx.roundRect(hudX, hudY, hudW, hudH, 10);
+    ctx.roundRect(hudX, hudY, hudW, hudH, 8);
     ctx.fill();
     ctx.stroke();
 
     // Rival Label
     ctx.fillStyle = '#ef4444'; // Rival Red
-    ctx.font = '800 9px Inter, sans-serif';
+    ctx.font = '800 8.5px Inter, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('RIVAL', hudX + hudW * 0.5, hudY + 13);
+    ctx.fillText('RIVAL', hudX + hudW * 0.5, hudY + 11);
 
     // Height progress meter bar inside card
-    const meterX = hudX + 16;
-    const meterY = hudY + 22;
-    const meterW = 12;
-    const meterH = 105;
+    const meterW = 10;
+    const meterX = hudX + Math.round((hudW - meterW) * 0.5);
+    const meterY = hudY + 17;
+    const meterH = 54;
 
     ctx.fillStyle = isDark ? '#1e293b' : '#e2e8f0';
     ctx.fillRect(meterX, meterY, meterW, meterH);
@@ -959,8 +959,8 @@ export class SkylineRenderer {
 
     // Floor count badge
     ctx.fillStyle = isDark ? '#ffffff' : '#0f172a';
-    ctx.font = '900 11px monospace';
-    ctx.fillText(`F${activeFloors}`, hudX + hudW * 0.5, hudY + hudH - 8);
+    ctx.font = '900 10px monospace';
+    ctx.fillText(`F${activeFloors}`, hudX + hudW * 0.5, hudY + hudH - 6);
 
     ctx.restore();
   }
