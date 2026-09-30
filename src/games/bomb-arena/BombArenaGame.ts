@@ -30,6 +30,20 @@ export class BombArenaGame implements GameInstance {
     right: false
   };
 
+  // Virtual analog joystick state
+  private joystick = {
+    active: false,
+    pointerId: -1,
+    dx: 0,
+    dy: 0,
+    zoneEl: null as HTMLElement | null,
+    baseEl: null as HTMLElement | null,
+    knobEl: null as HTMLElement | null
+  };
+  private boundJoystickDown: ((e: PointerEvent) => void) | null = null;
+  private boundJoystickMove: ((e: PointerEvent) => void) | null = null;
+  private boundJoystickUp: ((e: PointerEvent) => void) | null = null;
+
   // State & Network
   private opponentName: string = 'Opponent';
   private rematchState: 'idle' | 'requested' | 'offer_received' = 'idle';
@@ -189,23 +203,40 @@ export class BombArenaGame implements GameInstance {
           isDark ? 'border-slate-800 bg-slate-900/90' : 'border-slate-200 bg-slate-50/95'
         } z-20 shrink-0 flex items-center justify-between gap-2">
           
-          <!-- Virtual 4-Way D-Pad -->
-          <div class="relative w-28 h-28 shrink-0 flex items-center justify-center select-none touch-none">
-            <!-- Up -->
-            <button id="dpad-up" class="absolute top-0 left-9 w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-cyan-600 active:scale-95 text-white font-black text-sm flex items-center justify-center border border-slate-700 shadow-md">▲</button>
-            <!-- Down -->
-            <button id="dpad-down" class="absolute bottom-0 left-9 w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-cyan-600 active:scale-95 text-white font-black text-sm flex items-center justify-center border border-slate-700 shadow-md">▼</button>
-            <!-- Left -->
-            <button id="dpad-left" class="absolute left-0 top-9 w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-cyan-600 active:scale-95 text-white font-black text-sm flex items-center justify-center border border-slate-700 shadow-md">◀</button>
-            <!-- Right -->
-            <button id="dpad-right" class="absolute right-0 top-9 w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-cyan-600 active:scale-95 text-white font-black text-sm flex items-center justify-center border border-slate-700 shadow-md">▶</button>
-            <!-- Center Pad -->
-            <div class="w-7 h-7 rounded-lg bg-slate-900 border border-slate-700"></div>
+          <!-- Virtual Analog Thumbstick -->
+          <div id="bomb-joystick-zone" class="relative w-28 h-28 shrink-0 flex items-center justify-center select-none touch-none cursor-pointer">
+            <!-- Outer Ring Base -->
+            <div id="bomb-joystick-base" class="relative w-24 h-24 sm:w-26 sm:h-26 rounded-full border-2 ${
+              isDark
+                ? 'bg-gradient-to-b from-slate-900 to-slate-950 border-slate-700/80 shadow-[inset_0_2px_8px_rgba(0,0,0,0.8),0_4px_12px_rgba(0,0,0,0.3)]'
+                : 'bg-gradient-to-b from-slate-100 to-slate-200 border-slate-300 shadow-[inset_0_2px_6px_rgba(0,0,0,0.15),0_2px_8px_rgba(0,0,0,0.08)]'
+            } flex items-center justify-center pointer-events-none">
+              <!-- Directional Crosshair Ticks -->
+              <div class="absolute top-1 left-1/2 -translate-x-1/2 w-1 h-2 rounded-full ${isDark ? 'bg-cyan-500/60' : 'bg-slate-400'}"></div>
+              <div class="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-2 rounded-full ${isDark ? 'bg-cyan-500/60' : 'bg-slate-400'}"></div>
+              <div class="absolute left-1 top-1/2 -translate-y-1/2 w-2 h-1 rounded-full ${isDark ? 'bg-cyan-500/60' : 'bg-slate-400'}"></div>
+              <div class="absolute right-1 top-1/2 -translate-y-1/2 w-2 h-1 rounded-full ${isDark ? 'bg-cyan-500/60' : 'bg-slate-400'}"></div>
+              <!-- Inner Concentric Guide Ring -->
+              <div class="w-14 h-14 rounded-full border border-dashed ${isDark ? 'border-cyan-500/25' : 'border-slate-400/40'}"></div>
+              <!-- Thumbstick Knob -->
+              <div id="bomb-joystick-knob" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full border-2 ${
+                isDark
+                  ? 'bg-gradient-to-b from-cyan-400 via-cyan-500 to-blue-600 border-cyan-200 shadow-[0_4px_14px_rgba(6,182,212,0.45),inset_0_2px_4px_rgba(255,255,255,0.4)]'
+                  : 'bg-gradient-to-b from-slate-700 via-slate-800 to-slate-900 border-slate-400 shadow-[0_4px_10px_rgba(0,0,0,0.3),inset_0_2px_4px_rgba(255,255,255,0.25)]'
+              } flex items-center justify-center will-change-transform shadow-lg">
+                <!-- Center Grip Texture -->
+                <div class="w-4 h-4 rounded-full ${
+                  isDark ? 'bg-cyan-900/60 border border-cyan-300/40 shadow-[inset_0_1px_3px_rgba(0,0,0,0.6)]' : 'bg-slate-500/60 border border-slate-300/40'
+                } flex items-center justify-center">
+                  <div class="w-1.5 h-1.5 rounded-full ${isDark ? 'bg-cyan-200' : 'bg-slate-200'}"></div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Middle Keyboard Hint for Desktop -->
           <div class="hidden sm:flex flex-col items-center text-[10px] text-slate-400 font-mono text-center">
-            <span>[WASD / Arrows] Move</span>
+            <span>[WASD / Analog] Move</span>
             <span>[J / Shift] Place Fence</span>
             <span>[K / Space] Drop Bomb</span>
           </div>
@@ -367,30 +398,8 @@ export class BombArenaGame implements GameInstance {
     window.addEventListener('keydown', this.boundKeyDown);
     window.addEventListener('keyup', this.boundKeyUp);
 
-    // 2. Mobile D-Pad Touch Listeners
-    const bindDpad = (btnId: string, dir: 'up' | 'down' | 'left' | 'right') => {
-      const btn = document.getElementById(btnId);
-      if (!btn) return;
-
-      const start = (e: Event) => {
-        e.preventDefault();
-        this.keyState[dir] = true;
-      };
-      const end = (e: Event) => {
-        e.preventDefault();
-        this.keyState[dir] = false;
-      };
-
-      btn.addEventListener('pointerdown', start);
-      btn.addEventListener('pointerup', end);
-      btn.addEventListener('pointercancel', end);
-      btn.addEventListener('pointerleave', end);
-    };
-
-    bindDpad('dpad-up', 'up');
-    bindDpad('dpad-down', 'down');
-    bindDpad('dpad-left', 'left');
-    bindDpad('dpad-right', 'right');
+    // 2. Virtual Analog Joystick
+    this.initJoystick();
 
     // 3. Action Buttons (Fence & Bomb)
     document.getElementById('bomb-btn-fence')?.addEventListener('pointerdown', (e) => {
@@ -402,6 +411,87 @@ export class BombArenaGame implements GameInstance {
       e.preventDefault();
       this.triggerPlaceBomb();
     });
+  }
+
+  private initJoystick() {
+    const zone = document.getElementById('bomb-joystick-zone');
+    const base = document.getElementById('bomb-joystick-base');
+    const knob = document.getElementById('bomb-joystick-knob');
+    if (!zone || !base || !knob) return;
+
+    this.joystick.zoneEl = zone;
+    this.joystick.baseEl = base;
+    this.joystick.knobEl = knob;
+
+    const updateKnobAndInput = (clientX: number, clientY: number) => {
+      const rect = base.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const maxRadius = (rect.width / 2) * 0.72;
+
+      const deltaX = clientX - centerX;
+      const deltaY = clientY - centerY;
+      const distance = Math.hypot(deltaX, deltaY);
+
+      if (distance < 4) {
+        this.joystick.dx = 0;
+        this.joystick.dy = 0;
+        knob.style.transform = 'translate3d(-50%, -50%, 0)';
+        return;
+      }
+
+      const clampedDist = Math.min(distance, maxRadius);
+      const angle = Math.atan2(deltaY, deltaX);
+      const moveX = Math.cos(angle) * clampedDist;
+      const moveY = Math.sin(angle) * clampedDist;
+
+      knob.style.transform = `translate3d(calc(-50% + ${moveX.toFixed(1)}px), calc(-50% + ${moveY.toFixed(1)}px), 0)`;
+      this.joystick.dx = moveX / maxRadius;
+      this.joystick.dy = moveY / maxRadius;
+    };
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if (this.joystick.active) return;
+      e.preventDefault();
+      this.joystick.active = true;
+      this.joystick.pointerId = e.pointerId;
+      try {
+        zone.setPointerCapture(e.pointerId);
+      } catch {}
+      knob.style.transition = 'none';
+      updateKnobAndInput(e.clientX, e.clientY);
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!this.joystick.active || e.pointerId !== this.joystick.pointerId) return;
+      e.preventDefault();
+      updateKnobAndInput(e.clientX, e.clientY);
+    };
+
+    const handlePointerUp = (e: PointerEvent) => {
+      if (!this.joystick.active || e.pointerId !== this.joystick.pointerId) return;
+      e.preventDefault();
+      this.joystick.active = false;
+      this.joystick.pointerId = -1;
+      this.joystick.dx = 0;
+      this.joystick.dy = 0;
+      try {
+        zone.releasePointerCapture(e.pointerId);
+      } catch {}
+
+      knob.style.transition = 'transform 0.16s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+      knob.style.transform = 'translate3d(-50%, -50%, 0)';
+    };
+
+    zone.addEventListener('pointerdown', handlePointerDown);
+    zone.addEventListener('pointermove', handlePointerMove);
+    zone.addEventListener('pointerup', handlePointerUp);
+    zone.addEventListener('pointercancel', handlePointerUp);
+    zone.addEventListener('lostpointercapture', handlePointerUp);
+
+    this.boundJoystickDown = handlePointerDown;
+    this.boundJoystickMove = handlePointerMove;
+    this.boundJoystickUp = handlePointerUp;
   }
 
   private handleKeyDown(e: KeyboardEvent) {
@@ -758,10 +848,18 @@ export class BombArenaGame implements GameInstance {
       if (this.engine.state.phase === 'PLAYING') {
         let dx = 0;
         let dy = 0;
-        if (this.keyState.up) dy -= 1;
-        if (this.keyState.down) dy += 1;
-        if (this.keyState.left) dx -= 1;
-        if (this.keyState.right) dx += 1;
+
+        // Check virtual analog joystick first
+        if (this.joystick.active && (this.joystick.dx !== 0 || this.joystick.dy !== 0)) {
+          dx = this.joystick.dx;
+          dy = this.joystick.dy;
+        } else {
+          // Fallback to keyboard keys
+          if (this.keyState.up) dy -= 1;
+          if (this.keyState.down) dy += 1;
+          if (this.keyState.left) dx -= 1;
+          if (this.keyState.right) dx += 1;
+        }
 
         this.engine.movePlayer('player', dx, dy, dt);
 
@@ -1138,6 +1236,16 @@ export class BombArenaGame implements GameInstance {
     window.removeEventListener('resize', this.boundResize);
     window.removeEventListener('keydown', this.boundKeyDown);
     window.removeEventListener('keyup', this.boundKeyUp);
+    if (this.joystick.zoneEl && this.boundJoystickDown && this.boundJoystickMove && this.boundJoystickUp) {
+      this.joystick.zoneEl.removeEventListener('pointerdown', this.boundJoystickDown);
+      this.joystick.zoneEl.removeEventListener('pointermove', this.boundJoystickMove);
+      this.joystick.zoneEl.removeEventListener('pointerup', this.boundJoystickUp);
+      this.joystick.zoneEl.removeEventListener('pointercancel', this.boundJoystickUp);
+      this.joystick.zoneEl.removeEventListener('lostpointercapture', this.boundJoystickUp);
+    }
+    this.joystick.zoneEl = null;
+    this.joystick.baseEl = null;
+    this.joystick.knobEl = null;
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;

@@ -176,7 +176,8 @@ export class BombArenaEngine {
     const p = id === 'player' ? this.state.player : this.state.opponent;
     if (p.isDead) return;
 
-    if (dx === 0 && dy === 0) {
+    const len = Math.hypot(dx, dy);
+    if (len < 0.08) {
       p.isMoving = false;
       return;
     }
@@ -189,10 +190,10 @@ export class BombArenaEngine {
       p.facing = dy > 0 ? 'down' : 'up';
     }
 
-    const dist = BOMB_ARENA_CONSTANTS.PLAYER_SPEED * dt;
-    const len = Math.hypot(dx, dy);
-    const vx = (dx / len) * dist;
-    const vy = (dy / len) * dist;
+    // Proportional speed: slight stick tilt moves slower, full tilt runs at max speed
+    const speed = BOMB_ARENA_CONSTANTS.PLAYER_SPEED * Math.min(1, Math.max(0.35, len)) * dt;
+    const vx = (dx / len) * speed;
+    const vy = (dy / len) * speed;
 
     // Move along X with collision and corner assist
     if (vx !== 0) {
@@ -204,7 +205,7 @@ export class BombArenaEngine {
         const nearestRow = Math.floor(p.y) + 0.5;
         const diffY = nearestRow - p.y;
         if (Math.abs(diffY) > 0.05 && Math.abs(diffY) < 0.42) {
-          const slideStep = Math.sign(diffY) * Math.min(Math.abs(diffY), dist * 0.75);
+          const slideStep = Math.sign(diffY) * Math.min(Math.abs(diffY), speed * 0.75);
           if (!this.checkPlayerCollision(p.x, p.y + slideStep, p.id)) {
             p.y += slideStep;
           }
@@ -222,7 +223,7 @@ export class BombArenaEngine {
         const nearestCol = Math.floor(p.x) + 0.5;
         const diffX = nearestCol - p.x;
         if (Math.abs(diffX) > 0.05 && Math.abs(diffX) < 0.42) {
-          const slideStep = Math.sign(diffX) * Math.min(Math.abs(diffX), dist * 0.75);
+          const slideStep = Math.sign(diffX) * Math.min(Math.abs(diffX), speed * 0.75);
           if (!this.checkPlayerCollision(p.x + slideStep, p.y, p.id)) {
             p.x += slideStep;
           }

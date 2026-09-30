@@ -87,7 +87,7 @@ A modern, competitive 1v1 web arcade featuring **12 real-time games** built with
 - **3-Second Fuse & Threat Preview**: Bombs tick down over 3 seconds with audible fuse clicks and real-time visual danger overlays highlighting upcoming blast corridors. Friendly fire is active!
 - **Dynamic Shrinking Arena**: As the match progresses, the arena collapses row by row and column by column from the borders ($12\times6 \rightarrow 10\times6 \rightarrow 8\times6 \rightarrow 8\times4 \rightarrow 6\times4$), forcing tense close-quarters duels.
 - **Best of 3 Format**: First player to secure 2 round victories claims championship glory, complete with match round history badges, countdown resets, and a two-way rematch handshake.
-- **Intuitive Touch & Keyboard Controls**: Option A layout featuring a responsive virtual D-Pad on the left and dedicated `[🧱 FENCE]` and `[💣 BOMB]` action buttons on the right, plus full WASD/Arrow Keys + J/K keyboard shortcuts.
+- **Intuitive Touch & Keyboard Controls**: Option A layout featuring a smooth $360^\circ$ virtual analog thumbstick with proportional speed and corner-sliding assist on the left, dedicated `[🧱 FENCE]` and `[💣 BOMB]` action buttons on the right, plus full WASD/Arrow Keys + J/K keyboard shortcuts.
 - **Tactical AI Bot**: 4 difficulty tiers (Easy, Medium, Hard, Extreme) with BFS danger-avoidance pathfinding, trapping algorithms, and strategic barricade demolition.
 
 ---
