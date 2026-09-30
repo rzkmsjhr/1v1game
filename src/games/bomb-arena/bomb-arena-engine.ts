@@ -195,6 +195,11 @@ export class BombArenaEngine {
     const vx = (dx / len) * dist;
     const vy = (dy / len) * dist;
 
+    const startX = p.x;
+    const startY = p.y;
+    let movedX = false;
+    let movedY = false;
+
     // Move along X with collision and corner assist
     if (vx !== 0) {
       const targetX = p.x + vx;
@@ -204,6 +209,7 @@ export class BombArenaEngine {
       // Allow if no overlap, or moving away from existing overlap into open space
       if (nextOverlap === 0 || nextOverlap < curOverlap - 0.0001) {
         p.x = targetX;
+        movedX = true;
       } else {
         // Corner assist: slide along Y if close to tile center
         const nearestRow = Math.floor(p.y) + 0.5;
@@ -225,6 +231,7 @@ export class BombArenaEngine {
 
       if (nextOverlap === 0 || nextOverlap < curOverlap - 0.0001) {
         p.y = targetY;
+        movedY = true;
       } else {
         // Corner assist: slide along X if close to tile center
         const nearestCol = Math.floor(p.x) + 0.5;
@@ -233,6 +240,74 @@ export class BombArenaEngine {
           const slideStep = Math.sign(diffX) * Math.min(Math.abs(diffX), dist);
           if (this.getOverlapDepth(p.x + slideStep, p.y) <= curOverlap) {
             p.x += slideStep;
+          }
+        }
+      }
+    }
+
+    // FALLBACK: When both X and Y were individually rejected, the player is
+    // likely squeezed between fences. Try combined diagonal movement, or
+    // move toward the nearest walkable tile center to escape.
+    if (!movedX && !movedY && (vx !== 0 || vy !== 0)) {
+      const curOverlap = this.getOverlapDepth(startX, startY);
+
+      // Attempt 1: Combined diagonal movement — moving both axes at once may
+      // succeed when each axis independently hits a different fence
+      const comboOverlap = this.getOverlapDepth(startX + vx, startY + vy);
+      if (comboOverlap === 0 || comboOverlap < curOverlap - 0.0001) {
+        p.x = startX + vx;
+        p.y = startY + vy;
+      } else if (curOverlap > 0) {
+        // Attempt 2: Player is already stuck inside obstacles — find any
+        // adjacent walkable tile center and move toward it.
+        const playerCol = Math.floor(startX);
+        const playerRow = Math.floor(startY);
+        const b = this.state.bounds;
+
+        // Check all 4 + the current tile's center as escape targets
+        const escapeTargets: { tx: number; ty: number; score: number }[] = [];
+        const dirs = [
+          { dc: 0, dr: -1 }, { dc: 0, dr: 1 },
+          { dc: -1, dr: 0 }, { dc: 1, dr: 0 },
+          { dc: 0, dr: 0 },  // current tile
+        ];
+
+        for (const { dc, dr } of dirs) {
+          const tc = playerCol + dc;
+          const tr = playerRow + dr;
+          if (tc < b.minCol || tc > b.maxCol || tr < b.minRow || tr > b.maxRow) continue;
+          if (this.state.grid[tc][tr] !== 'empty') continue;
+
+          const tileCx = tc + 0.5;
+          const tileCy = tr + 0.5;
+          // Only consider tiles roughly in the direction the player is pushing
+          const toDirX = tileCx - startX;
+          const toDirY = tileCy - startY;
+          const dot = toDirX * vx + toDirY * vy;
+          if (dot <= 0 && !(dc === 0 && dr === 0)) continue; // not in movement direction
+
+          escapeTargets.push({ tx: tileCx, ty: tileCy, score: dot });
+        }
+
+        // Sort by alignment with desired movement direction
+        escapeTargets.sort((a, b) => b.score - a.score);
+
+        for (const target of escapeTargets) {
+          const toX = target.tx - startX;
+          const toY = target.ty - startY;
+          const tLen = Math.hypot(toX, toY);
+          if (tLen < 0.01) continue;
+
+          const escVx = (toX / tLen) * dist;
+          const escVy = (toY / tLen) * dist;
+          const escOverlap = this.getOverlapDepth(startX + escVx, startY + escVy);
+
+          // Allow if it reduces overlap, OR if it moves toward an empty tile
+          // even with some temporary overlap (depenetration will fix it)
+          if (escOverlap < curOverlap + 0.05) {
+            p.x = startX + escVx;
+            p.y = startY + escVy;
+            break;
           }
         }
       }
