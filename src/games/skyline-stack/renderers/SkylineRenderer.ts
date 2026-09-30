@@ -800,11 +800,92 @@ export class SkylineRenderer {
   private renderGround(ctx: CanvasRenderingContext2D, cx: number, gy: number, w: number) {
     const isDark = this.currentTheme === 'dark';
 
-    // Road / ground base
-    ctx.fillStyle = isDark ? '#0f172a' : '#475569';
-    ctx.fillRect(0, gy, w, 200);
+    // 1. Concrete Sidewalk Curb (Transition between construction site and street)
+    ctx.fillStyle = isDark ? '#334155' : '#94a3b8';
+    ctx.fillRect(0, gy, w, 12);
 
-    // Foundation concrete slab
+    // Curb expansion joints every 36px
+    ctx.fillStyle = isDark ? '#1e293b' : '#64748b';
+    for (let jx = 0; jx < w + 40; jx += 36) {
+      ctx.fillRect(jx, gy, 1.5, 12);
+    }
+
+    // Curb bevel & drop shadow onto asphalt
+    ctx.fillStyle = isDark ? 'rgba(0, 0, 0, 0.65)' : 'rgba(15, 23, 42, 0.45)';
+    ctx.fillRect(0, gy + 12, w, 3);
+
+    // 2. Asphalt Road Surface
+    const roadGrad = ctx.createLinearGradient(0, gy + 15, 0, gy + 220);
+    if (isDark) {
+      roadGrad.addColorStop(0, '#090e17');
+      roadGrad.addColorStop(0.5, '#0f172a');
+      roadGrad.addColorStop(1, '#090e17');
+    } else {
+      roadGrad.addColorStop(0, '#1e293b');
+      roadGrad.addColorStop(0.5, '#334155');
+      roadGrad.addColorStop(1, '#1e293b');
+    }
+    ctx.fillStyle = roadGrad;
+    ctx.fillRect(0, gy + 15, w, 350);
+
+    // 3. Upper Road Shoulder Edge / Fog Line
+    ctx.fillStyle = isDark ? 'rgba(255, 255, 255, 0.45)' : 'rgba(255, 255, 255, 0.70)';
+    ctx.fillRect(0, gy + 22, w, 3);
+
+    // 4. White Stripes Separator (Dashed Highway / Street Centerline)
+    const dashW = 38;
+    const dashGap = 26;
+    const dashH = 6;
+    const dashY = gy + 68;
+
+    // Thermoplastic paint drop shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    for (let dx = -10; dx < w + 50; dx += dashW + dashGap) {
+      ctx.fillRect(dx, dashY + 1.5, dashW, dashH);
+    }
+
+    // Crisp high-visibility white road stripes
+    ctx.fillStyle = '#ffffff';
+    for (let dx = -10; dx < w + 50; dx += dashW + dashGap) {
+      ctx.fillRect(dx, dashY, dashW, dashH);
+    }
+
+    // 5. Lower Road Shoulder Edge Line
+    ctx.fillStyle = isDark ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.55)';
+    ctx.fillRect(0, gy + 118, w, 3);
+
+    // 6. Street Ironworks Details (Storm drain & manhole cover on shoulder)
+    // Storm drain grating near upper curb
+    const drainX = cx - 170;
+    const drainY = gy + 18;
+    ctx.fillStyle = isDark ? '#020617' : '#0f172a';
+    ctx.fillRect(drainX, drainY, 26, 10);
+    ctx.strokeStyle = isDark ? '#334155' : '#64748b';
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(drainX, drainY, 26, 10);
+    for (let gx = drainX + 4; gx < drainX + 24; gx += 4) {
+      ctx.beginPath();
+      ctx.moveTo(gx, drainY + 1);
+      ctx.lineTo(gx, drainY + 9);
+      ctx.stroke();
+    }
+
+    // Round steel manhole cover
+    const mhX = cx + 155;
+    const mhY = gy + 42;
+    const mhR = 11;
+    ctx.fillStyle = isDark ? '#1e293b' : '#475569';
+    ctx.beginPath();
+    ctx.arc(mhX, mhY, mhR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = isDark ? '#334155' : '#64748b';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(mhX, mhY, mhR * 0.55, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 7. Foundation Concrete Slab
     const fW = SKYLINE_CONSTANTS.FOUNDATION_WIDTH;
     const fH = SKYLINE_CONSTANTS.FOUNDATION_HEIGHT;
     const fX = cx - fW * 0.5;
@@ -842,9 +923,6 @@ export class SkylineRenderer {
     ctx.fill();
   }
 
-  /**
-   * Renders placed skyscraper floors with harmonic spring sway
-   */
   /**
    * Renders placed skyscraper floors with harmonic spring sway
    */
