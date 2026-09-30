@@ -302,14 +302,23 @@ export class BombArenaEngine {
           const escVy = (toY / tLen) * dist;
           const escOverlap = this.getOverlapDepth(startX + escVx, startY + escVy);
 
-          // Allow if it reduces overlap, OR if it moves toward an empty tile
-          // even with some temporary overlap (depenetration will fix it)
-          if (escOverlap < curOverlap + 0.05) {
+          // Allow only if it doesn't increase overlap (strict — no walkthrough)
+          if (escOverlap <= curOverlap) {
             p.x = startX + escVx;
             p.y = startY + escVy;
             break;
           }
         }
+      }
+    }
+
+    // PASSTHROUGH GUARD: Prevent player from crossing through a fence tile.
+    // Check all tiles the movement line passes through — if any is a fence
+    // and the player ended up on the other side, revert to the start position.
+    if (p.x !== startX || p.y !== startY) {
+      if (this.didCrossFence(startX, startY, p.x, p.y)) {
+        p.x = startX;
+        p.y = startY;
       }
     }
 
@@ -327,15 +336,11 @@ export class BombArenaEngine {
 
   public getOverlapDepth(x: number, y: number): number {
     const r = BOMB_ARENA_CONSTANTS.PLAYER_RADIUS;
-    const b = this.state.bounds;
 
-    // Boundary overlap — measured but NOT early-returned so that fence
-    // overlap is still checked and parallel-to-wall movement isn't blocked.
+    // Only measures fence/obstacle overlap. Arena boundary enforcement is
+    // handled separately by resolvePlayerOverlaps() clamping, so boundaries
+    // never interfere with fence collision decisions.
     let maxOverlap = 0;
-    if (x - r < b.minCol) maxOverlap = Math.max(maxOverlap, b.minCol - (x - r));
-    if (x + r > b.maxCol + 1) maxOverlap = Math.max(maxOverlap, (x + r) - (b.maxCol + 1));
-    if (y - r < b.minRow) maxOverlap = Math.max(maxOverlap, b.minRow - (y - r));
-    if (y + r > b.maxRow + 1) maxOverlap = Math.max(maxOverlap, (y + r) - (b.maxRow + 1));
 
     const minC = Math.max(0, Math.floor(x - r));
     const maxC = Math.min(BOMB_ARENA_CONSTANTS.GRID_COLS - 1, Math.floor(x + r));
@@ -407,6 +412,49 @@ export class BombArenaEngine {
         else p.y = r + 1 + radius + 0.03;
       }
     }
+  }
+
+  /**
+   * Check if moving from (x0,y0) to (x1,y1) would cross through any fence tile.
+   * Uses a simple approach: sample tiles along the movement path and check if
+   * the player would need to pass through a solid tile to reach the destination.
+   */
+  private didCrossFence(x0: number, y0: number, x1: number, y1: number): boolean {
+    const r = BOMB_ARENA_CONSTANTS.PLAYER_RADIUS;
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const moveDist = Math.hypot(dx, dy);
+    if (moveDist < 0.001) return false;
+
+    // Check at several sample points along the path
+    const steps = Math.max(4, Math.ceil(moveDist / 0.1));
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      const sx = x0 + dx * t;
+      const sy = y0 + dy * t;
+
+      // Check if the player circle at this sample point is deeply inside a fence
+      const minC = Math.max(0, Math.floor(sx - r));
+      const maxC = Math.min(BOMB_ARENA_CONSTANTS.GRID_COLS - 1, Math.floor(sx + r));
+      const minR = Math.max(0, Math.floor(sy - r));
+      const maxR = Math.min(BOMB_ARENA_CONSTANTS.GRID_ROWS - 1, Math.floor(sy + r));
+
+      for (let c = minC; c <= maxC; c++) {
+        for (let row = minR; row <= maxR; row++) {
+          if (this.state.grid[c][row] === 'fence' || this.state.grid[c][row] === 'crushed') {
+            const closestX = Math.max(c, Math.min(c + 1, sx));
+            const closestY = Math.max(row, Math.min(row + 1, sy));
+            const distSq = (sx - closestX) ** 2 + (sy - closestY) ** 2;
+            // If the center of the player is inside or very close to the fence tile,
+            // we're crossing through it
+            if (distSq < 0.01) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+    return false;
   }
 
   // =========================================================================
