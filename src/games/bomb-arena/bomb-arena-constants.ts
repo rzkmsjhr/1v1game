@@ -6,7 +6,7 @@ export const BOMB_ARENA_CONSTANTS = {
 
   // Player physics & movement
   PLAYER_SPEED: 3.8, // in grid units per second
-  PLAYER_RADIUS: 0.36, // collision box radius in grid units
+  PLAYER_RADIUS: 0.30, // collision box radius in grid units (slender for silky corridor movement)
 
   // Inventory & cooldowns
   MAX_FENCE_STOCK: 3,

@@ -190,23 +190,23 @@ export class BombArenaEngine {
       p.facing = dy > 0 ? 'down' : 'up';
     }
 
-    // Proportional speed: slight stick tilt moves slower, full tilt runs at max speed
-    const speed = BOMB_ARENA_CONSTANTS.PLAYER_SPEED * Math.min(1, Math.max(0.35, len)) * dt;
-    const vx = (dx / len) * speed;
-    const vy = (dy / len) * speed;
+    // 100% constant full speed - nothing ever makes players movement slow
+    const dist = BOMB_ARENA_CONSTANTS.PLAYER_SPEED * dt;
+    const vx = (dx / len) * dist;
+    const vy = (dy / len) * dist;
 
     // Move along X with collision and corner assist
     if (vx !== 0) {
       const targetX = p.x + vx;
-      if (!this.checkPlayerCollision(targetX, p.y, p.id)) {
+      if (!this.checkPlayerCollision(targetX, p.y)) {
         p.x = targetX;
       } else {
         // Corner assist: slide along Y if close to tile center
         const nearestRow = Math.floor(p.y) + 0.5;
         const diffY = nearestRow - p.y;
-        if (Math.abs(diffY) > 0.05 && Math.abs(diffY) < 0.42) {
-          const slideStep = Math.sign(diffY) * Math.min(Math.abs(diffY), speed * 0.75);
-          if (!this.checkPlayerCollision(p.x, p.y + slideStep, p.id)) {
+        if (Math.abs(diffY) > 0.02 && Math.abs(diffY) < 0.48) {
+          const slideStep = Math.sign(diffY) * Math.min(Math.abs(diffY), dist);
+          if (!this.checkPlayerCollision(p.x, p.y + slideStep)) {
             p.y += slideStep;
           }
         }
@@ -216,15 +216,15 @@ export class BombArenaEngine {
     // Move along Y with collision and corner assist
     if (vy !== 0) {
       const targetY = p.y + vy;
-      if (!this.checkPlayerCollision(p.x, targetY, p.id)) {
+      if (!this.checkPlayerCollision(p.x, targetY)) {
         p.y = targetY;
       } else {
         // Corner assist: slide along X if close to tile center
         const nearestCol = Math.floor(p.x) + 0.5;
         const diffX = nearestCol - p.x;
-        if (Math.abs(diffX) > 0.05 && Math.abs(diffX) < 0.42) {
-          const slideStep = Math.sign(diffX) * Math.min(Math.abs(diffX), speed * 0.75);
-          if (!this.checkPlayerCollision(p.x + slideStep, p.y, p.id)) {
+        if (Math.abs(diffX) > 0.02 && Math.abs(diffX) < 0.48) {
+          const slideStep = Math.sign(diffX) * Math.min(Math.abs(diffX), dist);
+          if (!this.checkPlayerCollision(p.x + slideStep, p.y)) {
             p.x += slideStep;
           }
         }
@@ -245,7 +245,7 @@ export class BombArenaEngine {
     p.facing = facing;
   }
 
-  private checkPlayerCollision(targetX: number, targetY: number, playerId: 'player' | 'opponent'): boolean {
+  private checkPlayerCollision(targetX: number, targetY: number): boolean {
     const r = BOMB_ARENA_CONSTANTS.PLAYER_RADIUS;
     const b = this.state.bounds;
 
@@ -259,7 +259,8 @@ export class BombArenaEngine {
       return true;
     }
 
-    // Check adjacent tiles for fence, crushed, or bombs
+    // Check adjacent tiles: ONLY fences and crushed border walls obstruct movement
+    // Bombs and expected explosions NEVER block or slow down players!
     const minC = Math.max(0, Math.floor(targetX - r));
     const maxC = Math.min(BOMB_ARENA_CONSTANTS.GRID_COLS - 1, Math.floor(targetX + r));
     const minR = Math.max(0, Math.floor(targetY - r));
@@ -276,28 +277,6 @@ export class BombArenaEngine {
           if (distSq < r * r) {
             return true;
           }
-        }
-      }
-    }
-
-    // Check bombs: solid unless player is currently occupying it
-    for (const bomb of this.state.bombs) {
-      const bLeft = bomb.col;
-      const bRight = bomb.col + 1;
-      const bTop = bomb.row;
-      const bBottom = bomb.row + 1;
-
-      const closestX = Math.max(bLeft, Math.min(bRight, targetX));
-      const closestY = Math.max(bTop, Math.min(bBottom, targetY));
-      const distSq = (targetX - closestX) ** 2 + (targetY - closestY) ** 2;
-
-      if (distSq < r * r) {
-        // If player's current center is ALREADY inside this bomb's bounding box, allow them to step off
-        const curP = playerId === 'player' ? this.state.player : this.state.opponent;
-        const insideCurrently =
-          curP.x >= bLeft && curP.x <= bRight && curP.y >= bTop && curP.y <= bBottom;
-        if (!insideCurrently) {
-          return true;
         }
       }
     }
