@@ -133,7 +133,7 @@ export class SkylineRenderer {
     }
 
     // 7. Render Swinging Construction Crane
-    this.renderCrane(ctx, playerState.crane, centerX, groundScreenY);
+    this.renderCrane(ctx, playerState.crane, centerX, groundScreenY, logicalW, logicalH);
 
     // 8. Render Particles & Floating Texts
     this.updateAndRenderParticles(ctx, dt, centerX, groundScreenY);
@@ -503,12 +503,18 @@ export class SkylineRenderer {
 
   /**
    * Renders the swinging construction crane & suspended block
+   * Features a full cosmetic 'r'-shaped tower crane:
+   * - Vertical steel lattice mast on the left side of the screen
+   * - Horizontal lattice jib arm extending across the sky above the skyscraper
+   * - Counter-jib, counterweights, A-frame apex, operator cabin, and tension guy-wires
    */
   private renderCrane(
     ctx: CanvasRenderingContext2D,
     crane: CraneState,
     cx: number,
-    gy: number
+    gy: number,
+    logicalW: number,
+    logicalH: number
   ) {
     const anchorScreenX = cx + crane.anchorX;
     const anchorScreenY = gy - crane.anchorY;
@@ -517,9 +523,200 @@ export class SkylineRenderer {
     const hookScreenY = gy - crane.hookY;
     const isDark = this.currentTheme === 'dark';
 
+    // Position of the left vertical mast (the vertical stem of the 'r')
+    // Placed on the left side of the screen, safely clear of the center tower
+    const mastX = Math.max(32, Math.min(cx - 160, logicalW * 0.18));
+    const jibTopY = anchorScreenY - 14;
+    const jibEndX = Math.min(logicalW - 14, cx + 165);
+    const mastBottomY = Math.min(logicalH + 120, gy);
+
     ctx.save();
 
-    // 1. Equator Trajectory Guideline Arc (180° front hemisphere path)
+    // 1. Vertical Crane Mast (The vertical stem of the 'r' rising on the left)
+    const mastW = 16;
+    const mastHalfW = mastW * 0.5;
+
+    // Left and right vertical steel chords
+    ctx.strokeStyle = '#f59e0b'; // Industrial safety yellow
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(mastX - mastHalfW, jibTopY);
+    ctx.lineTo(mastX - mastHalfW, mastBottomY);
+    ctx.moveTo(mastX + mastHalfW, jibTopY);
+    ctx.lineTo(mastX + mastHalfW, mastBottomY);
+    ctx.stroke();
+
+    // Internal vertical service ladder line
+    ctx.strokeStyle = isDark ? '#475569' : '#94a3b8';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(mastX, jibTopY);
+    ctx.lineTo(mastX, mastBottomY);
+    ctx.stroke();
+
+    // Lattice truss diagonals and horizontal cross-struts
+    ctx.strokeStyle = isDark ? '#d97706' : '#eab308';
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    const sectionHeight = 20;
+    const totalSections = Math.ceil((mastBottomY - jibTopY) / sectionHeight);
+    for (let s = 0; s < totalSections; s++) {
+      const y1 = jibTopY + s * sectionHeight;
+      const y2 = Math.min(mastBottomY, y1 + sectionHeight);
+
+      // Horizontal strut
+      ctx.moveTo(mastX - mastHalfW, y1);
+      ctx.lineTo(mastX + mastHalfW, y1);
+
+      // Diagonal X bracing
+      ctx.moveTo(mastX - mastHalfW, y1);
+      ctx.lineTo(mastX + mastHalfW, y2);
+      ctx.moveTo(mastX + mastHalfW, y1);
+      ctx.lineTo(mastX - mastHalfW, y2);
+    }
+    ctx.stroke();
+
+    // Concrete Footing / Foundation for Mast at the Ground level
+    if (gy < logicalH + 100) {
+      ctx.fillStyle = isDark ? '#334155' : '#64748b';
+      ctx.fillRect(mastX - 16, gy - 8, 32, 10);
+      // Yellow hazard caution marks
+      ctx.fillStyle = '#eab308';
+      ctx.fillRect(mastX - 14, gy - 7, 28, 3);
+    }
+
+    // 2. Counter-Jib & Heavy Counterweights (the back left tail of the 'r')
+    const counterJibLeft = mastX - 44;
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(mastX, jibTopY);
+    ctx.lineTo(counterJibLeft, jibTopY);
+    ctx.moveTo(mastX, jibTopY + 12);
+    ctx.lineTo(counterJibLeft, jibTopY + 12);
+    ctx.lineTo(counterJibLeft, jibTopY);
+    ctx.stroke();
+
+    // Concrete counterweight blocks
+    ctx.fillStyle = isDark ? '#475569' : '#334155';
+    ctx.fillRect(counterJibLeft - 4, jibTopY - 3, 16, 18);
+    // Steel tie straps on counterweights
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(counterJibLeft - 4, jibTopY - 3, 16, 18);
+    ctx.beginPath();
+    ctx.moveTo(counterJibLeft + 4, jibTopY - 3);
+    ctx.lineTo(counterJibLeft + 4, jibTopY + 15);
+    ctx.stroke();
+
+    // 3. Apex Tower Peak & Tension Cables (A-frame peak above the mast)
+    const apexHeight = 30;
+    const apexX = mastX;
+    const apexY = jibTopY - apexHeight;
+
+    // A-frame steel struts
+    ctx.strokeStyle = '#d97706';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(mastX - mastHalfW, jibTopY);
+    ctx.lineTo(apexX, apexY);
+    ctx.lineTo(mastX + mastHalfW, jibTopY);
+    ctx.stroke();
+
+    // Blinking red aviation warning beacon on apex
+    const blink = Math.sin(this.animTime * 8.0) > 0;
+    ctx.fillStyle = blink ? '#ef4444' : '#7f1d1d';
+    ctx.beginPath();
+    ctx.arc(apexX, apexY - 2, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // High-tensile steel tension guy-wires
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    // Cable to counter-jib
+    ctx.moveTo(apexX, apexY);
+    ctx.lineTo(counterJibLeft + 4, jibTopY);
+    // Cables to main horizontal jib arm
+    ctx.moveTo(apexX, apexY);
+    ctx.lineTo(mastX + 85, jibTopY);
+    ctx.moveTo(apexX, apexY);
+    ctx.lineTo(mastX + 175, jibTopY);
+    ctx.stroke();
+
+    // 4. Operator's Cabin (Cab at the slewing ring joint)
+    const cabX = mastX + mastHalfW + 1;
+    const cabY = jibTopY - 1;
+    const cabW = 13;
+    const cabH = 15;
+    ctx.fillStyle = isDark ? '#1e293b' : '#334155';
+    ctx.fillRect(cabX, cabY, cabW, cabH);
+    // Cyan tinted glass windshield
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillRect(cabX + 3, cabY + 2, cabW - 4, 7);
+    // Safety railing
+    ctx.strokeStyle = '#eab308';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cabX - 1, cabY - 1, cabW + 2, cabH + 2);
+
+    // 5. Main Horizontal Jib Arm (Top horizontal branch of the 'r' extending to the right)
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2.8;
+    ctx.beginPath();
+    // Upper horizontal chord
+    ctx.moveTo(mastX, jibTopY);
+    ctx.lineTo(jibEndX, jibTopY);
+    // Lower horizontal chord (gently tapers toward tip)
+    ctx.moveTo(mastX, jibTopY + 12);
+    ctx.lineTo(jibEndX, jibTopY + 8);
+    // End vertical connector
+    ctx.lineTo(jibEndX, jibTopY);
+    ctx.stroke();
+
+    // Lattice diagonal cross-webbing along the horizontal jib
+    ctx.strokeStyle = isDark ? '#d97706' : '#eab308';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    const jibLength = jibEndX - mastX;
+    const jibSegments = Math.ceil(jibLength / 22);
+    const segW = jibLength / jibSegments;
+    for (let j = 0; j < jibSegments; j++) {
+      const jx1 = mastX + j * segW;
+      const jx2 = jx1 + segW;
+      const jyLower1 = jibTopY + 12 - (j / jibSegments) * 4;
+      const jyLower2 = jibTopY + 12 - ((j + 1) / jibSegments) * 4;
+
+      if (j % 2 === 0) {
+        ctx.moveTo(jx1, jibTopY);
+        ctx.lineTo(jx2, jyLower2);
+      } else {
+        ctx.moveTo(jx1, jyLower1);
+        ctx.lineTo(jx2, jibTopY);
+      }
+      ctx.moveTo(jx2, jibTopY);
+      ctx.lineTo(jx2, jyLower2);
+    }
+    ctx.stroke();
+
+    // Blinking red aviation beacon on the far tip of the horizontal jib
+    ctx.fillStyle = blink ? '#ef4444' : '#7f1d1d';
+    ctx.beginPath();
+    ctx.arc(jibEndX + 2, jibTopY - 1, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 6. Pulley Trolley (moves smoothly along the horizontal jib above the center area)
+    const trolleyX = anchorScreenX + Math.sin(crane.equatorAngle ?? crane.angle) * 22;
+    const trolleyY = jibTopY + 8;
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(trolleyX - 12, trolleyY - 4, 24, 10);
+    // Trolley wheels
+    ctx.fillStyle = '#94a3b8';
+    ctx.beginPath();
+    ctx.arc(trolleyX - 7, trolleyY - 3, 2.5, 0, Math.PI * 2);
+    ctx.arc(trolleyX + 7, trolleyY - 3, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 7. Equator Trajectory Guideline Arc (180° front hemisphere path)
     ctx.save();
     ctx.strokeStyle = isDark ? 'rgba(56, 189, 248, 0.18)' : 'rgba(2, 132, 199, 0.15)';
     ctx.lineWidth = 1.5;
@@ -536,35 +733,16 @@ export class SkylineRenderer {
     ctx.stroke();
     ctx.restore();
 
-    // 2. Crane Overhead Jib Arm (Lattice Mast)
-    ctx.strokeStyle = '#f59e0b'; // Industrial safety yellow
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.moveTo(anchorScreenX - 150, anchorScreenY - 14);
-    ctx.lineTo(anchorScreenX + 150, anchorScreenY - 14);
-    ctx.stroke();
-
-    // Crane Pulley Trolley
-    ctx.fillStyle = '#1e293b';
-    ctx.fillRect(anchorScreenX - 14, anchorScreenY - 16, 28, 12);
-
-    // Blinking red aviation light on crane tip
-    const blink = (Math.sin(this.animTime * 8.0) > 0);
-    ctx.fillStyle = blink ? '#ef4444' : '#7f1d1d';
-    ctx.beginPath();
-    ctx.arc(anchorScreenX + 145, anchorScreenY - 18, 4, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 3. Steel Winch Cable (width scales subtly with depth)
+    // 8. Steel Winch Cable (width scales subtly with depth)
     const depthZ = crane.depthZ ?? Math.cos(crane.equatorAngle ?? crane.angle);
     ctx.strokeStyle = '#94a3b8';
     ctx.lineWidth = 1.6 + 1.2 * depthZ;
     ctx.beginPath();
-    ctx.moveTo(anchorScreenX, anchorScreenY - 10);
+    ctx.moveTo(trolleyX, trolleyY + 4);
     ctx.lineTo(hookScreenX, hookScreenY);
     ctx.stroke();
 
-    // 4. Heavy Construction Hook
+    // 9. Heavy Construction Hook
     const hookScale = 0.92 + 0.16 * depthZ;
     ctx.save();
     ctx.translate(hookScreenX, hookScreenY);
@@ -582,15 +760,13 @@ export class SkylineRenderer {
     ctx.stroke();
     ctx.restore();
 
-    // 5. Block currently held by the hook along the 180° equator arc
+    // 10. Block currently held by the hook along the 180° equator arc
     if (crane.holdingBlock) {
       const block = crane.holdingBlock;
       const bCenterScreenX = hookScreenX;
       const bCenterScreenY = hookScreenY + 6 + block.height * 0.5;
 
-      // Perspective scale: 0.92 at side horizons, 1.08 at front center
       const perspScale = 0.92 + 0.16 * depthZ;
-      // 3D yaw tilt following the globe equator's curvature
       const yawAngle = -Math.sin(crane.equatorAngle ?? crane.angle) * 0.26;
 
       ctx.save();
