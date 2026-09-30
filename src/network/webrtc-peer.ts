@@ -125,6 +125,7 @@ export type NetworkMessage =
   | { type: 'STACK_SYNC'; currentFloor: number; wobbleAngle: number; population: number; lives: number; combo: number; timestamp: number }
   | { type: 'STACK_VICTORY'; winner: 'player' | 'opponent'; timestamp: number }
   | { type: 'STACK_VICTORY_CONFIRM'; winner: 'host' | 'guest' }
+  | { type: 'STACK_REMATCH'; seed: number }
   | { type: 'STACK_REMATCH_REQUEST' }
   | { type: 'STACK_REMATCH_ACCEPT'; seed?: number }
   | { type: 'CUSTOM'; payload: any };

@@ -30,6 +30,13 @@ export class SkylineStackGame implements GameInstance {
   private winnerLocked: boolean = false;
   private localVictoryTimestamp: number = 0;
   private lastSyncBroadcastTime: number = 0;
+  private lastHUDUpdateTime: number = 0;
+  private cachedStatusText: string = '';
+
+  // Match Phase & Countdown
+  private phase: 'WAITING_SEED' | 'COUNTDOWN' | 'PLAYING' | 'MATCH_OVER' = 'COUNTDOWN';
+  private countdown: number = 3;
+  private countdownTimer: number | null = null;
 
   // Cached Remote Opponent State for ghost HUD
   private remoteOpponentState: SkylinePlayerState | null = null;
@@ -46,14 +53,21 @@ export class SkylineStackGame implements GameInstance {
   private pingEl: HTMLElement | null = null;
   private pingDotEl: HTMLElement | null = null;
   private pingTextEl: HTMLElement | null = null;
+  private statusBannerEl: HTMLElement | null = null;
+  private statusTextEl: HTMLElement | null = null;
+  private countdownOverlayEl: HTMLElement | null = null;
+  private countdownNumberEl: HTMLElement | null = null;
+  private countdownSubtitleEl: HTMLElement | null = null;
   private gameOverModalEl!: HTMLElement;
   private gameOverTitleEl!: HTMLElement;
   private gameOverStatsEl!: HTMLElement;
   private dropBtnEl!: HTMLElement;
+  private rematchBtnEl: HTMLButtonElement | null = null;
 
   // Bound listeners
   private boundKeyDown: (e: KeyboardEvent) => void;
   private boundResize: () => void;
+  private boundBeforeUnload: () => void;
 
   constructor(container: HTMLElement, session: GameSession) {
     this.container = container;
@@ -62,12 +76,24 @@ export class SkylineStackGame implements GameInstance {
 
     this.boundKeyDown = (e: KeyboardEvent) => this.handleKeyDown(e);
     this.boundResize = () => this.handleResize();
+    this.boundBeforeUnload = () => {
+      if (this.session.mode === 'online' && this.session.peer?.isConnected) {
+        try {
+          this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
+        } catch {}
+      }
+    };
+    window.addEventListener('beforeunload', this.boundBeforeUnload);
 
     this.mountUI();
     this.initEnginesAndRenderer();
     this.initControls();
     this.setupNetwork();
     this.startLoop();
+
+    if (this.session.mode === 'ai') {
+      this.startCountdown();
+    }
   }
 
   // =========================================================================
@@ -79,6 +105,16 @@ export class SkylineStackGame implements GameInstance {
       (isDark ? 'bg-[#060911]' : 'bg-slate-100');
 
     this.container.innerHTML = `
+      <style>
+        @keyframes scale-in {
+          0% { transform: scale(0.6); opacity: 0; }
+          60% { transform: scale(1.15); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-scaleIn {
+          animation: scale-in 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+        }
+      </style>
       <div id="stack-frame" class="relative w-full max-w-[560px] sm:max-w-[620px] h-[100dvh] max-h-[100dvh] flex flex-col justify-between overflow-hidden shadow-2xl select-none ${
         isDark ? 'bg-[#0b1120] text-white' : 'bg-white text-slate-900'
       }">
@@ -92,7 +128,7 @@ export class SkylineStackGame implements GameInstance {
           <div class="flex items-center gap-1.5">
             <button id="stack-btn-exit" class="px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
               isDark ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300' : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-700'
-            } cursor-pointer">
+            } cursor-pointer active:scale-95">
               ← Exit
             </button>
             <button id="stack-btn-sound" class="p-1 text-xs rounded-lg transition hover:opacity-80 cursor-pointer" title="Toggle Sound">
@@ -112,11 +148,15 @@ export class SkylineStackGame implements GameInstance {
               <span id="stack-player-hearts" class="tracking-widest">❤️❤️❤️</span>
               <span id="stack-opp-hearts" class="tracking-widest text-slate-400">❤️❤️❤️</span>
             </div>
+            <!-- Dynamic Duel Status Banner -->
+            <div id="stack-status-banner" class="flex flex-col items-center px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-center mt-1">
+              <span id="stack-status-text" class="text-[9px] sm:text-[10px] font-black tracking-wide text-amber-400 uppercase truncate max-w-[170px]">RACE TO 30 FLOORS!</span>
+            </div>
           </div>
 
           <!-- Network Ping & Mode Badge -->
           <div class="flex items-center gap-1.5">
-            <span id="stack-net-ping" class="${this.session.mode === 'online' ? 'inline-flex' : 'hidden'} items-center gap-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5">
+            <span id="stack-net-ping" class="${this.session.mode === 'online' ? 'inline-flex' : 'hidden'} items-center gap-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm">
               <span id="stack-net-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
               <span id="stack-net-text">25ms</span>
             </span>
@@ -143,6 +183,12 @@ export class SkylineStackGame implements GameInstance {
             <div class="px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold bg-black/50 text-slate-300 backdrop-blur-sm border border-white/10">
               <span id="stack-pop-count">👥 0 Pop</span> • <span id="stack-height-meter">0m</span>
             </div>
+          </div>
+
+          <!-- COUNTDOWN OVERLAY -->
+          <div id="stack-countdown-overlay" class="hidden absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/65 backdrop-blur-sm transition-opacity duration-300 pointer-events-auto">
+            <span id="stack-countdown-number" class="text-7xl sm:text-8xl font-black text-amber-400 drop-shadow-[0_0_30px_rgba(245,158,11,0.9)] animate-scaleIn">3</span>
+            <span id="stack-countdown-subtitle" class="text-xs sm:text-sm font-black tracking-widest uppercase text-amber-200 mt-2 drop-shadow">GET READY!</span>
           </div>
         </div>
 
@@ -172,7 +218,7 @@ export class SkylineStackGame implements GameInstance {
               </button>
               <button id="stack-btn-modal-exit" class="px-4 py-3 rounded-xl text-xs font-black border transition ${
                 isDark ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300' : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-700'
-              } cursor-pointer">
+              } cursor-pointer active:scale-95">
                 Exit
               </button>
             </div>
@@ -194,10 +240,16 @@ export class SkylineStackGame implements GameInstance {
     this.pingEl = document.getElementById('stack-net-ping');
     this.pingDotEl = document.getElementById('stack-net-dot');
     this.pingTextEl = document.getElementById('stack-net-text');
+    this.statusBannerEl = document.getElementById('stack-status-banner');
+    this.statusTextEl = document.getElementById('stack-status-text');
+    this.countdownOverlayEl = document.getElementById('stack-countdown-overlay');
+    this.countdownNumberEl = document.getElementById('stack-countdown-number');
+    this.countdownSubtitleEl = document.getElementById('stack-countdown-subtitle');
     this.gameOverModalEl = document.getElementById('stack-game-over-modal')!;
     this.gameOverTitleEl = document.getElementById('stack-game-over-title')!;
     this.gameOverStatsEl = document.getElementById('stack-game-over-stats')!;
     this.dropBtnEl = document.getElementById('stack-btn-drop')!;
+    this.rematchBtnEl = document.getElementById('stack-btn-rematch') as HTMLButtonElement | null;
 
     // Exit Button
     const handleExit = () => {
@@ -218,7 +270,7 @@ export class SkylineStackGame implements GameInstance {
     });
 
     // Rematch Button
-    document.getElementById('stack-btn-rematch')?.addEventListener('click', () => {
+    this.rematchBtnEl?.addEventListener('click', () => {
       this.handleRematchClick();
     });
   }
@@ -289,7 +341,7 @@ export class SkylineStackGame implements GameInstance {
   }
 
   private triggerDrop() {
-    if (this.winnerLocked || this.playerEngine.isGameOver) return;
+    if (this.phase !== 'PLAYING' || this.winnerLocked || this.playerEngine.isGameOver) return;
     const dropped = this.playerEngine.dropBlock();
     if (dropped) {
       sounds.playWinchRelease();
@@ -319,7 +371,7 @@ export class SkylineStackGame implements GameInstance {
       this.renderer.addFloatingText('MISS! -1 ❤️', topFloorSwayX, topFloorY + 20, '#f43f5e');
     }
 
-    this.updateHUD();
+    this.updateHUD(true);
 
     // Broadcast drop over WebRTC
     if (this.session.mode === 'online' && this.session.peer?.isConnected) {
@@ -331,6 +383,14 @@ export class SkylineStackGame implements GameInstance {
         combo: e.combo,
         timestamp: Date.now()
       });
+
+      if (e.quality === 'miss') {
+        this.session.peer.sendMessage({
+          type: 'STACK_MISS',
+          remainingLives: this.playerEngine.state.lives,
+          timestamp: Date.now()
+        });
+      }
     }
   }
 
@@ -354,7 +414,14 @@ export class SkylineStackGame implements GameInstance {
         onStatusChange: (status: string, message?: string) => {
           origOnStatusChange?.(status as any, message);
           if (status === 'disconnected') {
-            if (this.winnerLocked || this.playerEngine.isGameOver) return;
+            if (this.winnerLocked || this.playerEngine.isGameOver || this.phase === 'MATCH_OVER') {
+              if (this.rematchBtnEl) {
+                this.rematchBtnEl.textContent = 'Opponent Disconnected';
+                this.rematchBtnEl.classList.remove('animate-pulse');
+                this.rematchBtnEl.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+              }
+              return;
+            }
             this.handleForfeitVictory('Opponent disconnected from the match.');
           }
         },
@@ -365,6 +432,15 @@ export class SkylineStackGame implements GameInstance {
       }
     });
 
+    this.session.peer.flushEarlyMessages?.();
+    if (this.session.peer.isConnected) {
+      this.updateNetworkHealthHUD({
+        rtt: this.session.peer.currentRtt,
+        status: this.session.peer.networkQuality,
+        isPeerVisible: this.session.peer.isPeerVisible
+      });
+    }
+
     // Host sends initial seed to guest
     if (this.session.peer.role === 'host') {
       this.session.peer.sendMessage({
@@ -372,7 +448,15 @@ export class SkylineStackGame implements GameInstance {
         seed: this.playerEngine.seed,
         targetFloors: SKYLINE_CONSTANTS.TARGET_FLOORS
       });
+      this.startCountdown();
     } else {
+      this.phase = 'WAITING_SEED';
+      if (this.countdownOverlayEl && this.countdownNumberEl && this.countdownSubtitleEl) {
+        this.countdownOverlayEl.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+        this.countdownNumberEl.className = 'text-4xl sm:text-5xl font-black text-amber-400 animate-pulse';
+        this.countdownNumberEl.textContent = '⏳';
+        this.countdownSubtitleEl.textContent = 'WAITING FOR HOST...';
+      }
       this.session.peer.sendMessage({ type: 'STACK_REQUEST_SEED' });
     }
   }
@@ -380,7 +464,14 @@ export class SkylineStackGame implements GameInstance {
   private handleNetworkMessage(msg: NetworkMessage) {
     switch (msg.type) {
       case 'PLAYER_LEAVE':
-        if (this.winnerLocked || this.playerEngine.isGameOver) break;
+        if (this.winnerLocked || this.playerEngine.isGameOver || this.phase === 'MATCH_OVER') {
+          if (this.rematchBtnEl) {
+            this.rematchBtnEl.textContent = 'Opponent Disconnected';
+            this.rematchBtnEl.classList.remove('animate-pulse');
+            this.rematchBtnEl.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+          }
+          break;
+        }
         this.handleForfeitVictory('Opponent forfeited the match.');
         break;
 
@@ -397,7 +488,7 @@ export class SkylineStackGame implements GameInstance {
       case 'STACK_INIT':
         this.playerEngine.reset(msg.seed);
         this.renderer.reset();
-        this.updateHUD();
+        this.startCountdown();
         break;
 
       case 'STACK_DROP':
@@ -430,7 +521,7 @@ export class SkylineStackGame implements GameInstance {
             this.remoteOpponentState.hasFinished = true;
           }
         }
-        this.updateHUD();
+        this.updateHUD(true);
         break;
 
       case 'STACK_MISS':
@@ -438,12 +529,12 @@ export class SkylineStackGame implements GameInstance {
           this.remoteOpponentState.lives = msg.remainingLives;
           if (msg.remainingLives <= 0) {
             this.remoteOpponentState.isDead = true;
-            if (!this.winnerLocked) {
+            if (!this.winnerLocked && this.phase === 'PLAYING') {
               this.handleGameOver('player');
             }
           }
         }
-        this.updateHUD();
+        this.updateHUD(true);
         break;
 
       case 'STACK_SYNC':
@@ -515,6 +606,7 @@ export class SkylineStackGame implements GameInstance {
 
       case 'STACK_REMATCH_ACCEPT':
       case 'REMATCH_ACCEPT':
+      case 'STACK_REMATCH':
         this.startNewMatch(msg.seed);
         break;
     }
@@ -522,13 +614,22 @@ export class SkylineStackGame implements GameInstance {
 
   private updateNetworkHealthHUD(health: NetworkHealth) {
     if (this.pingEl && this.pingTextEl && this.pingDotEl) {
-      this.pingTextEl.textContent = `${Math.round(health.rtt)}ms`;
-      if (health.status === 'good') {
-        this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+      if (health.status === 'stalled') {
+        this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+        this.pingTextEl.textContent = 'Lag ⚠️';
+        this.pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5 shadow-sm';
+      } else if (health.status === 'poor') {
+        this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+        this.pingTextEl.textContent = `${Math.round(health.rtt)}ms`;
+        this.pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 rounded px-1.5 py-0.5 shadow-sm';
       } else if (health.status === 'moderate') {
         this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+        this.pingTextEl.textContent = `${Math.round(health.rtt)}ms`;
+        this.pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5 shadow-sm';
       } else {
-        this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping';
+        this.pingDotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+        this.pingTextEl.textContent = `${Math.round(health.rtt || 25)}ms`;
+        this.pingEl.className = 'inline-flex items-center gap-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded px-1.5 py-0.5 shadow-sm';
       }
     }
 
@@ -542,6 +643,76 @@ export class SkylineStackGame implements GameInstance {
   }
 
   // =========================================================================
+  // COUNTDOWN & MATCH FLOW
+  // =========================================================================
+  private startCountdown() {
+    this.phase = 'COUNTDOWN';
+    this.countdown = 3;
+    if (this.countdownTimer !== null) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+
+    if (this.dropBtnEl) {
+      this.dropBtnEl.classList.add('opacity-70', 'pointer-events-none');
+    }
+
+    if (this.countdownOverlayEl && this.countdownNumberEl && this.countdownSubtitleEl) {
+      this.countdownOverlayEl.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+      this.countdownNumberEl.className = 'text-7xl sm:text-8xl font-black text-amber-400 drop-shadow-[0_0_30px_rgba(245,158,11,0.9)] animate-scaleIn';
+      this.countdownNumberEl.textContent = '3';
+      this.countdownSubtitleEl.textContent = 'GET READY!';
+    }
+
+    sounds.playCountdownTick(false);
+    this.updateHUD(true);
+
+    this.countdownTimer = window.setInterval(() => {
+      this.countdown--;
+      if (this.countdown > 0) {
+        sounds.playCountdownTick(false);
+        if (this.countdownNumberEl) {
+          this.countdownNumberEl.textContent = `${this.countdown}`;
+          this.countdownNumberEl.classList.remove('animate-scaleIn');
+          void this.countdownNumberEl.offsetWidth;
+          this.countdownNumberEl.classList.add('animate-scaleIn');
+        }
+        this.updateHUD(true);
+      } else if (this.countdown === 0) {
+        sounds.playCountdownTick(true);
+        if (this.countdownNumberEl && this.countdownSubtitleEl) {
+          this.countdownNumberEl.className = 'text-6xl sm:text-7xl font-black text-emerald-400 drop-shadow-[0_0_30px_rgba(16,185,129,0.9)] animate-scaleIn';
+          this.countdownNumberEl.textContent = 'BUILD!';
+          this.countdownSubtitleEl.textContent = 'RACE TO 30 FLOORS!';
+        }
+        this.phase = 'PLAYING';
+        if (this.dropBtnEl) {
+          this.dropBtnEl.classList.remove('opacity-70', 'pointer-events-none');
+        }
+        this.updateHUD(true);
+        if (this.session.mode === 'ai' && this.ai) {
+          this.ai.reset();
+        }
+
+        // Smoothly fade out overlay
+        setTimeout(() => {
+          if (this.countdownOverlayEl) {
+            this.countdownOverlayEl.classList.add('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+              this.countdownOverlayEl?.classList.add('hidden');
+            }, 300);
+          }
+        }, 450);
+
+        if (this.countdownTimer !== null) {
+          clearInterval(this.countdownTimer);
+          this.countdownTimer = null;
+        }
+      }
+    }, 850);
+  }
+
+  // =========================================================================
   // GAME LOOP
   // =========================================================================
   private startLoop() {
@@ -549,8 +720,8 @@ export class SkylineStackGame implements GameInstance {
       const dt = Math.min(0.05, (now - this.lastTime) / 1000);
       this.lastTime = now;
 
-      // 1. Update AI simulation (in solo mode)
-      if (this.ai && this.opponentEngine) {
+      // 1. Update AI simulation (in solo mode during PLAYING phase only)
+      if (this.phase === 'PLAYING' && this.ai && this.opponentEngine) {
         this.ai.update(dt);
         this.opponentEngine.update(dt);
       }
@@ -565,23 +736,25 @@ export class SkylineStackGame implements GameInstance {
       // 4. Update HUD
       this.updateHUD();
 
-      // 5. Online Sync Heartbeat (10Hz / 100ms)
+      // 5. Online Sync Heartbeat (10Hz active / 2Hz resting)
       if (
         this.session.mode === 'online' &&
         this.session.peer?.isConnected &&
-        !this.winnerLocked &&
-        now - this.lastSyncBroadcastTime > 100
+        !this.winnerLocked
       ) {
-        this.lastSyncBroadcastTime = now;
-        this.session.peer.sendMessage({
-          type: 'STACK_SYNC',
-          currentFloor: this.playerEngine.getActiveFloorsCount(),
-          wobbleAngle: this.playerEngine.state.wobbleAngle,
-          population: this.playerEngine.state.population,
-          lives: this.playerEngine.state.lives,
-          combo: this.playerEngine.state.combo,
-          timestamp: Date.now()
-        });
+        const syncInterval = this.phase === 'PLAYING' ? 100 : 500;
+        if (now - this.lastSyncBroadcastTime > syncInterval) {
+          this.lastSyncBroadcastTime = now;
+          this.session.peer.sendMessage({
+            type: 'STACK_SYNC',
+            currentFloor: this.playerEngine.getActiveFloorsCount(),
+            wobbleAngle: this.playerEngine.state.wobbleAngle,
+            population: this.playerEngine.state.population,
+            lives: this.playerEngine.state.lives,
+            combo: this.playerEngine.state.combo,
+            timestamp: Date.now()
+          });
+        }
       }
 
       this.animFrameId = requestAnimationFrame(loop);
@@ -593,7 +766,13 @@ export class SkylineStackGame implements GameInstance {
   // =========================================================================
   // HUD UPDATES
   // =========================================================================
-  private updateHUD() {
+  private updateHUD(force: boolean = false) {
+    const now = performance.now();
+    if (!force && now - this.lastHUDUpdateTime < 50) {
+      return;
+    }
+    this.lastHUDUpdateTime = now;
+
     const pFloors = this.playerEngine.getActiveFloorsCount();
     const pTarget = SKYLINE_CONSTANTS.TARGET_FLOORS;
     this.playerFloorEl.textContent = `F${pFloors} / ${pTarget}`;
@@ -626,6 +805,49 @@ export class SkylineStackGame implements GameInstance {
     } else {
       this.comboBadgeEl.classList.add('hidden');
     }
+
+    // Dynamic Duel Status Banner
+    if (this.statusTextEl && this.statusBannerEl) {
+      let statusText = '';
+      let statusClass = '';
+
+      if (this.phase === 'WAITING_SEED') {
+        statusText = 'WAITING FOR HOST...';
+        statusClass = 'text-amber-400 animate-pulse';
+      } else if (this.phase === 'COUNTDOWN') {
+        statusText = `GET READY! (${this.countdown})`;
+        statusClass = 'text-amber-400 font-black';
+      } else if (this.phase === 'PLAYING') {
+        if (pFloors >= 28 || oFloors >= 28) {
+          statusText = '🏁 MATCH POINT! FINAL FLOORS!';
+          statusClass = 'text-amber-300 font-black animate-pulse';
+        } else if (pFloors > oFloors) {
+          const diff = pFloors - oFloors;
+          statusText = `YOU LEAD BY ${diff} FLOOR${diff > 1 ? 'S' : ''}! 🚀`;
+          statusClass = 'text-emerald-400 font-bold';
+        } else if (oFloors > pFloors) {
+          const diff = oFloors - pFloors;
+          statusText = `RIVAL LEADS BY ${diff}! ⚡`;
+          statusClass = 'text-rose-400 font-bold';
+        } else if (pFloors > 0) {
+          statusText = `TIED AT FLOOR ${pFloors}! ⚔️`;
+          statusClass = 'text-cyan-400 font-bold';
+        } else {
+          statusText = 'RACE TO 30 FLOORS! 🏗️';
+          statusClass = 'text-amber-400 font-bold';
+        }
+      } else if (this.phase === 'MATCH_OVER') {
+        const didIWin = this.winnerLocked && this.playerEngine.state.hasFinished;
+        statusText = didIWin ? 'VICTORY! 🏆' : 'MATCH FINISHED';
+        statusClass = didIWin ? 'text-amber-400 font-black' : 'text-slate-400 font-bold';
+      }
+
+      if (statusText !== this.cachedStatusText) {
+        this.cachedStatusText = statusText;
+        this.statusTextEl.textContent = statusText;
+        this.statusTextEl.className = `text-[9px] sm:text-[10px] tracking-wide uppercase truncate max-w-[170px] ${statusClass}`;
+      }
+    }
   }
 
   private handleResize() {
@@ -652,6 +874,12 @@ export class SkylineStackGame implements GameInstance {
   private handleGameOver(winner: 'player' | 'opponent' | 'draw') {
     if (this.winnerLocked) return;
     this.winnerLocked = true;
+    this.phase = 'MATCH_OVER';
+    if (this.countdownTimer !== null) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+    this.countdownOverlayEl?.classList.add('hidden');
     this.ai?.stop();
     this.playerEngine.isGameOver = true;
 
@@ -675,16 +903,66 @@ export class SkylineStackGame implements GameInstance {
   }
 
   private handleForfeitVictory(reason: string) {
-    if (this.winnerLocked || this.playerEngine.isGameOver) return;
+    if (this.winnerLocked || this.playerEngine.isGameOver || this.phase === 'MATCH_OVER') {
+      if (this.rematchBtnEl) {
+        this.rematchBtnEl.textContent = 'Opponent Disconnected';
+        this.rematchBtnEl.classList.remove('animate-pulse');
+        this.rematchBtnEl.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+      }
+      return;
+    }
+
     this.winnerLocked = true;
+    this.phase = 'MATCH_OVER';
+    if (this.countdownTimer !== null) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+    this.countdownOverlayEl?.classList.add('hidden');
     this.ai?.stop();
     this.playerEngine.isGameOver = true;
-    this.showGameOverModal(true, reason);
+
+    this.gameOverTitleEl.textContent = '🏆 VICTORY BY FORFEIT!';
+    this.gameOverTitleEl.className = 'text-2xl sm:text-3xl font-extrabold mb-1 text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500';
+
+    const duration = Math.floor((Date.now() - this.startTime) / 1000);
+    const floorsBuilt = this.playerEngine.getActiveFloorsCount();
+    const perfectCount = this.playerEngine.state.perfectCount;
+    const perfectPct = floorsBuilt > 0 ? Math.round((perfectCount / floorsBuilt) * 100) : 0;
+
+    this.gameOverStatsEl.innerHTML = `
+      <div class="text-sm font-semibold mb-3 text-amber-300">${reason}</div>
+      <div class="flex justify-between py-1 border-b border-slate-700/50"><span>Floors Built:</span> <b>${floorsBuilt} / ${SKYLINE_CONSTANTS.TARGET_FLOORS}</b></div>
+      <div class="flex justify-between py-1 border-b border-slate-700/50"><span>Population:</span> <b>${this.playerEngine.state.population.toLocaleString()}</b></div>
+      <div class="flex justify-between py-1 border-b border-slate-700/50"><span>Perfect Accuracy:</span> <b>${perfectPct}% (${perfectCount})</b></div>
+      <div class="flex justify-between py-1 border-b border-slate-700/50"><span>Max Combo:</span> <b>${this.playerEngine.state.maxCombo}x</b></div>
+      <div class="flex justify-between py-1"><span>Match Duration:</span> <b>${duration}s</b></div>
+    `;
+
+    if (this.rematchBtnEl) {
+      this.rematchBtnEl.textContent = 'Opponent Disconnected';
+      this.rematchBtnEl.classList.remove('animate-pulse');
+      this.rematchBtnEl.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+    }
+
+    this.gameOverModalEl.classList.remove('hidden');
+    sounds.playFanfare();
+    confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
   }
 
   private showGameOverModal(didIWin: boolean, message: string) {
     const isModalVisible = !this.gameOverModalEl.classList.contains('hidden');
     if (this.winnerLocked && isModalVisible) return;
+
+    this.winnerLocked = true;
+    this.phase = 'MATCH_OVER';
+    if (this.countdownTimer !== null) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+    this.countdownOverlayEl?.classList.add('hidden');
+    this.ai?.stop();
+    this.playerEngine.isGameOver = true;
 
     this.gameOverTitleEl.textContent = didIWin ? '🏆 VICTORY!' : '💀 DEFEAT';
     this.gameOverTitleEl.className = `text-3xl font-black tracking-tight ${
@@ -705,12 +983,13 @@ export class SkylineStackGame implements GameInstance {
       <div class="flex justify-between py-1"><span>Match Duration:</span> <b>${duration}s</b></div>
     `;
 
-    const btn = document.getElementById('stack-btn-rematch');
     if (this.rematchState === 'offer_received') {
       this.showRematchOffer();
-    } else if (btn) {
-      btn.textContent = 'Play Again';
-      btn.classList.remove('opacity-70', 'cursor-not-allowed', 'animate-pulse');
+    } else if (this.rematchBtnEl) {
+      this.rematchBtnEl.textContent = 'Play Again';
+      this.rematchBtnEl.disabled = false;
+      this.rematchBtnEl.classList.remove('opacity-70', 'opacity-50', 'cursor-not-allowed', 'pointer-events-none', 'animate-pulse');
+      this.rematchBtnEl.className = 'flex-1 py-3 rounded-xl text-xs font-black bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 text-white transition shadow-lg shadow-cyan-500/30 cursor-pointer active:scale-95 uppercase tracking-wide';
     }
 
     this.gameOverModalEl.classList.remove('hidden');
@@ -724,35 +1003,51 @@ export class SkylineStackGame implements GameInstance {
   }
 
   private handleRematchClick() {
-    const btn = document.getElementById('stack-btn-rematch');
-    if (!btn) return;
+    if (!this.rematchBtnEl) return;
 
     if (this.session.mode === 'ai') {
       this.startNewMatch();
       return;
     }
 
+    if (!this.session.peer?.isConnected) {
+      this.startNewMatch();
+      return;
+    }
+
     if (this.rematchState === 'offer_received') {
       const seed = Date.now();
-      this.session.peer?.sendMessage({ type: 'STACK_REMATCH_ACCEPT', seed });
-      this.session.peer?.sendMessage({ type: 'REMATCH_ACCEPT', seed });
+      this.session.peer.sendMessage({ type: 'STACK_REMATCH_ACCEPT', seed });
+      this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT', seed });
       this.startNewMatch(seed);
     } else if (this.rematchState === 'idle') {
       this.rematchState = 'requested';
-      btn.textContent = 'Waiting for Opponent...';
-      btn.classList.add('opacity-70', 'cursor-not-allowed');
-      this.session.peer?.sendMessage({ type: 'STACK_REMATCH_REQUEST' });
-      this.session.peer?.sendMessage({ type: 'REMATCH_REQUEST' });
+      this.rematchBtnEl.textContent = 'Waiting for Opponent...';
+      this.rematchBtnEl.classList.add('opacity-70', 'cursor-not-allowed', 'pointer-events-none');
+      this.session.peer.sendMessage({ type: 'STACK_REMATCH_REQUEST' });
+      this.session.peer.sendMessage({ type: 'REMATCH_REQUEST' });
     }
   }
 
   private showRematchOffer() {
+    if (this.rematchState === 'requested') {
+      // Both clicked rematch simultaneously! Host takes authority to accept
+      if (this.session.peer?.role === 'host') {
+        const seed = Date.now();
+        this.session.peer.sendMessage({ type: 'STACK_REMATCH_ACCEPT', seed });
+        this.session.peer.sendMessage({ type: 'REMATCH_ACCEPT', seed });
+        this.startNewMatch(seed);
+      }
+      return;
+    }
+
     this.rematchState = 'offer_received';
-    const btn = document.getElementById('stack-btn-rematch');
-    if (btn) {
-      btn.textContent = 'Accept Rematch!';
-      btn.classList.remove('opacity-70', 'cursor-not-allowed');
-      btn.classList.add('animate-pulse');
+    sounds.playRoundComplete();
+    if (this.rematchBtnEl) {
+      this.rematchBtnEl.textContent = 'Accept Rematch!';
+      this.rematchBtnEl.disabled = false;
+      this.rematchBtnEl.classList.remove('opacity-70', 'opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+      this.rematchBtnEl.className = 'flex-1 py-3 rounded-xl text-xs font-black tracking-wider uppercase text-white bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-500 shadow-lg shadow-emerald-500/40 active:scale-95 transition-all cursor-pointer animate-pulse';
     }
   }
 
@@ -762,6 +1057,13 @@ export class SkylineStackGame implements GameInstance {
     this.localVictoryTimestamp = 0;
     this.startTime = Date.now();
     this.gameOverModalEl.classList.add('hidden');
+
+    if (this.rematchBtnEl) {
+      this.rematchBtnEl.textContent = 'Play Again';
+      this.rematchBtnEl.disabled = false;
+      this.rematchBtnEl.classList.remove('opacity-70', 'opacity-50', 'cursor-not-allowed', 'pointer-events-none', 'animate-pulse');
+      this.rematchBtnEl.className = 'flex-1 py-3 rounded-xl text-xs font-black bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 text-white transition shadow-lg shadow-cyan-500/30 cursor-pointer active:scale-95 uppercase tracking-wide';
+    }
 
     const newSeed = seed !== undefined ? seed : Date.now();
     this.playerEngine.reset(newSeed);
@@ -774,7 +1076,7 @@ export class SkylineStackGame implements GameInstance {
       this.remoteOpponentState = null;
     }
 
-    this.updateHUD();
+    this.startCountdown();
   }
 
   // =========================================================================
@@ -792,10 +1094,15 @@ export class SkylineStackGame implements GameInstance {
   }
 
   public destroy() {
+    window.removeEventListener('beforeunload', this.boundBeforeUnload);
     if (this.session.mode === 'online' && this.session.peer?.isConnected) {
       try {
         this.session.peer.sendMessage({ type: 'PLAYER_LEAVE' });
       } catch {}
+    }
+    if (this.countdownTimer !== null) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
     }
     if (this.animFrameId !== null) {
       cancelAnimationFrame(this.animFrameId);
@@ -808,5 +1115,28 @@ export class SkylineStackGame implements GameInstance {
       this.resizeObserver = null;
     }
     this.ai?.stop();
+
+    this.playerFloorEl = null as any;
+    this.opponentFloorEl = null as any;
+    this.playerHeartsEl = null as any;
+    this.opponentHeartsEl = null as any;
+    this.playerPopEl = null as any;
+    this.comboBadgeEl = null as any;
+    this.heightMeterEl = null as any;
+    this.peerAwayBannerEl = null;
+    this.pingEl = null;
+    this.pingDotEl = null;
+    this.pingTextEl = null;
+    this.statusBannerEl = null;
+    this.statusTextEl = null;
+    this.countdownOverlayEl = null;
+    this.countdownNumberEl = null;
+    this.countdownSubtitleEl = null;
+    this.gameOverModalEl = null as any;
+    this.gameOverTitleEl = null as any;
+    this.gameOverStatsEl = null as any;
+    this.dropBtnEl = null as any;
+    this.rematchBtnEl = null;
+    this.container.innerHTML = '';
   }
 }
