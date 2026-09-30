@@ -444,6 +444,64 @@ export class SkylineRenderer {
   }
 
   /**
+   * Renders a suspended square block with 3D perspective side walls along the 180° equator
+   */
+  private drawEquatorSquareBlock(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    color: string,
+    accentColor: string,
+    windowLights: boolean[],
+    isDark: boolean,
+    equatorAngle: number,
+    isPenthouse: boolean = false
+  ) {
+    const halfW = w * 0.5;
+    const halfH = h * 0.5;
+
+    // 3D Side Wall when viewed from equator angles
+    // When equatorAngle < -0.08: right wall visible
+    // When equatorAngle > 0.08: left wall visible
+    const sideWallWidth = Math.abs(Math.sin(equatorAngle)) * 14;
+
+    if (equatorAngle < -0.08 && sideWallWidth > 1.5) {
+      // Right side wall
+      ctx.fillStyle = isDark ? '#1e293b' : '#334155';
+      ctx.beginPath();
+      ctx.moveTo(halfW, -halfH);
+      ctx.lineTo(halfW + sideWallWidth, -halfH + 3);
+      ctx.lineTo(halfW + sideWallWidth, halfH - 2);
+      ctx.lineTo(halfW, halfH);
+      ctx.closePath();
+      ctx.fill();
+
+      // Side wall architectural window slots
+      ctx.fillStyle = isDark ? 'rgba(254, 240, 138, 0.4)' : 'rgba(186, 230, 253, 0.5)';
+      ctx.fillRect(halfW + 3, -halfH + 12, Math.max(2, sideWallWidth * 0.45), 14);
+      ctx.fillRect(halfW + 3, halfH - 26, Math.max(2, sideWallWidth * 0.45), 14);
+    } else if (equatorAngle > 0.08 && sideWallWidth > 1.5) {
+      // Left side wall
+      ctx.fillStyle = isDark ? '#1e293b' : '#334155';
+      ctx.beginPath();
+      ctx.moveTo(-halfW, -halfH);
+      ctx.lineTo(-halfW - sideWallWidth, -halfH + 3);
+      ctx.lineTo(-halfW - sideWallWidth, halfH - 2);
+      ctx.lineTo(-halfW, halfH);
+      ctx.closePath();
+      ctx.fill();
+
+      // Side wall architectural window slots
+      ctx.fillStyle = isDark ? 'rgba(254, 240, 138, 0.4)' : 'rgba(186, 230, 253, 0.5)';
+      ctx.fillRect(-halfW - sideWallWidth + 3, -halfH + 12, Math.max(2, sideWallWidth * 0.45), 14);
+      ctx.fillRect(-halfW - sideWallWidth + 3, halfH - 26, Math.max(2, sideWallWidth * 0.45), 14);
+    }
+
+    // Front square face
+    this.drawSquareFloorBlock(ctx, w, h, color, accentColor, windowLights, isDark, isPenthouse);
+  }
+
+  /**
    * Renders the swinging construction crane & suspended block
    */
   private renderCrane(
@@ -457,59 +515,90 @@ export class SkylineRenderer {
 
     const hookScreenX = cx + crane.hookX;
     const hookScreenY = gy - crane.hookY;
+    const isDark = this.currentTheme === 'dark';
 
     ctx.save();
 
-    // 1. Crane Overhead Jib Arm (Lattice Mast)
+    // 1. Equator Trajectory Guideline Arc (180° front hemisphere path)
+    ctx.save();
+    ctx.strokeStyle = isDark ? 'rgba(56, 189, 248, 0.18)' : 'rgba(2, 132, 199, 0.15)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    const arcSamples = 32;
+    for (let s = 0; s <= arcSamples; s++) {
+      const ang = -Math.PI * 0.5 + (Math.PI * s) / arcSamples;
+      const arcX = anchorScreenX + Math.sin(ang) * SKYLINE_CONSTANTS.EQUATOR_RADIUS_X;
+      const arcY = gy - (crane.anchorY - crane.cableLength - Math.cos(ang) * SKYLINE_CONSTANTS.EQUATOR_RADIUS_Y);
+      if (s === 0) ctx.moveTo(arcX, arcY);
+      else ctx.lineTo(arcX, arcY);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // 2. Crane Overhead Jib Arm (Lattice Mast)
     ctx.strokeStyle = '#f59e0b'; // Industrial safety yellow
     ctx.lineWidth = 6;
     ctx.beginPath();
-    ctx.moveTo(anchorScreenX - 110, anchorScreenY - 14);
-    ctx.lineTo(anchorScreenX + 110, anchorScreenY - 14);
+    ctx.moveTo(anchorScreenX - 150, anchorScreenY - 14);
+    ctx.lineTo(anchorScreenX + 150, anchorScreenY - 14);
     ctx.stroke();
 
     // Crane Pulley Trolley
     ctx.fillStyle = '#1e293b';
-    ctx.fillRect(anchorScreenX - 12, anchorScreenY - 16, 24, 12);
+    ctx.fillRect(anchorScreenX - 14, anchorScreenY - 16, 28, 12);
 
     // Blinking red aviation light on crane tip
     const blink = (Math.sin(this.animTime * 8.0) > 0);
     ctx.fillStyle = blink ? '#ef4444' : '#7f1d1d';
     ctx.beginPath();
-    ctx.arc(anchorScreenX + 105, anchorScreenY - 18, 4, 0, Math.PI * 2);
+    ctx.arc(anchorScreenX + 145, anchorScreenY - 18, 4, 0, Math.PI * 2);
     ctx.fill();
 
-    // 2. Steel Winch Cable
+    // 3. Steel Winch Cable (width scales subtly with depth)
+    const depthZ = crane.depthZ ?? Math.cos(crane.equatorAngle ?? crane.angle);
     ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.6 + 1.2 * depthZ;
     ctx.beginPath();
     ctx.moveTo(anchorScreenX, anchorScreenY - 10);
     ctx.lineTo(hookScreenX, hookScreenY);
     ctx.stroke();
 
-    // 3. Heavy Construction Hook
+    // 4. Heavy Construction Hook
+    const hookScale = 0.92 + 0.16 * depthZ;
+    ctx.save();
+    ctx.translate(hookScreenX, hookScreenY);
+    ctx.scale(hookScale, hookScale);
+
     ctx.fillStyle = '#cbd5e1';
     ctx.beginPath();
-    ctx.arc(hookScreenX, hookScreenY, 5, 0, Math.PI * 2);
+    ctx.arc(0, 0, 5, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.strokeStyle = '#475569';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(hookScreenX, hookScreenY + 6, 6, Math.PI * 0.2, Math.PI * 1.6);
+    ctx.arc(0, 6, 6, Math.PI * 0.2, Math.PI * 1.6);
     ctx.stroke();
+    ctx.restore();
 
-    // 4. Block currently held by the hook
+    // 5. Block currently held by the hook along the 180° equator arc
     if (crane.holdingBlock) {
       const block = crane.holdingBlock;
       const bCenterScreenX = hookScreenX;
       const bCenterScreenY = hookScreenY + 6 + block.height * 0.5;
-      const isDark = this.currentTheme === 'dark';
+
+      // Perspective scale: 0.92 at side horizons, 1.08 at front center
+      const perspScale = 0.92 + 0.16 * depthZ;
+      // 3D yaw tilt following the globe equator's curvature
+      const yawAngle = -Math.sin(crane.equatorAngle ?? crane.angle) * 0.26;
 
       ctx.save();
       ctx.translate(bCenterScreenX, bCenterScreenY);
-      ctx.rotate(crane.angle * 0.35); // Suspended block rocks gently with crane swing
-      this.drawSquareFloorBlock(
+      ctx.scale(perspScale, perspScale);
+      ctx.rotate(yawAngle);
+
+      this.drawEquatorSquareBlock(
         ctx,
         block.width,
         block.height,
@@ -517,6 +606,7 @@ export class SkylineRenderer {
         block.accentColor,
         block.windowLights,
         isDark,
+        crane.equatorAngle ?? crane.angle,
         block.type === 'penthouse'
       );
       ctx.restore();

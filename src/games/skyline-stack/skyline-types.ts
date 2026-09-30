@@ -74,6 +74,8 @@ export interface CraneState {
   anchorY: number;
   cableLength: number;
   angle: number;
+  equatorAngle: number;
+  depthZ: number;
   angularVelocity: number;
   speedMultiplier: number;
   hookX: number;

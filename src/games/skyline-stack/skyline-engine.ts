@@ -53,10 +53,12 @@ export class SkylineStackEngine {
       anchorY: SKYLINE_CONSTANTS.FOUNDATION_HEIGHT + SKYLINE_CONSTANTS.CRANE_CABLE_LENGTH + SKYLINE_CONSTANTS.HOOK_CLEARANCE,
       cableLength: SKYLINE_CONSTANTS.CRANE_CABLE_LENGTH,
       angle: 0,
+      equatorAngle: 0,
+      depthZ: 1.0,
       angularVelocity: SKYLINE_CONSTANTS.CRANE_BASE_SWING_SPEED,
       speedMultiplier: 1.0,
       hookX: 0,
-      hookY: SKYLINE_CONSTANTS.FOUNDATION_HEIGHT + SKYLINE_CONSTANTS.HOOK_CLEARANCE,
+      hookY: SKYLINE_CONSTANTS.FOUNDATION_HEIGHT + SKYLINE_CONSTANTS.HOOK_CLEARANCE - SKYLINE_CONSTANTS.EQUATOR_RADIUS_Y,
       holdingBlock: null
     };
 
@@ -189,13 +191,25 @@ export class SkylineStackEngine {
     const floorSpeedBonus = 1.0 + Math.min(0.5, this.state.floors.length * 0.015);
     this.state.crane.speedMultiplier = floorSpeedBonus;
 
-    // Pendulum sinusoidal swing
+    // 180-Degree Circular Equator Trajectory (like the equator line of an earth globe)
+    // Trajectory moves across the 180° front hemisphere [-π/2, +π/2]
     const swingFrequency = SKYLINE_CONSTANTS.CRANE_BASE_SWING_SPEED * this.state.crane.speedMultiplier;
-    this.state.crane.angle = Math.sin(this.simTime * swingFrequency) * SKYLINE_CONSTANTS.CRANE_MAX_ANGLE;
+    // Sinusoidal sweep across the 180-degree front arc
+    const equatorPhase = Math.sin(this.simTime * swingFrequency);
+    const equatorAngle = equatorPhase * (Math.PI * 0.5); // sweeps from -π/2 to +π/2 (exact 180° arc)
 
-    // Hook position calculation
-    this.state.crane.hookX = this.state.crane.anchorX + Math.sin(this.state.crane.angle) * this.state.crane.cableLength;
-    this.state.crane.hookY = this.state.crane.anchorY - Math.cos(this.state.crane.angle) * this.state.crane.cableLength;
+    this.state.crane.angle = equatorAngle;
+    this.state.crane.equatorAngle = equatorAngle;
+    // depthZ = cos(equatorAngle) >= 0 (0 at side horizons, 1.0 at front center)
+    this.state.crane.depthZ = Math.cos(equatorAngle);
+
+    // Circular equator trajectory coordinates:
+    // X follows circular arc sin(equatorAngle)
+    this.state.crane.hookX = this.state.crane.anchorX + Math.sin(equatorAngle) * SKYLINE_CONSTANTS.EQUATOR_RADIUS_X;
+    
+    // Y follows the downward curved equator arc in perspective (curves down toward viewer at center)
+    const arcDipY = this.state.crane.depthZ * SKYLINE_CONSTANTS.EQUATOR_RADIUS_Y;
+    this.state.crane.hookY = this.state.crane.anchorY - this.state.crane.cableLength - arcDipY;
 
     if (this.state.crane.holdingBlock) {
       this.state.crane.holdingBlock.x = this.state.crane.hookX;

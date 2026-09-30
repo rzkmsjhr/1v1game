@@ -11,9 +11,13 @@ export const SKYLINE_CONSTANTS = {
   // Physics & Timing
   GRAVITY: 2400,               // px / s^2 (snappy, satisfying drop feel)
   CRANE_CABLE_LENGTH: 130,     // px
-  HOOK_CLEARANCE: 120,         // px clearance above top floor
-  CRANE_BASE_SWING_SPEED: 2.3, // rad / s
-  CRANE_MAX_ANGLE: 0.65,       // Pendulum maximum swing angle
+  HOOK_CLEARANCE: 130,         // px clearance above top floor
+  CRANE_BASE_SWING_SPEED: 2.2, // rad / s
+  
+  // 180-Degree Circular Equator Trajectory (like the equator line of an earth globe)
+  EQUATOR_RADIUS_X: 135,       // px horizontal swing amplitude along equator
+  EQUATOR_RADIUS_Y: 34,        // px vertical downward arc curve at front center (3D perspective)
+  CRANE_MAX_ANGLE: 0.65,       // Maximum pendulum amplitude
   
   // Accuracy Thresholds (horizontal offset from target center)
   PERFECT_THRESHOLD: 3.5,      // <= 3.5px is PERFECT (snaps & dampens wobble)
