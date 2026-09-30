@@ -198,7 +198,11 @@ export class BombArenaEngine {
     // Move along X with collision and corner assist
     if (vx !== 0) {
       const targetX = p.x + vx;
-      if (!this.checkPlayerCollision(targetX, p.y)) {
+      const curOverlap = this.getOverlapDepth(p.x, p.y);
+      const nextOverlap = this.getOverlapDepth(targetX, p.y);
+
+      // Allow if no overlap, or moving away from existing overlap into open space
+      if (nextOverlap === 0 || nextOverlap < curOverlap - 0.0001) {
         p.x = targetX;
       } else {
         // Corner assist: slide along Y if close to tile center
@@ -206,7 +210,7 @@ export class BombArenaEngine {
         const diffY = nearestRow - p.y;
         if (Math.abs(diffY) > 0.02 && Math.abs(diffY) < 0.48) {
           const slideStep = Math.sign(diffY) * Math.min(Math.abs(diffY), dist);
-          if (!this.checkPlayerCollision(p.x, p.y + slideStep)) {
+          if (this.getOverlapDepth(p.x, p.y + slideStep) <= curOverlap) {
             p.y += slideStep;
           }
         }
@@ -216,7 +220,10 @@ export class BombArenaEngine {
     // Move along Y with collision and corner assist
     if (vy !== 0) {
       const targetY = p.y + vy;
-      if (!this.checkPlayerCollision(p.x, targetY)) {
+      const curOverlap = this.getOverlapDepth(p.x, p.y);
+      const nextOverlap = this.getOverlapDepth(p.x, targetY);
+
+      if (nextOverlap === 0 || nextOverlap < curOverlap - 0.0001) {
         p.y = targetY;
       } else {
         // Corner assist: slide along X if close to tile center
@@ -224,17 +231,15 @@ export class BombArenaEngine {
         const diffX = nearestCol - p.x;
         if (Math.abs(diffX) > 0.02 && Math.abs(diffX) < 0.48) {
           const slideStep = Math.sign(diffX) * Math.min(Math.abs(diffX), dist);
-          if (!this.checkPlayerCollision(p.x + slideStep, p.y)) {
+          if (this.getOverlapDepth(p.x + slideStep, p.y) <= curOverlap) {
             p.x += slideStep;
           }
         }
       }
     }
 
-    // Clamp inside active arena bounds
-    const halfR = BOMB_ARENA_CONSTANTS.PLAYER_RADIUS;
-    p.x = Math.max(this.state.bounds.minCol + halfR, Math.min(this.state.bounds.maxCol + 1 - halfR, p.x));
-    p.y = Math.max(this.state.bounds.minRow + halfR, Math.min(this.state.bounds.maxRow + 1 - halfR, p.y));
+    // Depenetrate so players never stick inside any obstacle
+    this.resolvePlayerOverlaps(p);
 
     p.col = Math.floor(p.x);
     p.row = Math.floor(p.y);
@@ -245,43 +250,86 @@ export class BombArenaEngine {
     p.facing = facing;
   }
 
-  private checkPlayerCollision(targetX: number, targetY: number): boolean {
+  public getOverlapDepth(x: number, y: number): number {
     const r = BOMB_ARENA_CONSTANTS.PLAYER_RADIUS;
     const b = this.state.bounds;
 
-    // Check bounds
-    if (
-      targetX - r < b.minCol ||
-      targetX + r > b.maxCol + 1 ||
-      targetY - r < b.minRow ||
-      targetY + r > b.maxRow + 1
-    ) {
-      return true;
-    }
+    if (x - r < b.minCol) return b.minCol - (x - r);
+    if (x + r > b.maxCol + 1) return (x + r) - (b.maxCol + 1);
+    if (y - r < b.minRow) return b.minRow - (y - r);
+    if (y + r > b.maxRow + 1) return (y + r) - (b.maxRow + 1);
 
-    // Check adjacent tiles: ONLY fences and crushed border walls obstruct movement
-    // Bombs and expected explosions NEVER block or slow down players!
-    const minC = Math.max(0, Math.floor(targetX - r));
-    const maxC = Math.min(BOMB_ARENA_CONSTANTS.GRID_COLS - 1, Math.floor(targetX + r));
-    const minR = Math.max(0, Math.floor(targetY - r));
-    const maxR = Math.min(BOMB_ARENA_CONSTANTS.GRID_ROWS - 1, Math.floor(targetY + r));
+    let maxOverlap = 0;
+    const minC = Math.max(0, Math.floor(x - r));
+    const maxC = Math.min(BOMB_ARENA_CONSTANTS.GRID_COLS - 1, Math.floor(x + r));
+    const minR = Math.max(0, Math.floor(y - r));
+    const maxR = Math.min(BOMB_ARENA_CONSTANTS.GRID_ROWS - 1, Math.floor(y + r));
 
     for (let c = minC; c <= maxC; c++) {
       for (let row = minR; row <= maxR; row++) {
-        const cell = this.state.grid[c][row];
-        if (cell === 'fence' || cell === 'crushed') {
-          // Circle-AABB collision check
-          const closestX = Math.max(c, Math.min(c + 1, targetX));
-          const closestY = Math.max(row, Math.min(row + 1, targetY));
-          const distSq = (targetX - closestX) ** 2 + (targetY - closestY) ** 2;
+        if (this.state.grid[c][row] === 'fence' || this.state.grid[c][row] === 'crushed') {
+          const closestX = Math.max(c, Math.min(c + 1, x));
+          const closestY = Math.max(row, Math.min(row + 1, y));
+          const distSq = (x - closestX) ** 2 + (y - closestY) ** 2;
           if (distSq < r * r) {
-            return true;
+            const dist = Math.sqrt(distSq);
+            maxOverlap = Math.max(maxOverlap, r - dist);
           }
         }
       }
     }
 
-    return false;
+    return maxOverlap;
+  }
+
+  public resolvePlayerOverlaps(p: BombArenaPlayer) {
+    const r = BOMB_ARENA_CONSTANTS.PLAYER_RADIUS;
+    const b = this.state.bounds;
+    const minC = Math.max(0, Math.floor(p.x - r));
+    const maxC = Math.min(BOMB_ARENA_CONSTANTS.GRID_COLS - 1, Math.floor(p.x + r));
+    const minR = Math.max(0, Math.floor(p.y - r));
+    const maxR = Math.min(BOMB_ARENA_CONSTANTS.GRID_ROWS - 1, Math.floor(p.y + r));
+
+    for (let c = minC; c <= maxC; c++) {
+      for (let row = minR; row <= maxR; row++) {
+        if (this.state.grid[c][row] === 'fence' || this.state.grid[c][row] === 'crushed') {
+          this.resolveOverlapWithTile(p, c, row);
+        }
+      }
+    }
+
+    // Clamp inside active arena bounds
+    const halfR = BOMB_ARENA_CONSTANTS.PLAYER_RADIUS;
+    p.x = Math.max(b.minCol + halfR, Math.min(b.maxCol + 1 - halfR, p.x));
+    p.y = Math.max(b.minRow + halfR, Math.min(b.maxRow + 1 - halfR, p.y));
+  }
+
+  public resolveOverlapWithTile(p: BombArenaPlayer, c: number, r: number) {
+    const radius = BOMB_ARENA_CONSTANTS.PLAYER_RADIUS;
+    const closestX = Math.max(c, Math.min(c + 1, p.x));
+    const closestY = Math.max(r, Math.min(r + 1, p.y));
+    const dx = p.x - closestX;
+    const dy = p.y - closestY;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist < radius) {
+      if (dist > 0.001) {
+        const pushDist = radius - dist + 0.03;
+        p.x += (dx / dist) * pushDist;
+        p.y += (dy / dist) * pushDist;
+      } else {
+        // Center is inside box: push towards nearest boundary
+        const dLeft = p.x - c;
+        const dRight = c + 1 - p.x;
+        const dTop = p.y - r;
+        const dBottom = r + 1 - p.y;
+        const min = Math.min(dLeft, dRight, dTop, dBottom);
+        if (min === dLeft) p.x = c - radius - 0.03;
+        else if (min === dRight) p.x = c + 1 + radius + 0.03;
+        else if (min === dTop) p.y = r - radius - 0.03;
+        else p.y = r + 1 + radius + 0.03;
+      }
+    }
   }
 
   // =========================================================================
@@ -318,10 +366,10 @@ export class BombArenaEngine {
     if (this.state.grid[col][row] !== 'empty') {
       return false;
     }
-    // Cannot place on top of any player
-    const pDist = Math.hypot(this.state.player.x - (col + 0.5), this.state.player.y - (row + 0.5));
-    const oDist = Math.hypot(this.state.opponent.x - (col + 0.5), this.state.opponent.y - (row + 0.5));
-    if (pDist < 0.65 || oDist < 0.65) {
+    // Cannot place directly on top of player's center tile
+    const pOnTile = Math.floor(this.state.player.x) === col && Math.floor(this.state.player.y) === row;
+    const oOnTile = Math.floor(this.state.opponent.x) === col && Math.floor(this.state.opponent.y) === row;
+    if (pOnTile || oOnTile) {
       return false;
     }
     // Cannot place on an active bomb
@@ -343,6 +391,10 @@ export class BombArenaEngine {
     this.state.grid[target.col][target.row] = 'fence';
     p.fenceStock -= 1;
     p.fenceCooldown = BOMB_ARENA_CONSTANTS.FENCE_COOLDOWN;
+
+    // Immediately push out any player touching or grazing the new fence so they NEVER get stuck!
+    this.resolveOverlapWithTile(p, target.col, target.row);
+    this.resolveOverlapWithTile(this.state.opponent, target.col, target.row);
 
     // Recalculate all bomb threats as this fence may shield an area
     this.recalculateAllBombThreats();

@@ -295,18 +295,87 @@ export class BombArenaRenderer {
     }
 
     const b = state.bounds;
-    if (targetCol >= b.minCol && targetCol <= b.maxCol && targetRow >= b.minRow && targetRow <= b.maxRow) {
-      const tx = ox + targetCol * ts;
-      const ty = oy + targetRow * ts;
-      const canPlace = state.grid[targetCol][targetRow] === 'empty';
+    const inBounds = targetCol >= b.minCol && targetCol <= b.maxCol && targetRow >= b.minRow && targetRow <= b.maxRow;
+    if (!inBounds) return;
 
-      ctx.save();
-      ctx.strokeStyle = canPlace ? 'rgba(56, 189, 248, 0.85)' : 'rgba(239, 68, 68, 0.6)';
+    const tx = ox + targetCol * ts;
+    const ty = oy + targetRow * ts;
+    const canPlace = state.grid[targetCol][targetRow] === 'empty';
+
+    ctx.save();
+
+    // 1. Shaded highlight fill
+    ctx.fillStyle = canPlace ? 'rgba(56, 189, 248, 0.12)' : 'rgba(239, 68, 68, 0.14)';
+    ctx.fillRect(tx + 2, ty + 2, ts - 4, ts - 4);
+
+    // 2. Animated marching ants dashed border
+    ctx.strokeStyle = canPlace ? 'rgba(56, 189, 248, 0.9)' : 'rgba(239, 68, 68, 0.8)';
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([5, 4]);
+    ctx.lineDashOffset = -this.animTimer * 22;
+    ctx.strokeRect(tx + 3, ty + 3, ts - 6, ts - 6);
+    ctx.setLineDash([]);
+
+    // 3. Crisp Corner Brackets
+    const bracketLen = Math.floor(ts * 0.28);
+    ctx.strokeStyle = canPlace ? '#38bdf8' : '#ef4444';
+    ctx.lineWidth = 2.4;
+
+    // Top-Left
+    ctx.beginPath();
+    ctx.moveTo(tx + 3, ty + 3 + bracketLen);
+    ctx.lineTo(tx + 3, ty + 3);
+    ctx.lineTo(tx + 3 + bracketLen, ty + 3);
+    ctx.stroke();
+
+    // Top-Right
+    ctx.beginPath();
+    ctx.moveTo(tx + ts - 3 - bracketLen, ty + 3);
+    ctx.lineTo(tx + ts - 3, ty + 3);
+    ctx.lineTo(tx + ts - 3, ty + 3 + bracketLen);
+    ctx.stroke();
+
+    // Bottom-Left
+    ctx.beginPath();
+    ctx.moveTo(tx + 3, ty + ts - 3 - bracketLen);
+    ctx.lineTo(tx + 3, ty + ts - 3);
+    ctx.lineTo(tx + 3 + bracketLen, ty + ts - 3);
+    ctx.stroke();
+
+    // Bottom-Right
+    ctx.beginPath();
+    ctx.moveTo(tx + ts - 3 - bracketLen, ty + ts - 3);
+    ctx.lineTo(tx + ts - 3, ty + ts - 3);
+    ctx.lineTo(tx + ts - 3, ty + ts - 3 - bracketLen);
+    ctx.stroke();
+
+    // 4. Center Target Crosshair Reticle
+    const cx = tx + ts / 2;
+    const cy = ty + ts / 2;
+    if (canPlace) {
+      const reticleR = 4 + Math.sin(this.animTimer * 10) * 1.5;
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(cx, cy, reticleR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = '#ef4444';
       ctx.lineWidth = 2;
-      ctx.setLineDash([4, 3]);
-      ctx.strokeRect(tx + 3, ty + 3, ts - 6, ts - 6);
-      ctx.restore();
+      const xSize = 5;
+      ctx.beginPath();
+      ctx.moveTo(cx - xSize, cy - xSize);
+      ctx.lineTo(cx + xSize, cy + xSize);
+      ctx.moveTo(cx + xSize, cy - xSize);
+      ctx.lineTo(cx - xSize, cy + xSize);
+      ctx.stroke();
     }
+
+    ctx.restore();
   }
 
   private renderFences(
@@ -541,6 +610,59 @@ export class BombArenaRenderer {
       ctx.textAlign = 'center';
       ctx.fillStyle = isPlayer ? '#38bdf8' : '#f87171';
       ctx.fillText(isPlayer ? 'YOU' : 'RIVAL', px, py + bobY - radius - 5);
+
+      // Direction Arrow / Indicator on player icon showing where bomb/fence will be placed
+      if (isPlayer) {
+        ctx.save();
+        ctx.translate(px, py + bobY);
+
+        let angle = 0;
+        switch (p.facing) {
+          case 'up': angle = -Math.PI / 2; break;
+          case 'down': angle = Math.PI / 2; break;
+          case 'left': angle = Math.PI; break;
+          case 'right': angle = 0; break;
+        }
+        ctx.rotate(angle);
+
+        // Check if target tile in front is within bounds and open
+        let targetCol = Math.floor(p.x);
+        let targetRow = Math.floor(p.y);
+        switch (p.facing) {
+          case 'up': targetRow -= 1; break;
+          case 'down': targetRow += 1; break;
+          case 'left': targetCol -= 1; break;
+          case 'right': targetCol += 1; break;
+        }
+        const b = state.bounds;
+        const inBounds = targetCol >= b.minCol && targetCol <= b.maxCol && targetRow >= b.minRow && targetRow <= b.maxRow;
+        const canPlace = inBounds && state.grid[targetCol][targetRow] === 'empty';
+
+        // Animated pulse distance
+        const arrowDist = radius + 4 + Math.sin(this.animTimer * 12) * 2;
+        const arrowColor = canPlace ? '#38bdf8' : '#f59e0b';
+        const glowColor = canPlace ? 'rgba(56, 189, 248, 0.9)' : 'rgba(245, 158, 11, 0.9)';
+
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = 8;
+
+        // Draw 3D Chevron Arrowhead pointing outward from player icon
+        ctx.fillStyle = arrowColor;
+        ctx.beginPath();
+        ctx.moveTo(arrowDist + 11, 0);         // Tip
+        ctx.lineTo(arrowDist, -7);             // Upper wing
+        ctx.lineTo(arrowDist + 3.5, 0);        // Inner notch
+        ctx.lineTo(arrowDist, 7);              // Lower wing
+        ctx.closePath();
+        ctx.fill();
+
+        // White accent stroke for crisp contrast
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.3;
+        ctx.stroke();
+
+        ctx.restore();
+      }
 
       ctx.restore();
     }
