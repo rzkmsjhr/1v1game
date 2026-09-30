@@ -1,7 +1,7 @@
 import type { ShrinkStage } from './bomb-arena-types';
 
 export const BOMB_ARENA_CONSTANTS = {
-  GRID_COLS: 6,
+  GRID_COLS: 8,
   GRID_ROWS: 12,
 
   // Player physics & movement
@@ -42,7 +42,7 @@ export const BOMB_ARENA_CONSTANTS = {
     {
       triggerTime: 58.0,
       warningDuration: 3.0,
-      crushCols: [0, 5]      // Outer left & right columns
+      crushCols: [0, 7]      // Outer left & right columns
     },
     {
       triggerTime: 72.0,

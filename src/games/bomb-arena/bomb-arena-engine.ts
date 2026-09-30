@@ -126,9 +126,9 @@ export class BombArenaEngine {
     };
 
     // Spawn Player at bottom center
-    this.state.player.x = 2.5;
+    this.state.player.x = 3.5;
     this.state.player.y = 10.5;
-    this.state.player.col = 2;
+    this.state.player.col = 3;
     this.state.player.row = 10;
     this.state.player.facing = 'up';
     this.state.player.isMoving = false;
@@ -141,9 +141,9 @@ export class BombArenaEngine {
     this.state.player.bombCooldown = 0;
 
     // Spawn Opponent at top center
-    this.state.opponent.x = 3.5;
+    this.state.opponent.x = 4.5;
     this.state.opponent.y = 1.5;
-    this.state.opponent.col = 3;
+    this.state.opponent.col = 4;
     this.state.opponent.row = 1;
     this.state.opponent.facing = 'down';
     this.state.opponent.isMoving = false;
