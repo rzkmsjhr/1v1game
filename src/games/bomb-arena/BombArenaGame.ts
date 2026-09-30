@@ -708,6 +708,10 @@ export class BombArenaGame implements GameInstance {
         const r = this.toRemoteRow(msg.row);
         if (c >= 0 && c < BOMB_ARENA_CONSTANTS.GRID_COLS && r >= 0 && r < BOMB_ARENA_CONSTANTS.GRID_ROWS) {
           if (this.engine.state.grid[c][r] !== 'crushed') {
+            // Race condition: if local player is on or grazing this tile, eject them safely first!
+            if (this.engine.isPlayerTouchingTile(this.engine.state.player, c, r, 0.04)) {
+              this.engine.safelyEjectPlayerFromTile(this.engine.state.player, c, r);
+            }
             this.engine.state.grid[c][r] = 'fence';
             this.engine.recalculateAllBombThreats();
             sounds.playWoodPlace();
@@ -724,6 +728,10 @@ export class BombArenaGame implements GameInstance {
         const r = this.toRemoteRow(msg.row);
         if (c >= 0 && c < BOMB_ARENA_CONSTANTS.GRID_COLS && r >= 0 && r < BOMB_ARENA_CONSTANTS.GRID_ROWS) {
           if (this.engine.state.grid[c][r] !== 'crushed' && !this.engine.state.bombs.some(b => b.col === c && b.row === r)) {
+            // Race condition: if local player is directly on this tile when enemy drops a bomb, gently nudge them
+            if (this.engine.isPlayerTouchingTile(this.engine.state.player, c, r, 0.02)) {
+              this.engine.safelyEjectPlayerFromTile(this.engine.state.player, c, r);
+            }
             const threatCells = this.engine.calculateThreatCells(c, r, BOMB_ARENA_CONSTANTS.BOMB_RADIUS);
             this.engine.state.bombs.push({
               id: msg.id || `bomb_${c}_${r}_${Date.now()}`,
@@ -781,6 +789,9 @@ export class BombArenaGame implements GameInstance {
           const gr = this.toRemoteRow(hr);
           remoteFencesSet.add(`${gc},${gr}`);
           if (this.engine.state.grid[gc][gr] !== 'crushed') {
+            if (this.engine.state.grid[gc][gr] !== 'fence' && this.engine.isPlayerTouchingTile(this.engine.state.player, gc, gr, 0.04)) {
+              this.engine.safelyEjectPlayerFromTile(this.engine.state.player, gc, gr);
+            }
             this.engine.state.grid[gc][gr] = 'fence';
           }
         }
@@ -791,6 +802,8 @@ export class BombArenaGame implements GameInstance {
             }
           }
         }
+        this.engine.resolvePlayerOverlaps(this.engine.state.player);
+        this.engine.resolvePlayerOverlaps(this.engine.state.opponent);
 
         // Reconcile bombs: update timers or add missing
         for (const hb of msg.bombs) {
