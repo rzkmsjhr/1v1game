@@ -136,6 +136,25 @@ export type NetworkMessage =
   | { type: 'BOMB_EXPLODE'; id: string; destroyedFences: Array<{ col: number; row: number }>; timestamp: number }
   | { type: 'BOMB_PLAYER_HIT'; victim: 'player' | 'opponent'; killer: 'player' | 'opponent' | 'crush'; roundNum: number; timestamp: number }
   | { type: 'BOMB_ROUND_START'; roundNum: number; seed: number }
+  | {
+      type: 'BOMB_ROUND_END';
+      winner: 'player' | 'opponent' | 'draw';
+      reason: string;
+      playerWins: number;
+      opponentWins: number;
+      isMatchOver: boolean;
+      timestamp: number;
+    }
+  | {
+      type: 'BOMB_SYNC';
+      roundNumber: number;
+      playerWins: number;
+      opponentWins: number;
+      fences: Array<[number, number]>;
+      bombs: Array<{ col: number; row: number; timer: number; id: string; radius: number }>;
+      bounds: { minCol: number; maxCol: number; minRow: number; maxRow: number; warningTimeLeft: number; warningRows: number[]; warningCols: number[] };
+      timestamp: number;
+    }
   | { type: 'BOMB_VICTORY'; winner: 'player' | 'opponent'; timestamp: number }
   | { type: 'BOMB_VICTORY_CONFIRM'; winner: 'host' | 'guest' }
   | { type: 'BOMB_REMATCH'; seed: number }

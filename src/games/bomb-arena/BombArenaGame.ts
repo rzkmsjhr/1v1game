@@ -50,8 +50,17 @@ export class BombArenaGame implements GameInstance {
   private winnerLocked: boolean = false;
   private localVictoryTimestamp: number = 0;
   private lastMoveBroadcastTime: number = 0;
+  private lastSyncBroadcastTime: number = 0;
   private lastHUDUpdateTime: number = 0;
   private cachedStatusText: string = '';
+
+  // Opponent dead-reckoning target for smooth online interpolation
+  private remoteOpponentTarget = {
+    x: 4.5,
+    y: 1.5,
+    facing: 'down' as 'up' | 'down' | 'left' | 'right',
+    isMoving: false
+  };
 
   // Countdown & Round transition timers
   private countdownTimer: number | null = null;
@@ -558,6 +567,35 @@ export class BombArenaGame implements GameInstance {
   }
 
   // =========================================================================
+  // PERSPECTIVE TRANSFORMATIONS (180° Rotational Symmetry for 1v1 PvP)
+  // =========================================================================
+  private toRemoteCol(c: number): number {
+    return BOMB_ARENA_CONSTANTS.GRID_COLS - 1 - c;
+  }
+
+  private toRemoteRow(r: number): number {
+    return BOMB_ARENA_CONSTANTS.GRID_ROWS - 1 - r;
+  }
+
+  private toRemoteX(x: number): number {
+    return BOMB_ARENA_CONSTANTS.GRID_COLS - x;
+  }
+
+  private toRemoteY(y: number): number {
+    return BOMB_ARENA_CONSTANTS.GRID_ROWS - y;
+  }
+
+  private invertFacing(f: string): 'up' | 'down' | 'left' | 'right' {
+    switch (f) {
+      case 'up': return 'down';
+      case 'down': return 'up';
+      case 'left': return 'right';
+      case 'right': return 'left';
+      default: return 'down';
+    }
+  }
+
+  // =========================================================================
   // NETWORK HANDLING (PVP)
   // =========================================================================
   private setupNetwork() {
@@ -648,53 +686,150 @@ export class BombArenaGame implements GameInstance {
 
       case 'BOMB_INIT':
         this.engine.resetMatch(msg.seed);
+        this.remoteOpponentTarget.x = 4.5;
+        this.remoteOpponentTarget.y = 1.5;
+        this.remoteOpponentTarget.facing = 'down';
+        this.remoteOpponentTarget.isMoving = false;
         this.renderer.reset();
+        this.roundOverBannerEl?.classList.add('hidden');
         this.startCountdown();
         break;
 
       case 'BOMB_MOVE': {
-        const opp = this.engine.state.opponent;
-        opp.x = msg.x;
-        opp.y = msg.y;
-        opp.col = Math.floor(msg.x);
-        opp.row = Math.floor(msg.y);
-        opp.facing = msg.facing as any;
-        opp.isMoving = msg.isMoving;
+        this.remoteOpponentTarget.x = this.toRemoteX(msg.x);
+        this.remoteOpponentTarget.y = this.toRemoteY(msg.y);
+        this.remoteOpponentTarget.facing = this.invertFacing(msg.facing);
+        this.remoteOpponentTarget.isMoving = msg.isMoving;
         break;
       }
 
-      case 'BOMB_PLACE_FENCE':
-        if (this.engine.canPlaceFenceAt(msg.col, msg.row)) {
-          this.engine.state.grid[msg.col][msg.row] = 'fence';
-          this.engine.recalculateAllBombThreats();
-          sounds.playWoodPlace();
-          this.renderer.addSplinters(msg.col, msg.row, 8);
+      case 'BOMB_PLACE_FENCE': {
+        const c = this.toRemoteCol(msg.col);
+        const r = this.toRemoteRow(msg.row);
+        if (c >= 0 && c < BOMB_ARENA_CONSTANTS.GRID_COLS && r >= 0 && r < BOMB_ARENA_CONSTANTS.GRID_ROWS) {
+          if (this.engine.state.grid[c][r] !== 'crushed') {
+            this.engine.state.grid[c][r] = 'fence';
+            this.engine.recalculateAllBombThreats();
+            sounds.playWoodPlace();
+            this.renderer.addSplinters(c, r, 8);
+            this.engine.resolvePlayerOverlaps(this.engine.state.player);
+            this.engine.resolvePlayerOverlaps(this.engine.state.opponent);
+          }
         }
         break;
+      }
 
-      case 'BOMB_PLACE_BOMB':
-        if (this.engine.canPlaceBombAt(msg.col, msg.row)) {
-          const threatCells = this.engine.calculateThreatCells(msg.col, msg.row, BOMB_ARENA_CONSTANTS.BOMB_RADIUS);
-          this.engine.state.bombs.push({
-            id: msg.id,
-            col: msg.col,
-            row: msg.row,
-            owner: 'opponent',
-            timer: BOMB_ARENA_CONSTANTS.BOMB_FUSE_TIME,
-            maxTimer: BOMB_ARENA_CONSTANTS.BOMB_FUSE_TIME,
-            radius: BOMB_ARENA_CONSTANTS.BOMB_RADIUS,
-            threatCells
-          });
-          sounds.playBombDrop();
-          this.renderer.addSparks(msg.col, msg.row, 6);
+      case 'BOMB_PLACE_BOMB': {
+        const c = this.toRemoteCol(msg.col);
+        const r = this.toRemoteRow(msg.row);
+        if (c >= 0 && c < BOMB_ARENA_CONSTANTS.GRID_COLS && r >= 0 && r < BOMB_ARENA_CONSTANTS.GRID_ROWS) {
+          if (this.engine.state.grid[c][r] !== 'crushed' && !this.engine.state.bombs.some(b => b.col === c && b.row === r)) {
+            const threatCells = this.engine.calculateThreatCells(c, r, BOMB_ARENA_CONSTANTS.BOMB_RADIUS);
+            this.engine.state.bombs.push({
+              id: msg.id || `bomb_${c}_${r}_${Date.now()}`,
+              col: c,
+              row: r,
+              owner: 'opponent',
+              timer: BOMB_ARENA_CONSTANTS.BOMB_FUSE_TIME,
+              maxTimer: BOMB_ARENA_CONSTANTS.BOMB_FUSE_TIME,
+              radius: BOMB_ARENA_CONSTANTS.BOMB_RADIUS,
+              threatCells
+            });
+            sounds.playBombDrop();
+            this.renderer.addSparks(c, r, 6);
+          }
         }
         break;
+      }
 
       case 'BOMB_ROUND_START':
         this.engine.setupRound(msg.roundNum);
+        this.remoteOpponentTarget.x = 4.5;
+        this.remoteOpponentTarget.y = 1.5;
+        this.remoteOpponentTarget.facing = 'down';
+        this.remoteOpponentTarget.isMoving = false;
         this.renderer.reset();
+        this.roundOverBannerEl?.classList.add('hidden');
         this.startCountdown();
         break;
+
+      case 'BOMB_ROUND_END': {
+        const guestWinner =
+          msg.winner === 'player' ? 'opponent' : (msg.winner === 'opponent' ? 'player' : 'draw');
+        this.engine.state.player.roundsWon = msg.opponentWins;
+        this.engine.state.opponent.roundsWon = msg.playerWins;
+        if (msg.isMatchOver) {
+          const matchWinner = guestWinner === 'player' ? 'player' : 'opponent';
+          this.handleMatchOver(matchWinner);
+        } else {
+          this.handleRoundOver(guestWinner, msg.reason);
+        }
+        break;
+      }
+
+      case 'BOMB_SYNC': {
+        if (this.session.peer?.role !== 'guest') break;
+        // Reconcile scores
+        this.engine.state.player.roundsWon = msg.opponentWins;
+        this.engine.state.opponent.roundsWon = msg.playerWins;
+        this.engine.state.roundNumber = msg.roundNumber;
+
+        // Reconcile fences: transform host fences to guest perspective
+        const remoteFencesSet = new Set<string>();
+        for (const [hc, hr] of msg.fences) {
+          const gc = this.toRemoteCol(hc);
+          const gr = this.toRemoteRow(hr);
+          remoteFencesSet.add(`${gc},${gr}`);
+          if (this.engine.state.grid[gc][gr] !== 'crushed') {
+            this.engine.state.grid[gc][gr] = 'fence';
+          }
+        }
+        for (let c = 0; c < BOMB_ARENA_CONSTANTS.GRID_COLS; c++) {
+          for (let r = 0; r < BOMB_ARENA_CONSTANTS.GRID_ROWS; r++) {
+            if (this.engine.state.grid[c][r] === 'fence' && !remoteFencesSet.has(`${c},${r}`)) {
+              this.engine.state.grid[c][r] = 'empty';
+            }
+          }
+        }
+
+        // Reconcile bombs: update timers or add missing
+        for (const hb of msg.bombs) {
+          const gc = this.toRemoteCol(hb.col);
+          const gr = this.toRemoteRow(hb.row);
+          const existing = this.engine.state.bombs.find(b => b.col === gc && b.row === gr);
+          if (existing) {
+            if (Math.abs(existing.timer - hb.timer) > 0.2) {
+              existing.timer = hb.timer;
+            }
+          } else if (this.engine.state.grid[gc][gr] !== 'crushed') {
+            const threatCells = this.engine.calculateThreatCells(gc, gr, hb.radius || BOMB_ARENA_CONSTANTS.BOMB_RADIUS);
+            this.engine.state.bombs.push({
+              id: hb.id,
+              col: gc,
+              row: gr,
+              owner: 'opponent',
+              timer: hb.timer,
+              maxTimer: BOMB_ARENA_CONSTANTS.BOMB_FUSE_TIME,
+              radius: hb.radius || BOMB_ARENA_CONSTANTS.BOMB_RADIUS,
+              threatCells
+            });
+          }
+        }
+
+        // Reconcile warning and bounds
+        if (msg.bounds) {
+          this.engine.state.bounds.warningTimeLeft = msg.bounds.warningTimeLeft;
+          this.engine.state.bounds.warningRows = msg.bounds.warningRows.map(r => this.toRemoteRow(r));
+          this.engine.state.bounds.warningCols = msg.bounds.warningCols.map(c => this.toRemoteCol(c));
+          this.engine.state.bounds.minCol = this.toRemoteCol(msg.bounds.maxCol);
+          this.engine.state.bounds.maxCol = this.toRemoteCol(msg.bounds.minCol);
+          this.engine.state.bounds.minRow = this.toRemoteRow(msg.bounds.maxRow);
+          this.engine.state.bounds.maxRow = this.toRemoteRow(msg.bounds.minRow);
+        }
+
+        this.engine.recalculateAllBombThreats();
+        break;
+      }
 
       case 'BOMB_VICTORY':
         if (!this.winnerLocked) {
@@ -863,11 +998,11 @@ export class BombArenaGame implements GameInstance {
 
         this.engine.movePlayer('player', dx, dy, dt);
 
-        // Broadcast player movement over WebRTC (25Hz throttle)
+        // Broadcast player movement over WebRTC (30Hz throttle)
         if (
           this.session.mode === 'online' &&
           this.session.peer?.isConnected &&
-          now - this.lastMoveBroadcastTime > 40
+          now - this.lastMoveBroadcastTime > 33
         ) {
           this.lastMoveBroadcastTime = now;
           this.session.peer.sendMessage({
@@ -880,7 +1015,69 @@ export class BombArenaGame implements GameInstance {
           });
         }
 
-        // 2. Update AI (in solo mode)
+        // 2. Interpolate remote opponent smoothly (online mode)
+        if (this.session.mode === 'online') {
+          const opp = this.engine.state.opponent;
+          const jumpDist = Math.hypot(this.remoteOpponentTarget.x - opp.x, this.remoteOpponentTarget.y - opp.y);
+          if (jumpDist > 2.5) {
+            opp.x = this.remoteOpponentTarget.x;
+            opp.y = this.remoteOpponentTarget.y;
+          } else {
+            const lerp = Math.min(1.0, dt * 24);
+            opp.x += (this.remoteOpponentTarget.x - opp.x) * lerp;
+            opp.y += (this.remoteOpponentTarget.y - opp.y) * lerp;
+          }
+          opp.col = Math.floor(opp.x);
+          opp.row = Math.floor(opp.y);
+          opp.facing = this.remoteOpponentTarget.facing;
+          opp.isMoving = this.remoteOpponentTarget.isMoving;
+        }
+
+        // 3. Periodic Host Authoritative State Sync (10Hz)
+        if (
+          this.session.mode === 'online' &&
+          this.session.peer?.isConnected &&
+          this.session.peer.role === 'host' &&
+          now - this.lastSyncBroadcastTime > 100
+        ) {
+          this.lastSyncBroadcastTime = now;
+          const fences: Array<[number, number]> = [];
+          for (let c = 0; c < BOMB_ARENA_CONSTANTS.GRID_COLS; c++) {
+            for (let r = 0; r < BOMB_ARENA_CONSTANTS.GRID_ROWS; r++) {
+              if (this.engine.state.grid[c][r] === 'fence') {
+                fences.push([c, r]);
+              }
+            }
+          }
+          const bombs = this.engine.state.bombs.map(b => ({
+            col: b.col,
+            row: b.row,
+            timer: b.timer,
+            id: b.id,
+            radius: b.radius
+          }));
+          const b = this.engine.state.bounds;
+          this.session.peer.sendMessage({
+            type: 'BOMB_SYNC',
+            roundNumber: this.engine.state.roundNumber,
+            playerWins: this.engine.state.player.roundsWon,
+            opponentWins: this.engine.state.opponent.roundsWon,
+            fences,
+            bombs,
+            bounds: {
+              minCol: b.minCol,
+              maxCol: b.maxCol,
+              minRow: b.minRow,
+              maxRow: b.maxRow,
+              warningTimeLeft: b.warningTimeLeft,
+              warningRows: [...b.warningRows],
+              warningCols: [...b.warningCols]
+            },
+            timestamp: Date.now()
+          });
+        }
+
+        // 4. Update AI (in solo mode)
         if (this.ai) {
           this.ai.update(dt);
         }
@@ -996,11 +1193,28 @@ export class BombArenaGame implements GameInstance {
       this.roundOverTextEl.textContent = `${winLabel} (${reason})`;
     }
 
+    // If online host, broadcast authoritative round end to guest
+    if (this.session.mode === 'online' && this.session.peer?.isConnected && this.session.peer.role === 'host') {
+      this.session.peer.sendMessage({
+        type: 'BOMB_ROUND_END',
+        winner: winner,
+        reason: reason,
+        playerWins: this.engine.state.player.roundsWon,
+        opponentWins: this.engine.state.opponent.roundsWon,
+        isMatchOver: false,
+        timestamp: Date.now()
+      });
+    }
+
     // Schedule next round after 2.4s
     if (this.nextRoundTimer !== null) clearTimeout(this.nextRoundTimer);
     this.nextRoundTimer = window.setTimeout(() => {
       const nextRound = this.engine.state.roundNumber + 1;
       this.engine.setupRound(nextRound);
+      this.remoteOpponentTarget.x = 4.5;
+      this.remoteOpponentTarget.y = 1.5;
+      this.remoteOpponentTarget.facing = 'down';
+      this.remoteOpponentTarget.isMoving = false;
       this.renderer.reset();
 
       if (this.session.mode === 'online' && this.session.peer?.role === 'host') {
@@ -1041,6 +1255,18 @@ export class BombArenaGame implements GameInstance {
           timestamp: this.localVictoryTimestamp
         });
       }
+    }
+
+    if (this.session.mode === 'online' && this.session.peer?.isConnected && this.session.peer.role === 'host') {
+      this.session.peer.sendMessage({
+        type: 'BOMB_ROUND_END',
+        winner: winner,
+        reason: winner === 'player' ? 'You out-fenced and blasted your rival!' : 'Your rival trapped you in the arena!',
+        playerWins: this.engine.state.player.roundsWon,
+        opponentWins: this.engine.state.opponent.roundsWon,
+        isMatchOver: true,
+        timestamp: Date.now()
+      });
     }
 
     const duration = Math.floor((Date.now() - this.startTime) / 1000);
@@ -1191,7 +1417,12 @@ export class BombArenaGame implements GameInstance {
 
     const newSeed = seed !== undefined ? seed : Date.now();
     this.engine.resetMatch(newSeed);
+    this.remoteOpponentTarget.x = 4.5;
+    this.remoteOpponentTarget.y = 1.5;
+    this.remoteOpponentTarget.facing = 'down';
+    this.remoteOpponentTarget.isMoving = false;
     this.renderer.reset();
+    this.roundOverBannerEl?.classList.add('hidden');
 
     if (this.session.mode === 'ai' && this.ai) {
       this.ai.reset();
