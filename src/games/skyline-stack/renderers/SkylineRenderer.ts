@@ -15,6 +15,10 @@ export class SkylineRenderer {
   private floatingTexts: FloatingText[] = [];
   private textIdCounter: number = 0;
 
+  // Offscreen buffer for camera depth-of-field bokeh / blur on background cityscape
+  private bgCanvas: HTMLCanvasElement | null = null;
+  private bgCtx: CanvasRenderingContext2D | null = null;
+
   constructor(canvas: HTMLCanvasElement, theme: AppTheme = 'dark') {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false })!;
@@ -126,8 +130,8 @@ export class SkylineRenderer {
     // 1. Render Sky & Atmosphere Background
     this.renderAtmosphere(ctx, worldW, worldH, this.cameraY);
 
-    // 2. Render Parallax City Skyline
-    this.renderCitySkyline(ctx, worldW, worldH, this.cameraY);
+    // 2. Render Parallax City Skyline with Depth-of-Field Blur (Focus on crane & player building)
+    this.renderBlurredCitySkyline(ctx, worldW, worldH, this.cameraY);
 
     // 3. Render Foundation Ground
     this.renderGround(ctx, centerX, groundScreenY, worldW);
@@ -226,7 +230,55 @@ export class SkylineRenderer {
   }
 
   /**
-   * Decorated parallax city skyline with multi-tier architecture,
+   * Renders the colorful city skyline with camera depth-of-field blur.
+   * Keeps the crane and player building in razor-sharp focus while giving
+   * the background cityscape a soft, atmospheric photographic lens blur.
+   */
+  private renderBlurredCitySkyline(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    camY: number
+  ) {
+    const pad = 24; // Extra padding around offscreen buffer so blur filter doesn't clip edges
+    const bw = Math.ceil(w + pad * 2);
+    const bh = Math.ceil(h + pad * 2);
+
+    if (!this.bgCanvas) {
+      this.bgCanvas = document.createElement('canvas');
+      this.bgCtx = this.bgCanvas.getContext('2d');
+    }
+
+    if (this.bgCanvas.width !== bw || this.bgCanvas.height !== bh) {
+      this.bgCanvas.width = bw;
+      this.bgCanvas.height = bh;
+    }
+
+    if (!this.bgCtx) {
+      // Fallback: render directly if offscreen context unavailable
+      this.renderCitySkyline(ctx, w, h, camY);
+      return;
+    }
+
+    this.bgCtx.clearRect(0, 0, bw, bh);
+
+    // Render city skyline onto offscreen buffer with origin offset by pad
+    this.bgCtx.save();
+    this.bgCtx.translate(pad, pad);
+    this.renderCitySkyline(this.bgCtx, w, h, camY);
+    this.bgCtx.restore();
+
+    // Composite blurred city skyline onto main canvas with camera lens bokeh
+    ctx.save();
+    if ('filter' in ctx) {
+      ctx.filter = 'blur(3.5px)';
+    }
+    ctx.drawImage(this.bgCanvas, -pad, -pad);
+    ctx.restore();
+  }
+
+  /**
+   * Decorated parallax city skyline with vibrant architectural colors,
    * realistic rooftop props (water towers, HVAC, spires, antenna beacons),
    * depth layers, and illuminated architectural window bands.
    */
@@ -238,17 +290,23 @@ export class SkylineRenderer {
     // -----------------------------------------------------------------
     const farBaseY = h * 0.78 + camY * 0.08;
     const farCount = 11;
-    const farW = w / (farCount - 1);
+    const farW = (w + 40) / (farCount - 1);
+
+    // Far skyline pastel & deep atmospheric color tints
+    const farLightColors = ['#93c5fd', '#c4b5fd', '#a7f3d0', '#fed7aa', '#fbcfe8', '#bae6fd'];
+    const farDarkColors = ['#0c192e', '#1a102f', '#071f1a', '#221508', '#200816', '#091e2b'];
 
     ctx.save();
     for (let i = 0; i < farCount; i++) {
-      const fx = i * farW - 10;
+      const fx = i * farW - 20;
       const fHeight = 170 + ((i * 59 + 29) % 130);
       const fw = farW * 0.95;
       const fy = farBaseY - fHeight;
 
-      // Far building silhouette
-      ctx.fillStyle = isDark ? '#090f1e' : '#cbd5e1';
+      // Far building silhouette with atmospheric color tint
+      ctx.fillStyle = isDark
+        ? farDarkColors[i % farDarkColors.length]
+        : farLightColors[i % farLightColors.length];
       ctx.fillRect(fx, fy, fw, fHeight + 300);
 
       // Distinctive rooftop silhouettes on far layer
@@ -256,7 +314,7 @@ export class SkylineRenderer {
         // Needle spire with blinking warning beacon
         const spireX = fx + fw * 0.5;
         const spireH = 28;
-        ctx.strokeStyle = isDark ? '#1e293b' : '#94a3b8';
+        ctx.strokeStyle = isDark ? '#334155' : '#94a3b8';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(spireX, fy);
@@ -271,12 +329,12 @@ export class SkylineRenderer {
         ctx.fill();
       } else if (i % 3 === 1) {
         // Stepped crown
-        ctx.fillStyle = isDark ? '#0b1325' : '#b0c4de';
+        ctx.fillStyle = isDark ? '#1e1b4b' : '#b0c4de';
         ctx.fillRect(fx + fw * 0.2, fy - 10, fw * 0.6, 10);
         ctx.fillRect(fx + fw * 0.35, fy - 18, fw * 0.3, 8);
       } else {
         // Sloped angular cut
-        ctx.fillStyle = isDark ? '#080d1a' : '#cbd5e1';
+        ctx.fillStyle = isDark ? '#0f172a' : '#cbd5e1';
         ctx.beginPath();
         ctx.moveTo(fx, fy);
         ctx.lineTo(fx + fw, fy - 12);
@@ -287,7 +345,7 @@ export class SkylineRenderer {
 
       // Faint distant window speckles in dark mode
       if (isDark) {
-        ctx.fillStyle = 'rgba(254, 240, 138, 0.12)';
+        ctx.fillStyle = 'rgba(254, 240, 138, 0.16)';
         for (let wy = fy + 24; wy < farBaseY - 20; wy += 26) {
           for (let wx = fx + 6; wx < fx + fw - 6; wx += 16) {
             if ((i * 7 + wx + wy) % 5 === 0) {
@@ -300,21 +358,53 @@ export class SkylineRenderer {
     ctx.restore();
 
     // -----------------------------------------------------------------
-    // LAYER 2: Decorated Mid-Ground Architectural Cityscape
+    // LAYER 2: Decorated Mid-Ground Architectural Cityscape with Vibrant Colors
     // -----------------------------------------------------------------
     const midBaseY = h * 0.80 + camY * 0.16;
     const bldDefs = [
-      { wRel: 0.15, hRel: 260, style: 'stepped', spire: true, winType: 'stripes' },
-      { wRel: 0.13, hRel: 210, style: 'water_tower', spire: false, winType: 'grid' },
-      { wRel: 0.16, hRel: 300, style: 'sloped', spire: false, winType: 'ribbon' },
-      { wRel: 0.14, hRel: 240, style: 'antenna_mast', spire: true, winType: 'scatter' },
-      { wRel: 0.17, hRel: 280, style: 'hvac_penthouse', spire: false, winType: 'grid' },
-      { wRel: 0.13, hRel: 200, style: 'twin_spire', spire: true, winType: 'stripes' },
-      { wRel: 0.15, hRel: 250, style: 'balconies', spire: false, winType: 'ribbon' },
-      { wRel: 0.16, hRel: 290, style: 'corporate_glass', spire: true, winType: 'scatter' }
+      {
+        wRel: 0.15, hRel: 260, style: 'stepped', spire: true, winType: 'stripes',
+        light: { body: '#c25438', shade: '#9c3d24', trim: '#e06d50' }, // Warm Terracotta / Brick
+        dark:  { body: '#4a1525', shade: '#2e0a15', trim: '#9f1239' }
+      },
+      {
+        wRel: 0.13, hRel: 215, style: 'water_tower', spire: false, winType: 'grid',
+        light: { body: '#d97706', shade: '#b45309', trim: '#f59e0b' }, // Amber Warehouse Lofts
+        dark:  { body: '#381e05', shade: '#231202', trim: '#92400e' }
+      },
+      {
+        wRel: 0.16, hRel: 305, style: 'sloped', spire: false, winType: 'ribbon',
+        light: { body: '#0284c7', shade: '#0369a1', trim: '#38bdf8' }, // Ocean Azure Glass
+        dark:  { body: '#082f49', shade: '#041d2e', trim: '#0284c7' }
+      },
+      {
+        wRel: 0.14, hRel: 245, style: 'antenna_mast', spire: true, winType: 'scatter',
+        light: { body: '#4f46e5', shade: '#3730a3', trim: '#818cf8' }, // Tech Indigo
+        dark:  { body: '#1e1b4b', shade: '#110f2e', trim: '#4f46e5' }
+      },
+      {
+        wRel: 0.17, hRel: 285, style: 'hvac_penthouse', spire: false, winType: 'grid',
+        light: { body: '#059669', shade: '#047857', trim: '#34d399' }, // Seafoam Emerald
+        dark:  { body: '#022c22', shade: '#011913', trim: '#059669' }
+      },
+      {
+        wRel: 0.13, hRel: 205, style: 'twin_spire', spire: true, winType: 'stripes',
+        light: { body: '#2563eb', shade: '#1d4ed8', trim: '#60a5fa' }, // Royal Cobalt
+        dark:  { body: '#0c2340', shade: '#061324', trim: '#1d4ed8' }
+      },
+      {
+        wRel: 0.15, hRel: 255, style: 'balconies', spire: false, winType: 'ribbon',
+        light: { body: '#e11d48', shade: '#be123c', trim: '#fb7185' }, // Coral Rosewood
+        dark:  { body: '#4c0519', shade: '#2d020e', trim: '#be123c' }
+      },
+      {
+        wRel: 0.16, hRel: 295, style: 'corporate_glass', spire: true, winType: 'scatter',
+        light: { body: '#0d9488', shade: '#0f766e', trim: '#2dd4bf' }, // Contemporary Teal
+        dark:  { body: '#042f2e', shade: '#021c1b', trim: '#0d9488' }
+      }
     ];
 
-    let currentX = -12;
+    let currentX = -18;
     for (let idx = 0; idx < bldDefs.length; idx++) {
       const def = bldDefs[idx];
       const bW = Math.max(62, w * def.wRel);
@@ -323,12 +413,11 @@ export class SkylineRenderer {
       const bY = midBaseY - bH;
       currentX += bW - 4; // Slight architectural overlap
 
-      // 1. Building Main Massing Body
-      const bodyColor = isDark
-        ? (idx % 2 === 0 ? '#111827' : '#151d30')
-        : (idx % 2 === 0 ? '#64748b' : '#576579');
-      const shadeColor = isDark ? '#0b1120' : '#475569';
-      const trimColor = isDark ? '#1e293b' : '#334155';
+      // 1. Building Main Massing Body with Theme Colors
+      const themeColors = isDark ? def.dark : def.light;
+      const bodyColor = themeColors.body;
+      const shadeColor = themeColors.shade;
+      const trimColor = themeColors.trim;
 
       ctx.fillStyle = bodyColor;
       ctx.fillRect(bX, bY, bW, bH + 250);
@@ -356,7 +445,7 @@ export class SkylineRenderer {
 
         // Center Spire with Aviation Warning Light
         const spX = bX + bW * 0.5;
-        ctx.strokeStyle = isDark ? '#94a3b8' : '#334155';
+        ctx.strokeStyle = isDark ? '#cbd5e1' : '#334155';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(spX, bY - 28);
@@ -378,7 +467,7 @@ export class SkylineRenderer {
         const tankY = bY - tankH - tankLegH;
 
         // Steel frame legs & X-bracing
-        ctx.strokeStyle = isDark ? '#475569' : '#334155';
+        ctx.strokeStyle = isDark ? '#64748b' : '#334155';
         ctx.lineWidth = 1.4;
         ctx.beginPath();
         ctx.moveTo(tankX + 2, bY);
@@ -393,16 +482,16 @@ export class SkylineRenderer {
         ctx.stroke();
 
         // Wooden/Steel Barrel Tank
-        ctx.fillStyle = isDark ? '#334155' : '#78350f'; // Dark steel or cedar wood
+        ctx.fillStyle = isDark ? '#451a03' : '#92400e'; // Rich cedar wood
         ctx.fillRect(tankX, tankY, tankW, tankH);
         // Steel tension hoops around barrel
-        ctx.strokeStyle = isDark ? '#64748b' : '#451a03';
+        ctx.strokeStyle = isDark ? '#78350f' : '#451a03';
         ctx.lineWidth = 1;
         ctx.strokeRect(tankX, tankY + 4, tankW, 1);
         ctx.strokeRect(tankX, tankY + 11, tankW, 1);
 
         // Conical Tank Roof
-        ctx.fillStyle = isDark ? '#475569' : '#92400e';
+        ctx.fillStyle = isDark ? '#78350f' : '#b45309';
         ctx.beginPath();
         ctx.moveTo(tankX - 2, tankY);
         ctx.lineTo(tankX + tankW * 0.5, tankY - 7);
@@ -411,7 +500,7 @@ export class SkylineRenderer {
         ctx.fill();
 
         // HVAC Box alongside water tower
-        ctx.fillStyle = isDark ? '#1e293b' : '#475569';
+        ctx.fillStyle = isDark ? '#231202' : '#78350f';
         ctx.fillRect(bX + tankW + 18, bY - 9, 16, 9);
 
       } else if (def.style === 'sloped') {
@@ -425,7 +514,7 @@ export class SkylineRenderer {
         ctx.fill();
 
         // Angular penthouse glass ribbon
-        ctx.fillStyle = isDark ? 'rgba(56, 189, 248, 0.45)' : 'rgba(186, 230, 253, 0.7)';
+        ctx.fillStyle = isDark ? 'rgba(56, 189, 248, 0.55)' : 'rgba(224, 242, 254, 0.85)';
         ctx.beginPath();
         ctx.moveTo(bX + 4, bY + 4);
         ctx.lineTo(bX + bW - 4, bY - 14);
@@ -437,7 +526,7 @@ export class SkylineRenderer {
       } else if (def.style === 'antenna_mast') {
         // Communication Lattice Mast with Dual Crossbars
         const mastX = bX + bW * 0.4;
-        ctx.strokeStyle = isDark ? '#64748b' : '#334155';
+        ctx.strokeStyle = isDark ? '#a5b4fc' : '#334155';
         ctx.lineWidth = 1.8;
         ctx.beginPath();
         ctx.moveTo(mastX, bY);
@@ -457,15 +546,15 @@ export class SkylineRenderer {
         ctx.fill();
 
         // Elevator Machine Room Box
-        ctx.fillStyle = isDark ? '#1e293b' : '#475569';
+        ctx.fillStyle = isDark ? '#110f2e' : '#3730a3';
         ctx.fillRect(bX + bW * 0.6, bY - 12, 18, 12);
 
       } else if (def.style === 'hvac_penthouse') {
         // Rooftop HVAC Chillers, Vent Ducts & Maintenance Bulkhead
-        ctx.fillStyle = isDark ? '#1e293b' : '#475569';
+        ctx.fillStyle = isDark ? '#011913' : '#047857';
         ctx.fillRect(bX + 8, bY - 14, 26, 14);
         // Louver vents on bulkhead
-        ctx.strokeStyle = isDark ? '#0f172a' : '#334155';
+        ctx.strokeStyle = isDark ? '#059669' : '#065f46';
         ctx.lineWidth = 1;
         for (let ly = bY - 11; ly < bY - 3; ly += 3) {
           ctx.beginPath();
@@ -474,7 +563,7 @@ export class SkylineRenderer {
           ctx.stroke();
         }
         // Round ventilator fan domes
-        ctx.fillStyle = isDark ? '#334155' : '#64748b';
+        ctx.fillStyle = isDark ? '#065f46' : '#10b981';
         ctx.beginPath();
         ctx.arc(bX + 44, bY - 5, 5, Math.PI, 0);
         ctx.fill();
@@ -491,7 +580,7 @@ export class SkylineRenderer {
         ctx.fillRect(bX + bW - 6 - pinW, bY - pinH, pinW, pinH);
 
         // Thin rods
-        ctx.strokeStyle = isDark ? '#94a3b8' : '#334155';
+        ctx.strokeStyle = isDark ? '#93c5fd' : '#1d4ed8';
         ctx.lineWidth = 1.2;
         ctx.beginPath();
         ctx.moveTo(bX + 6 + pinW * 0.5, bY - pinH);
@@ -514,7 +603,7 @@ export class SkylineRenderer {
         // Satellite Dish
         const dishX = bX + bW * 0.5;
         const dishY = bY - 14;
-        ctx.strokeStyle = isDark ? '#94a3b8' : '#334155';
+        ctx.strokeStyle = isDark ? '#5eead4' : '#0f766e';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(dishX, dishY, 7, 0.8 * Math.PI, 1.8 * Math.PI);
@@ -543,7 +632,7 @@ export class SkylineRenderer {
       hazeGrad.addColorStop(1, 'rgba(100, 116, 139, 0.85)');
     }
     ctx.fillStyle = hazeGrad;
-    ctx.fillRect(0, midBaseY - 60, w, 140);
+    ctx.fillRect(-20, midBaseY - 60, w + 40, 140);
   }
 
   /**
