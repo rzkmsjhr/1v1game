@@ -226,32 +226,422 @@ export class SkylineRenderer {
   }
 
   /**
-   * Parallax city backdrop with soft glowing skyline silhouettes
+   * Decorated parallax city skyline with multi-tier architecture,
+   * realistic rooftop props (water towers, HVAC, spires, antenna beacons),
+   * depth layers, and illuminated architectural window bands.
    */
   private renderCitySkyline(ctx: CanvasRenderingContext2D, w: number, h: number, camY: number) {
     const isDark = this.currentTheme === 'dark';
-    const baseY = h * 0.82 + camY * 0.18; // Slow parallax shift
 
-    // Distant background skyscrapers
-    ctx.fillStyle = isDark ? '#0b1120' : '#94a3b8';
-    const bldCount = 8;
-    const bldW = w / bldCount;
-    for (let i = 0; i < bldCount; i++) {
-      const bH = 120 + ((i * 47) % 180);
-      const bX = i * bldW;
-      ctx.fillRect(bX - 5, baseY - bH, bldW + 10, bH + 200);
+    // -----------------------------------------------------------------
+    // LAYER 1: Deep Horizon Silhouette Skyscrapers (Slowest Parallax)
+    // -----------------------------------------------------------------
+    const farBaseY = h * 0.78 + camY * 0.08;
+    const farCount = 11;
+    const farW = w / (farCount - 1);
 
-      // Distant window lights
+    ctx.save();
+    for (let i = 0; i < farCount; i++) {
+      const fx = i * farW - 10;
+      const fHeight = 170 + ((i * 59 + 29) % 130);
+      const fw = farW * 0.95;
+      const fy = farBaseY - fHeight;
+
+      // Far building silhouette
+      ctx.fillStyle = isDark ? '#090f1e' : '#cbd5e1';
+      ctx.fillRect(fx, fy, fw, fHeight + 300);
+
+      // Distinctive rooftop silhouettes on far layer
+      if (i % 3 === 0) {
+        // Needle spire with blinking warning beacon
+        const spireX = fx + fw * 0.5;
+        const spireH = 28;
+        ctx.strokeStyle = isDark ? '#1e293b' : '#94a3b8';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(spireX, fy);
+        ctx.lineTo(spireX, fy - spireH);
+        ctx.stroke();
+
+        // Pulsing red beacon
+        const blink = Math.sin(this.animTime * 4.0 + i) > 0;
+        ctx.fillStyle = blink ? (isDark ? '#ef4444' : '#f87171') : 'rgba(239, 68, 68, 0.2)';
+        ctx.beginPath();
+        ctx.arc(spireX, fy - spireH, 2, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (i % 3 === 1) {
+        // Stepped crown
+        ctx.fillStyle = isDark ? '#0b1325' : '#b0c4de';
+        ctx.fillRect(fx + fw * 0.2, fy - 10, fw * 0.6, 10);
+        ctx.fillRect(fx + fw * 0.35, fy - 18, fw * 0.3, 8);
+      } else {
+        // Sloped angular cut
+        ctx.fillStyle = isDark ? '#080d1a' : '#cbd5e1';
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(fx + fw, fy - 12);
+        ctx.lineTo(fx + fw, fy);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Faint distant window speckles in dark mode
       if (isDark) {
-        ctx.fillStyle = 'rgba(253, 224, 71, 0.15)';
-        for (let wy = baseY - bH + 20; wy < baseY - 10; wy += 24) {
-          for (let wx = bX + 6; wx < bX + bldW - 6; wx += 14) {
-            if ((i + wx) % 3 === 0) {
-              ctx.fillRect(wx, wy, 4, 6);
+        ctx.fillStyle = 'rgba(254, 240, 138, 0.12)';
+        for (let wy = fy + 24; wy < farBaseY - 20; wy += 26) {
+          for (let wx = fx + 6; wx < fx + fw - 6; wx += 16) {
+            if ((i * 7 + wx + wy) % 5 === 0) {
+              ctx.fillRect(wx, wy, 3, 5);
             }
           }
         }
-        ctx.fillStyle = '#0b1120';
+      }
+    }
+    ctx.restore();
+
+    // -----------------------------------------------------------------
+    // LAYER 2: Decorated Mid-Ground Architectural Cityscape
+    // -----------------------------------------------------------------
+    const midBaseY = h * 0.80 + camY * 0.16;
+    const bldDefs = [
+      { wRel: 0.15, hRel: 260, style: 'stepped', spire: true, winType: 'stripes' },
+      { wRel: 0.13, hRel: 210, style: 'water_tower', spire: false, winType: 'grid' },
+      { wRel: 0.16, hRel: 300, style: 'sloped', spire: false, winType: 'ribbon' },
+      { wRel: 0.14, hRel: 240, style: 'antenna_mast', spire: true, winType: 'scatter' },
+      { wRel: 0.17, hRel: 280, style: 'hvac_penthouse', spire: false, winType: 'grid' },
+      { wRel: 0.13, hRel: 200, style: 'twin_spire', spire: true, winType: 'stripes' },
+      { wRel: 0.15, hRel: 250, style: 'balconies', spire: false, winType: 'ribbon' },
+      { wRel: 0.16, hRel: 290, style: 'corporate_glass', spire: true, winType: 'scatter' }
+    ];
+
+    let currentX = -12;
+    for (let idx = 0; idx < bldDefs.length; idx++) {
+      const def = bldDefs[idx];
+      const bW = Math.max(62, w * def.wRel);
+      const bH = def.hRel;
+      const bX = currentX;
+      const bY = midBaseY - bH;
+      currentX += bW - 4; // Slight architectural overlap
+
+      // 1. Building Main Massing Body
+      const bodyColor = isDark
+        ? (idx % 2 === 0 ? '#111827' : '#151d30')
+        : (idx % 2 === 0 ? '#64748b' : '#576579');
+      const shadeColor = isDark ? '#0b1120' : '#475569';
+      const trimColor = isDark ? '#1e293b' : '#334155';
+
+      ctx.fillStyle = bodyColor;
+      ctx.fillRect(bX, bY, bW, bH + 250);
+
+      // 2. 3D Architectural Depth (subtle side shadow band)
+      ctx.fillStyle = shadeColor;
+      const shadowW = Math.max(6, bW * 0.18);
+      ctx.fillRect(bX + bW - shadowW, bY, shadowW, bH + 250);
+
+      // 3. Parapet Roof Lintel Cap
+      ctx.fillStyle = trimColor;
+      ctx.fillRect(bX - 2, bY - 3, bW + 4, 5);
+
+      // 4. Rooftop Architectural Props based on style
+      if (def.style === 'stepped') {
+        // Art-Deco Tiered Crown
+        ctx.fillStyle = bodyColor;
+        ctx.fillRect(bX + bW * 0.2, bY - 14, bW * 0.6, 14);
+        ctx.fillStyle = trimColor;
+        ctx.fillRect(bX + bW * 0.18, bY - 16, bW * 0.64, 3);
+        ctx.fillStyle = bodyColor;
+        ctx.fillRect(bX + bW * 0.35, bY - 26, bW * 0.3, 12);
+        ctx.fillStyle = trimColor;
+        ctx.fillRect(bX + bW * 0.33, bY - 28, bW * 0.34, 3);
+
+        // Center Spire with Aviation Warning Light
+        const spX = bX + bW * 0.5;
+        ctx.strokeStyle = isDark ? '#94a3b8' : '#334155';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(spX, bY - 28);
+        ctx.lineTo(spX, bY - 48);
+        ctx.stroke();
+
+        const redBlink = Math.sin(this.animTime * 5.0 + idx) > 0;
+        ctx.fillStyle = redBlink ? '#ef4444' : '#7f1d1d';
+        ctx.beginPath();
+        ctx.arc(spX, bY - 49, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+      } else if (def.style === 'water_tower') {
+        // Classic Rooftop Cedar Water Tower on Steel Legs
+        const tankW = 20;
+        const tankH = 18;
+        const tankX = bX + 10;
+        const tankLegH = 14;
+        const tankY = bY - tankH - tankLegH;
+
+        // Steel frame legs & X-bracing
+        ctx.strokeStyle = isDark ? '#475569' : '#334155';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(tankX + 2, bY);
+        ctx.lineTo(tankX + 4, tankY + tankH);
+        ctx.moveTo(tankX + tankW - 2, bY);
+        ctx.lineTo(tankX + tankW - 4, tankY + tankH);
+        // X-brace
+        ctx.moveTo(tankX + 2, bY);
+        ctx.lineTo(tankX + tankW - 4, tankY + tankH);
+        ctx.moveTo(tankX + tankW - 2, bY);
+        ctx.lineTo(tankX + 4, tankY + tankH);
+        ctx.stroke();
+
+        // Wooden/Steel Barrel Tank
+        ctx.fillStyle = isDark ? '#334155' : '#78350f'; // Dark steel or cedar wood
+        ctx.fillRect(tankX, tankY, tankW, tankH);
+        // Steel tension hoops around barrel
+        ctx.strokeStyle = isDark ? '#64748b' : '#451a03';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(tankX, tankY + 4, tankW, 1);
+        ctx.strokeRect(tankX, tankY + 11, tankW, 1);
+
+        // Conical Tank Roof
+        ctx.fillStyle = isDark ? '#475569' : '#92400e';
+        ctx.beginPath();
+        ctx.moveTo(tankX - 2, tankY);
+        ctx.lineTo(tankX + tankW * 0.5, tankY - 7);
+        ctx.lineTo(tankX + tankW + 2, tankY);
+        ctx.closePath();
+        ctx.fill();
+
+        // HVAC Box alongside water tower
+        ctx.fillStyle = isDark ? '#1e293b' : '#475569';
+        ctx.fillRect(bX + tankW + 18, bY - 9, 16, 9);
+
+      } else if (def.style === 'sloped') {
+        // Modern Sloped Angular Roof Cut
+        ctx.fillStyle = trimColor;
+        ctx.beginPath();
+        ctx.moveTo(bX, bY);
+        ctx.lineTo(bX + bW, bY - 20);
+        ctx.lineTo(bX + bW, bY);
+        ctx.closePath();
+        ctx.fill();
+
+        // Angular penthouse glass ribbon
+        ctx.fillStyle = isDark ? 'rgba(56, 189, 248, 0.45)' : 'rgba(186, 230, 253, 0.7)';
+        ctx.beginPath();
+        ctx.moveTo(bX + 4, bY + 4);
+        ctx.lineTo(bX + bW - 4, bY - 14);
+        ctx.lineTo(bX + bW - 4, bY - 8);
+        ctx.lineTo(bX + 4, bY + 10);
+        ctx.closePath();
+        ctx.fill();
+
+      } else if (def.style === 'antenna_mast') {
+        // Communication Lattice Mast with Dual Crossbars
+        const mastX = bX + bW * 0.4;
+        ctx.strokeStyle = isDark ? '#64748b' : '#334155';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(mastX, bY);
+        ctx.lineTo(mastX, bY - 38);
+        // Crossbars
+        ctx.moveTo(mastX - 8, bY - 20);
+        ctx.lineTo(mastX + 8, bY - 20);
+        ctx.moveTo(mastX - 5, bY - 30);
+        ctx.lineTo(mastX + 5, bY - 30);
+        ctx.stroke();
+
+        // Tip Beacon
+        const tipBlink = Math.sin(this.animTime * 6.0 + idx) > 0;
+        ctx.fillStyle = tipBlink ? '#ef4444' : '#7f1d1d';
+        ctx.beginPath();
+        ctx.arc(mastX, bY - 39, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Elevator Machine Room Box
+        ctx.fillStyle = isDark ? '#1e293b' : '#475569';
+        ctx.fillRect(bX + bW * 0.6, bY - 12, 18, 12);
+
+      } else if (def.style === 'hvac_penthouse') {
+        // Rooftop HVAC Chillers, Vent Ducts & Maintenance Bulkhead
+        ctx.fillStyle = isDark ? '#1e293b' : '#475569';
+        ctx.fillRect(bX + 8, bY - 14, 26, 14);
+        // Louver vents on bulkhead
+        ctx.strokeStyle = isDark ? '#0f172a' : '#334155';
+        ctx.lineWidth = 1;
+        for (let ly = bY - 11; ly < bY - 3; ly += 3) {
+          ctx.beginPath();
+          ctx.moveTo(bX + 11, ly);
+          ctx.lineTo(bX + 22, ly);
+          ctx.stroke();
+        }
+        // Round ventilator fan domes
+        ctx.fillStyle = isDark ? '#334155' : '#64748b';
+        ctx.beginPath();
+        ctx.arc(bX + 44, bY - 5, 5, Math.PI, 0);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(bX + 57, bY - 5, 5, Math.PI, 0);
+        ctx.fill();
+
+      } else if (def.style === 'twin_spire') {
+        // Dual Symmetrical Mini-Pinnacles
+        const pinW = 8;
+        const pinH = 16;
+        ctx.fillStyle = trimColor;
+        ctx.fillRect(bX + 6, bY - pinH, pinW, pinH);
+        ctx.fillRect(bX + bW - 6 - pinW, bY - pinH, pinW, pinH);
+
+        // Thin rods
+        ctx.strokeStyle = isDark ? '#94a3b8' : '#334155';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(bX + 6 + pinW * 0.5, bY - pinH);
+        ctx.lineTo(bX + 6 + pinW * 0.5, bY - pinH - 14);
+        ctx.moveTo(bX + bW - 6 - pinW * 0.5, bY - pinH);
+        ctx.lineTo(bX + bW - 6 - pinW * 0.5, bY - pinH - 14);
+        ctx.stroke();
+
+      } else if (def.style === 'balconies') {
+        // Stepped Penthouse Terraces
+        ctx.fillStyle = trimColor;
+        ctx.fillRect(bX + 6, bY - 10, bW - 12, 10);
+        ctx.fillRect(bX + 14, bY - 18, bW - 28, 8);
+
+      } else if (def.style === 'corporate_glass') {
+        // High-tech Angular Crown & Satellite Dish
+        ctx.fillStyle = trimColor;
+        ctx.fillRect(bX + 8, bY - 12, bW - 16, 12);
+
+        // Satellite Dish
+        const dishX = bX + bW * 0.5;
+        const dishY = bY - 14;
+        ctx.strokeStyle = isDark ? '#94a3b8' : '#334155';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(dishX, dishY, 7, 0.8 * Math.PI, 1.8 * Math.PI);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(dishX, dishY);
+        ctx.lineTo(dishX - 3, dishY - 4);
+        ctx.stroke();
+      }
+
+      // 5. Architectural Windows & Illuminated Facades
+      this.renderBuildingWindows(ctx, bX, bY, bW, bH, def.winType, idx, isDark);
+    }
+
+    // -----------------------------------------------------------------
+    // LAYER 3: Atmospheric Ground Haze / Aerial Perspective Bleed
+    // -----------------------------------------------------------------
+    const hazeGrad = ctx.createLinearGradient(0, midBaseY - 60, 0, midBaseY + 60);
+    if (isDark) {
+      hazeGrad.addColorStop(0, 'rgba(11, 17, 32, 0)');
+      hazeGrad.addColorStop(0.65, 'rgba(15, 23, 42, 0.7)');
+      hazeGrad.addColorStop(1, 'rgba(15, 23, 42, 0.95)');
+    } else {
+      hazeGrad.addColorStop(0, 'rgba(186, 230, 253, 0)');
+      hazeGrad.addColorStop(0.65, 'rgba(148, 163, 184, 0.55)');
+      hazeGrad.addColorStop(1, 'rgba(100, 116, 139, 0.85)');
+    }
+    ctx.fillStyle = hazeGrad;
+    ctx.fillRect(0, midBaseY - 60, w, 140);
+  }
+
+  /**
+   * Renders architectural window grids and glowing office patterns on background buildings
+   */
+  private renderBuildingWindows(
+    ctx: CanvasRenderingContext2D,
+    bx: number,
+    by: number,
+    bw: number,
+    bh: number,
+    winType: string,
+    bldIdx: number,
+    isDark: boolean
+  ) {
+    const marginX = 8;
+    const innerW = bw - marginX * 2 - (bw * 0.18); // Stay clear of right shadow band
+    if (innerW <= 12) return;
+
+    if (winType === 'stripes' || winType === 'ribbon') {
+      // Horizontal ribbon glass bands (modern corporate high-rise)
+      const bandH = winType === 'ribbon' ? 7 : 5;
+      const bandGap = winType === 'ribbon' ? 12 : 9;
+      for (let wy = by + 20; wy < by + bh - 15; wy += bandH + bandGap) {
+        if (isDark) {
+          const isLit = (bldIdx + wy) % 3 !== 0;
+          if (isLit) {
+            const glowColor = (bldIdx % 2 === 0)
+              ? 'rgba(56, 189, 248, 0.65)' // Modern Cyan Office
+              : 'rgba(251, 191, 36, 0.70)'; // Warm Amber Suites
+            ctx.fillStyle = glowColor;
+            ctx.fillRect(bx + marginX, wy, innerW, bandH);
+
+            // Vertical mullion divisions
+            ctx.fillStyle = '#0f172a';
+            for (let mx = bx + marginX + 10; mx < bx + marginX + innerW; mx += 10) {
+              ctx.fillRect(mx, wy, 1.5, bandH);
+            }
+          }
+        } else {
+          // Daylight reflective glass band
+          ctx.fillStyle = 'rgba(186, 230, 253, 0.65)';
+          ctx.fillRect(bx + marginX, wy, innerW, bandH);
+          // Top glass specular reflection
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+          ctx.fillRect(bx + marginX, wy, innerW, 1.5);
+          // Mullions
+          ctx.fillStyle = 'rgba(71, 85, 105, 0.5)';
+          for (let mx = bx + marginX + 10; mx < bx + marginX + innerW; mx += 10) {
+            ctx.fillRect(mx, wy, 1, bandH);
+          }
+        }
+      }
+    } else {
+      // Classic punched window grid / scatter pattern
+      const winW = 5;
+      const winH = 8;
+      const stepX = 11;
+      const stepY = 14;
+
+      for (let wy = by + 18; wy < by + bh - 12; wy += stepY) {
+        for (let wx = bx + marginX; wx < bx + marginX + innerW - winW; wx += stepX) {
+          const hash = (bldIdx * 131 + Math.floor(wx * 17) + Math.floor(wy * 31)) % 100;
+
+          if (isDark) {
+            // Realistic nighttime window lighting with organic occupancy
+            if (hash < 45) {
+              // Warm yellow / amber light
+              ctx.fillStyle = (hash % 3 === 0)
+                ? 'rgba(254, 240, 138, 0.90)'
+                : (hash % 3 === 1)
+                  ? 'rgba(251, 191, 36, 0.80)'
+                  : 'rgba(56, 189, 248, 0.75)';
+              ctx.fillRect(wx, wy, winW, winH);
+            } else if (hash < 60) {
+              // Dim interior light
+              ctx.fillStyle = 'rgba(100, 116, 139, 0.35)';
+              ctx.fillRect(wx, wy, winW, winH);
+            }
+          } else {
+            // Daytime architectural windows with subtle glass sheen & sill
+            if (hash < 75) {
+              // Clean sky-tinted glass
+              ctx.fillStyle = 'rgba(186, 230, 253, 0.75)';
+              ctx.fillRect(wx, wy, winW, winH);
+              // Top white glint
+              ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+              ctx.fillRect(wx, wy, winW, 1.5);
+              // Dark window sill
+              ctx.fillStyle = 'rgba(51, 65, 85, 0.45)';
+              ctx.fillRect(wx - 0.5, wy + winH - 1, winW + 1, 1.5);
+            } else {
+              // Interior curtain / blind
+              ctx.fillStyle = 'rgba(148, 163, 184, 0.45)';
+              ctx.fillRect(wx, wy, winW, winH);
+            }
+          }
+        }
       }
     }
   }
