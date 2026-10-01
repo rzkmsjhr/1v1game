@@ -1032,13 +1032,16 @@ export class BombArenaGame implements GameInstance {
         if (this.session.mode === 'online') {
           const opp = this.engine.state.opponent;
           const jumpDist = Math.hypot(this.remoteOpponentTarget.x - opp.x, this.remoteOpponentTarget.y - opp.y);
-          if (jumpDist > 2.5) {
+          if (jumpDist > 1.8) {
             opp.x = this.remoteOpponentTarget.x;
             opp.y = this.remoteOpponentTarget.y;
-          } else {
-            const lerp = Math.min(1.0, dt * 24);
+          } else if (jumpDist > 0.003) {
+            const lerp = Math.min(1.0, dt * 20);
             opp.x += (this.remoteOpponentTarget.x - opp.x) * lerp;
             opp.y += (this.remoteOpponentTarget.y - opp.y) * lerp;
+          } else {
+            opp.x = this.remoteOpponentTarget.x;
+            opp.y = this.remoteOpponentTarget.y;
           }
           opp.col = Math.floor(opp.x);
           opp.row = Math.floor(opp.y);

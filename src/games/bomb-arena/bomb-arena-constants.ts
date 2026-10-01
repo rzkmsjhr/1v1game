@@ -5,7 +5,7 @@ export const BOMB_ARENA_CONSTANTS = {
   GRID_ROWS: 12,
 
   // Player physics & movement
-  PLAYER_SPEED: 3.8, // in grid units per second
+  PLAYER_SPEED: 2.6, // in grid units per second (tuned for tactical control & silky-smooth PvP interpolation)
   PLAYER_RADIUS: 0.30, // collision box radius in grid units (slender for silky corridor movement)
 
   // Inventory & cooldowns
