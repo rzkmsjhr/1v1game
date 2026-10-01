@@ -419,10 +419,10 @@ export class BombArenaEngine {
         const dTop = p.y - r;
         const dBottom = r + 1 - p.y;
         const neighbors = [
-          { dc: -1, dr: 0, dist: dLeft,   outX: c - radius - 0.04, outY: p.y },
-          { dc: 1,  dr: 0, dist: dRight,  outX: c + 1 + radius + 0.04, outY: p.y },
-          { dc: 0,  dr: -1, dist: dTop,   outX: p.x, outY: r - radius - 0.04 },
-          { dc: 0,  dr: 1, dist: dBottom, outX: p.x, outY: r + 1 + radius + 0.04 },
+          { dc: -1, dr: 0, dist: dLeft,   outX: c - radius - 0.005, outY: p.y },
+          { dc: 1,  dr: 0, dist: dRight,  outX: c + 1 + radius + 0.005, outY: p.y },
+          { dc: 0,  dr: -1, dist: dTop,   outX: p.x, outY: r - radius - 0.005 },
+          { dc: 0,  dr: 1, dist: dBottom, outX: p.x, outY: r + 1 + radius + 0.005 },
         ];
         const emptyNeighbors = neighbors.filter(n => {
           const nc = c + n.dc;
@@ -434,39 +434,9 @@ export class BombArenaEngine {
         p.x = chosen.outX;
         p.y = chosen.outY;
       }
+      p.col = Math.floor(p.x);
+      p.row = Math.floor(p.y);
     }
-  }
-
-  public safelyEjectPlayerFromTile(p: BombArenaPlayer, c: number, r: number) {
-    const b = this.state.bounds;
-    const radius = BOMB_ARENA_CONSTANTS.PLAYER_RADIUS;
-
-    const neighbors = [
-      { dc: 0, dr: -1, tx: p.x, ty: r - radius - 0.06 },
-      { dc: 0, dr: 1,  tx: p.x, ty: r + 1 + radius + 0.06 },
-      { dc: -1, dr: 0, tx: c - radius - 0.06, ty: p.y },
-      { dc: 1, dr: 0,  tx: c + 1 + radius + 0.06, ty: p.y },
-    ];
-
-    const emptyNeighbors = neighbors.filter(n => {
-      const nc = c + n.dc;
-      const nr = r + n.dr;
-      return nc >= b.minCol && nc <= b.maxCol && nr >= b.minRow && nr <= b.maxRow && this.state.grid[nc][nr] === 'empty';
-    });
-
-    if (emptyNeighbors.length > 0) {
-      emptyNeighbors.sort((a, b) => Math.hypot(p.x - a.tx, p.y - a.ty) - Math.hypot(p.x - b.tx, p.y - b.ty));
-      p.x = emptyNeighbors[0].tx;
-      p.y = emptyNeighbors[0].ty;
-    } else {
-      this.resolveOverlapWithTile(p, c, r);
-    }
-
-    const halfR = BOMB_ARENA_CONSTANTS.PLAYER_RADIUS;
-    p.x = Math.max(b.minCol + halfR, Math.min(b.maxCol + 1 - halfR, p.x));
-    p.y = Math.max(b.minRow + halfR, Math.min(b.maxRow + 1 - halfR, p.y));
-    p.col = Math.floor(p.x);
-    p.row = Math.floor(p.y);
   }
 
   /**
@@ -599,9 +569,13 @@ export class BombArenaEngine {
     p.fenceStock -= 1;
     p.fenceCooldown = BOMB_ARENA_CONSTANTS.FENCE_COOLDOWN;
 
-    // Immediately push out any player touching or grazing the new fence towards safe empty tile
-    this.safelyEjectPlayerFromTile(this.state.player, target.col, target.row);
-    this.safelyEjectPlayerFromTile(this.state.opponent, target.col, target.row);
+    // Only depenetrate if a player is physically grazing the new fence boundary
+    if (this.isPlayerTouchingTile(this.state.player, target.col, target.row, 0.001)) {
+      this.resolveOverlapWithTile(this.state.player, target.col, target.row);
+    }
+    if (this.isPlayerTouchingTile(this.state.opponent, target.col, target.row, 0.001)) {
+      this.resolveOverlapWithTile(this.state.opponent, target.col, target.row);
+    }
 
     // Recalculate all bomb threats as this fence may shield an area
     this.recalculateAllBombThreats();
