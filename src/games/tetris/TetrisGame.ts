@@ -250,15 +250,15 @@ export class TetrisGame implements GameInstance {
     let opponentBS = Math.floor((boardSpace * 0.33) / 10);
 
     // Height constraint: ensure entire layout fits within screen height with 0 scrolling
-    const maxBoardH = screenHeight - 196;
+    const maxBoardH = screenHeight - 214;
     const maxPlayerBSByHeight = Math.floor(maxBoardH / 20);
 
     if (maxPlayerBSByHeight > 0) {
       playerBS = Math.min(playerBS, maxPlayerBSByHeight);
     }
 
-    playerBS = Math.max(19, Math.min(playerBS, 25));
-    opponentBS = Math.max(9, Math.min(opponentBS, Math.floor(playerBS * 0.52)));
+    playerBS = Math.max(12, Math.min(playerBS, 25));
+    opponentBS = Math.max(6, Math.min(opponentBS, Math.floor(playerBS * 0.52)));
 
     return { playerBS, opponentBS };
   }

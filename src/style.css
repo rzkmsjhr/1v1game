@@ -169,3 +169,18 @@ html.dark body {
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* Active game: lock page to the visible viewport (no scroll / whitespace on mobile) */
+html.game-active, body.game-active {
+  height: 100dvh;
+  max-height: 100dvh;
+  min-height: 0 !important;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+body.game-active #app {
+  min-height: 0 !important;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}

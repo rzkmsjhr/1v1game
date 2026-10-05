@@ -797,7 +797,7 @@ export class WaterSortGame implements GameInstance {
           -webkit-user-select: none;
         }
       </style>
-      <div id="water-game-root" class="w-full max-w-lg min-h-full flex flex-col justify-between items-center py-2 sm:py-4 px-3 sm:px-5 select-none relative font-sans">
+      <div id="water-game-root" class="w-full max-w-lg h-full max-h-full overflow-hidden flex flex-col justify-between items-center py-2 sm:py-4 px-3 sm:px-5 select-none relative font-sans">
         
         <!-- Top Bar: Exit, Title, Mode, Net Ping, Sound -->
         <header class="w-full flex items-center justify-between py-1 px-1 mb-1 sm:mb-2">

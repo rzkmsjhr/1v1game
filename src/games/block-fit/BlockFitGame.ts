@@ -200,7 +200,7 @@ export class BlockFitGame implements GameInstance {
       : 'RIVAL PEER';
 
     this.container.innerHTML = `
-      <div id="block-fit-root" class="w-full min-h-screen flex flex-col items-center justify-between px-2 sm:px-4 py-2 select-none overflow-x-hidden ${isDark ? 'text-white' : 'text-slate-900'}">
+      <div id="block-fit-root" class="w-full h-full max-h-full overflow-hidden flex flex-col items-center justify-between px-2 sm:px-4 py-1 select-none ${isDark ? 'text-white' : 'text-slate-900'}">
         
         <!-- Header HUD -->
         <header class="w-full max-w-2xl flex items-center justify-between px-2 py-1.5 rounded-2xl ${isDark ? 'bg-slate-900/85 border-slate-800' : 'bg-white/90 border-slate-200'} border shadow-md backdrop-blur-md shrink-0 mb-2">

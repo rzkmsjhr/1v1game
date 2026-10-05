@@ -168,6 +168,8 @@ class ConsoleDashboard {
 
   public renderDashboard() {
     wakeLock.release();
+    document.documentElement.classList.remove('game-active');
+    document.body.classList.remove('game-active');
     this.activeGameInstance?.destroy();
     this.activeGameInstance = null;
     this.peer?.cleanup();
@@ -660,8 +662,11 @@ class ConsoleDashboard {
     wakeLock.request();
     const isFullscreen = gameDef.id === 'soda-dash' || gameDef.id === 'sheep-fight' || gameDef.id === 'drift-racing';
     const dashBg = this.currentTheme === 'dark' ? 'bg-[#0a0c13]' : 'bg-slate-100';
+    document.documentElement.classList.add('game-active');
+    document.body.classList.add('game-active');
+    window.scrollTo(0, 0);
     this.appContainer.innerHTML = `
-      <div id="arena-container" class="w-full ${isFullscreen ? `h-screen max-h-screen p-0 m-0 overflow-hidden flex justify-center ${dashBg}` : 'min-h-screen flex flex-col items-center justify-between md:justify-start px-1 sm:px-4 py-1 sm:py-2'} select-none">
+      <div id="arena-container" class="w-full h-[100dvh] max-h-[100dvh] overflow-hidden ${isFullscreen ? `p-0 m-0 flex justify-center ${dashBg}` : 'flex flex-col items-center justify-between md:justify-start px-1 sm:px-4 py-0 sm:py-2'} select-none">
         <!-- Game mounts here -->
       </div>
     `;

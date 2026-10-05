@@ -469,7 +469,7 @@ export class OthelloGame implements GameInstance {
     const isDark = this.currentTheme === 'dark';
 
     this.container.innerHTML = `
-      <div class="w-full max-w-2xl flex flex-col items-center justify-center p-3 sm:p-4 relative">
+      <div class="w-full max-w-2xl h-full max-h-full overflow-hidden flex flex-col items-center justify-center p-3 sm:p-4 relative">
         
         <!-- Top Status Bar (Locked height & overflow-protected to eliminate screen push/jump) -->
         <div class="w-full h-11 min-h-[44px] max-h-[44px] shrink-0 flex items-center justify-between px-1 mb-2 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'}">

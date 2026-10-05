@@ -531,7 +531,7 @@ export class SnakeLadderGame implements GameInstance {
     const isDark = this.currentTheme === 'dark';
 
     this.container.innerHTML = `
-      <div id="sl-outer-wrapper" class="w-full h-screen max-h-screen overflow-hidden flex flex-col items-center justify-between p-1.5 sm:p-2.5 lg:p-3 select-none ${isDark ? 'bg-gray-950 text-white' : 'bg-gray-50 text-gray-900'}">
+      <div id="sl-outer-wrapper" class="w-full h-full max-h-full overflow-hidden flex flex-col items-center justify-between p-1.5 sm:p-2.5 lg:p-3 select-none ${isDark ? 'bg-gray-950 text-white' : 'bg-gray-50 text-gray-900'}">
         
         <!-- Top Information & Score Strip -->
         <div class="w-full max-w-5xl flex flex-col shrink-0 border-b ${isDark ? 'border-gray-800' : 'border-gray-200'} pb-1.5 gap-1">
@@ -591,7 +591,7 @@ export class SnakeLadderGame implements GameInstance {
         <div class="w-full flex-1 min-h-0 flex flex-col lg:flex-row items-center justify-center gap-2 sm:gap-3 lg:gap-8 px-1 sm:px-2 my-auto overflow-hidden">
           
           <!-- 10x10 Board Viewport -->
-          <div class="flex items-center justify-center h-full max-h-[min(560px,calc(100vh-220px))] lg:max-h-[min(560px,calc(100vh-90px))] max-w-full aspect-square">
+          <div class="flex items-center justify-center h-full max-h-[min(560px,calc(100dvh-220px))] lg:max-h-[min(560px,calc(100dvh-90px))] max-w-full aspect-square">
             <div id="sl-board-viewport" class="relative w-full h-full rounded-2xl shadow-2xl overflow-hidden">
               <!-- SVG Board mounts here -->
             </div>
